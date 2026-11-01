@@ -21,11 +21,11 @@ export function useCountdown(clock: Clock, retryAt: number | null, onDone: () =>
       setLeft(0);
       return undefined;
     }
-    let cancelled = false;
+    const live = { cancelled: false };
     void (async () => {
       for (;;) {
         const remaining = retryAt - clock.now();
-        if (cancelled) return;
+        if (live.cancelled) return;
         if (remaining <= 0) {
           setLeft(0);
           onDone();
@@ -36,10 +36,9 @@ export function useCountdown(clock: Clock, retryAt: number | null, onDone: () =>
       }
     })();
     return () => {
-      cancelled = true;
+      live.cancelled = true;
     };
     // onDone is a state setter in every caller; re-running on it would restart the wait
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clock, retryAt]);
   return left;
 }

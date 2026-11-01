@@ -71,6 +71,13 @@ function fakeClient(handlers: Partial<Record<Method, Handler>>) {
 const outcome = (o: PasswordOutcome) => () => ok(o);
 const flush = () => act(() => Promise.resolve());
 
+const stubs = {
+  'shell.home': () => null,
+  'lock.unlock': () => null,
+  'onboarding.welcome': () => null,
+  'onboarding.import': () => null,
+};
+
 function setup(
   handlers: Partial<Record<Method, Handler>>,
   ui: preact.ComponentChildren,
@@ -81,7 +88,7 @@ function setup(
   const { host } = render(
     <ClientProvider client={client}>
       <LockEnvProvider clock={clock} events={events}>
-        {ui}
+        <Router table={{ ...stubs, here: () => <>{ui}</> }} initial={{ name: 'here' }} />
       </LockEnvProvider>
     </ClientProvider>,
   );
@@ -175,7 +182,7 @@ describe('UnlockScreen', () => {
       <ClientProvider client={client}>
         <LockEnvProvider clock={new FakeClock()} events={new FakeEvents()}>
           <Router
-            table={{ 'lock.unlock': UnlockScreen, 'shell.home': () => null }}
+            table={{ ...stubs, 'lock.unlock': UnlockScreen }}
             initial={{ name: 'lock.unlock' }}
           >
             <Probe onRoute={(r) => (route = r)} />
@@ -197,7 +204,7 @@ describe('UnlockScreen', () => {
       <ClientProvider client={client}>
         <LockEnvProvider clock={new FakeClock()} events={new FakeEvents()}>
           <Router
-            table={{ 'lock.unlock': UnlockScreen, 'onboarding.import': () => null }}
+            table={{ ...stubs, 'lock.unlock': UnlockScreen }}
             initial={{ name: 'lock.unlock' }}
           >
             <Probe onRoute={(r) => (route = r)} />
@@ -276,7 +283,7 @@ describe('state routing', () => {
     render(
       <ClientProvider client={client}>
         <LockEnvProvider clock={new FakeClock()} events={new FakeEvents()}>
-          <Router table={{ 'lock.root': StateRoot }} initial={{ name: 'lock.root' }}>
+          <Router table={{ ...stubs, 'lock.root': StateRoot }} initial={{ name: 'lock.root' }}>
             <Probe onRoute={(r) => (route = r)} />
           </Router>
         </LockEnvProvider>
@@ -293,7 +300,7 @@ describe('state routing', () => {
     render(
       <ClientProvider client={client}>
         <LockEnvProvider clock={new FakeClock()} events={events}>
-          <Router table={{ 'shell.home': () => null }} initial={{ name: 'shell.home' }}>
+          <Router table={{ ...stubs }} initial={{ name: 'shell.home' }}>
             <StateSupervisor />
             <Probe onRoute={(r) => (route = r)} />
           </Router>
@@ -346,7 +353,7 @@ describe('useLock', () => {
     const { client, call } = fakeClient({});
     render(
       <ClientProvider client={client}>
-        <Router table={{ 'shell.home': () => null }} initial={{ name: 'shell.home' }}>
+        <Router table={{ ...stubs }} initial={{ name: 'shell.home' }}>
           <Grab />
           <Probe onRoute={(r) => (route = r)} />
         </Router>

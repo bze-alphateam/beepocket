@@ -36,15 +36,14 @@ export function StateRoot() {
   const { navigate } = useRoute();
   useEffect(() => {
     void client.call('wallet.state', {}).then((res) => {
-      if (!res.ok) return navigate(unlockTarget);
+      if (!res.ok) {
+        navigate(unlockTarget);
+        return;
+      }
       const { state } = res.value;
-      return navigate(
-        state === 'uninitialised'
-          ? onboardingTarget
-          : state === 'locked'
-            ? unlockTarget
-            : homeTarget,
-      );
+      if (state === 'uninitialised') navigate(onboardingTarget);
+      else if (state === 'locked') navigate(unlockTarget);
+      else navigate(homeTarget);
     });
   }, [client, navigate]);
   return null;
