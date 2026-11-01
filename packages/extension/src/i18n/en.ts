@@ -1,5 +1,6 @@
 import { app } from './app';
 import { settings } from './settings';
+import { home } from './home';
 import { lock } from './lock';
 
 /**
@@ -9,6 +10,7 @@ import { lock } from './lock';
 export const en = {
   ...app,
   ...settings,
+  ...home,
   ...lock,
 } as const;
 
