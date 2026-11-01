@@ -26,7 +26,11 @@ async function mockNodes(context: BrowserContext): Promise<void> {
   });
 }
 
-async function call(page: Page, method: string, payload: unknown): Promise<Record<string, unknown>> {
+async function call(
+  page: Page,
+  method: string,
+  payload: unknown,
+): Promise<Record<string, unknown>> {
   return await page.evaluate((m): Promise<unknown> => chrome.runtime.sendMessage(m), {
     method,
     payload,

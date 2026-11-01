@@ -23,5 +23,5 @@ export function NetworkPill({ network }: { network?: NetworkId }) {
     };
   }, [client, known]);
   const id = network ?? fetched;
-  return id === 'testnet' ? <Pill>{t('network.pill.testnet')}</Pill> : null;
+  return id === 'testnet' ? <Pill>{t('settings.network.pill.testnet')}</Pill> : null;
 }

@@ -10,4 +10,6 @@ function SettingsMain() {
 }
 
 export const settingsRoutes: RouteTable<SettingsRoute> = {
-  'settings.main': SettingsMain, 'settings.pickTokens': PickTokensScreen };
+  'settings.main': SettingsMain,
+  'settings.pickTokens': PickTokensScreen,
+};

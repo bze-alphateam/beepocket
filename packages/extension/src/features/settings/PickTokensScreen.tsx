@@ -24,15 +24,15 @@ export function PickTokensScreen() {
   return (
     <Layout header={<NetworkPill />}>
       <main class="bp-settings">
-        <h1>{t('network.pick.title')}</h1>
-        <p>{t('network.pick.body', { network: t('network.testnet') })}</p>
+        <h1>{t('settings.network.pick.title')}</h1>
+        <p>{t('settings.network.pick.body', { network: t('settings.network.testnet') })}</p>
         {failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}
         <Button
           onClick={() => {
             void addBze();
           }}
         >
-          {t('network.pick.add')}
+          {t('settings.network.pick.add')}
         </Button>
         <Button
           variant="quiet"
@@ -40,7 +40,7 @@ export function PickTokensScreen() {
             navigate({ name: 'settings.main' });
           }}
         >
-          {t('network.pick.switch')}
+          {t('settings.network.pick.switch')}
         </Button>
       </main>
     </Layout>

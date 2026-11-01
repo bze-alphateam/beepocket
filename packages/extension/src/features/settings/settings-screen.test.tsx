@@ -127,6 +127,7 @@ describe('SettingsScreen', () => {
     fireEvent(sw, 'change');
     await flush();
     expect(client.network).toBe('testnet');
+    await flush();
     expect(host.textContent).toContain('Pick your tokens');
     expect(host.querySelector('.bp-pill')?.textContent).toBe('Testnet');
   });
@@ -170,7 +171,10 @@ describe('reveal recovery phrase', () => {
       request: { password: 'pw' },
     });
     expect(host.querySelectorAll('.bp-phrase li')).toHaveLength(24);
-    fireEvent([...host.querySelectorAll('button')].find((b) => b.textContent === 'Hide'), 'click');
+    fireEvent(
+      [...host.querySelectorAll('button')].find((b) => b.textContent === 'Hide'),
+      'click',
+    );
     expect(host.textContent).not.toContain('abandon');
     // opening it again asks the password again
     const row = [...host.querySelectorAll('button')].find((b) =>
