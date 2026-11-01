@@ -22,36 +22,53 @@ interface Chain {
   balances: Record<string, Map<string, bigint>>;
   balanceCalls: string[];
   supplyCalls: string[];
+  /** Denoms whose metadata query fails like an unreachable node. */
+  broken: Set<string>;
+  /** Addresses whose balance query fails. */
+  brokenAddresses: Set<string>;
 }
 
 function setup(
   opts: { addresses?: WalletAddress[]; scanDown?: boolean; preferred?: string[] } = {},
 ) {
-  const chainData: Chain = {
+  const freshChain = (): Chain => ({
     supplies: { ubze: 10n, [FACTORY]: 5n, [IBC]: 5n },
     metadata: { [FACTORY]: { symbol: 'GOLD', name: 'Gold Coin', exponent: 6 } },
     branding: { [FACTORY]: BRANDING },
     balances: {},
     balanceCalls: [],
     supplyCalls: [],
-  };
-  const chain = (id: NetworkId) => ({
-    supply: (d: string) => {
-      chainData.supplyCalls.push(d);
-      return Promise.resolve(chainData.supplies[d] ?? 0n);
-    },
-    denomMetadata: (d: string) => Promise.resolve(chainData.metadata[d] ?? null),
-    denomBranding: (d: string) => Promise.resolve(chainData.branding[d] ?? null),
-    balances: (a: string) => {
-      chainData.balanceCalls.push(`${id}:${a}`);
-      return Promise.resolve(chainData.balances[a] ?? new Map<string, bigint>());
-    },
+    broken: new Set(),
+    brokenAddresses: new Set(),
   });
+  const datas: Record<NetworkId, Chain> = { mainnet: freshChain(), testnet: freshChain() };
+  const chainData = datas.mainnet;
+  const chain = (id: NetworkId) => {
+    const data = datas[id];
+    return {
+      supply: (d: string) => {
+        data.supplyCalls.push(d);
+        return Promise.resolve(data.supplies[d] ?? 0n);
+      },
+      denomMetadata: (d: string) =>
+        data.broken.has(d)
+          ? Promise.reject(new Error('node down'))
+          : Promise.resolve(data.metadata[d] ?? null),
+      denomBranding: (d: string) => Promise.resolve(data.branding[d] ?? null),
+      balances: (a: string) => {
+        data.balanceCalls.push(`${id}:${a}`);
+        return data.brokenAddresses.has(a)
+          ? Promise.reject(new Error('node down'))
+          : Promise.resolve(data.balances[a] ?? new Map<string, bigint>());
+      },
+    };
+  };
   const scanCalls: string[] = [];
+  let scanDown = opts.scanDown ?? false;
   const scan = {
     token: (d: string) => {
       scanCalls.push(d);
-      return opts.scanDown
+      return scanDown
         ? Promise.reject(new Error('scan down'))
         : Promise.resolve({
             denom: d,
@@ -113,6 +130,8 @@ function setup(
   return {
     call,
     chainData,
+    testnetData: datas.testnet,
+    setScanDown: (down: boolean) => (scanDown = down),
     scanCalls,
     prefs,
     cacheMap,
@@ -174,6 +193,14 @@ describe('tokens.lookup', () => {
     expect(r).toMatchObject({ ok: true, value: { source: 'fallback' } });
     await t.call('tokens.lookup', { code: IBC });
     expect(t.scanCalls).toHaveLength(2);
+  });
+
+  it('keeps answering an IBC token from the cache when Scan goes down', async () => {
+    const t = setup();
+    await t.call('tokens.lookup', { code: IBC });
+    t.setScanDown(true);
+    const r = await t.call<TokenInfo>('tokens.lookup', { code: IBC });
+    expect(r).toMatchObject({ ok: true, value: { symbol: 'ATOM', source: 'scan' } });
   });
 
   it('answers no-such-token for a denom without supply', async () => {
@@ -299,24 +326,68 @@ describe('tokens.balances', () => {
     expect(r).toMatchObject({ ok: false, error: { code: 'bad_request' } });
   });
 
-  it('does not share balance reads between networks', async () => {
+  it("does not show one network's balances on the other", async () => {
     const t = withBalances();
+    t.testnetData.balances.bze1a = new Map([['ubze', 100n]]);
     await t.call('tokens.balances', { denom: 'ubze' });
     t.useNetwork('testnet');
-    await t.call('tokens.balances', { denom: 'ubze' });
-    expect(t.chainData.balanceCalls.filter((c) => c.startsWith('testnet:'))).toHaveLength(2);
-    expect([...t.session.m.keys()].every((k) => k.startsWith('balances:'))).toBe(true);
-    expect([...t.session.m.keys()].some((k) => k.startsWith('balances:testnet:'))).toBe(true);
+    const r = await t.call('tokens.balances', { denom: 'ubze' });
+    expect(r).toMatchObject({ ok: true, value: { total: '100' } });
+    t.useNetwork('mainnet');
+    expect(await t.call('tokens.balances', { denom: 'ubze' })).toMatchObject({
+      value: { total: '7' },
+    });
   });
 
-  it('does not share token data between networks', async () => {
+  it("does not show one network's token data on the other", async () => {
     const t = setup();
-    await t.call('tokens.lookup', { code: FACTORY });
+    t.testnetData.supplies = { ubze: 10n };
+    expect(await t.call('tokens.lookup', { code: FACTORY })).toMatchObject({ ok: true });
     t.useNetwork('testnet');
-    await t.call('tokens.lookup', { code: FACTORY });
-    const keys = [...t.cacheMap.keys()];
-    expect(keys).toContain(`mainnet:token:${FACTORY}`);
-    expect(keys).toContain(`testnet:token:${FACTORY}`);
+    expect(await t.call('tokens.lookup', { code: FACTORY })).toMatchObject({
+      ok: false,
+      error: { code: 'no-such-token' },
+    });
+  });
+
+  it('reports an unreadable address as failed and the total as partial', async () => {
+    const t = withBalances();
+    t.chainData.brokenAddresses.add('bze1b');
+    const r = await t.call('tokens.balances', { denom: 'ubze' });
+    expect(r).toEqual({
+      ok: true,
+      value: {
+        denom: 'ubze',
+        addresses: [
+          { index: 0, address: 'bze1a', amount: '5' },
+          { index: 1, address: 'bze1b', amount: '0', failed: true },
+        ],
+        total: '5',
+        partial: true,
+      },
+    });
+  });
+
+  it('is not complete-looking: a clean read is not partial', async () => {
+    const r = await withBalances().call('tokens.balances', { denom: 'ubze' });
+    expect(r).toMatchObject({ value: { partial: false } });
+  });
+
+  it('treats a denom named like an object property as plain zero', async () => {
+    for (const denom of ['constructor', 'toString', '__proto__']) {
+      const r = await withBalances().call('tokens.balances', { denom });
+      expect(r).toMatchObject({ ok: true, value: { total: '0', partial: false } });
+    }
+  });
+
+  it('adds up many held denoms (a large paginated node answer)', async () => {
+    const t = setup({ addresses: ADDRS });
+    const many = new Map<string, bigint>();
+    for (let i = 0; i < 500; i++) many.set(`factory/bze1abc/t${String(i)}`, 1n);
+    many.set('ubze', 9n);
+    t.chainData.balances.bze1a = many;
+    const r = await t.call('tokens.balances', { denom: 'factory/bze1abc/t499' });
+    expect(r).toMatchObject({ ok: true, value: { total: '1' } });
   });
 });
 
@@ -340,6 +411,50 @@ describe('tokens.search', () => {
     expect(byDenom.ok && byDenom.value.map((x) => x.denom)).toEqual([FACTORY]);
     const zero = await t.call<TokenInfo[]>('tokens.search', { query: 'atom' });
     expect(zero).toEqual({ ok: true, value: [] });
+  });
+});
+
+describe('tokens.search limits', () => {
+  it('finds a held denom beyond the first hundred', async () => {
+    const t = setup({ addresses: ADDRS });
+    const many = new Map<string, bigint>();
+    for (let i = 0; i < 250; i++) many.set(`factory/bze1abc/t${String(i)}`, 1n);
+    t.chainData.balances.bze1a = many;
+    const r = await t.call<TokenInfo[]>('tokens.search', { query: 't249' });
+    expect(r.ok && r.value.map((x) => x.denom)).toEqual(['factory/bze1abc/t249']);
+  });
+
+  it('caps only the answer', async () => {
+    const t = setup({ addresses: ADDRS });
+    const many = new Map<string, bigint>();
+    for (let i = 0; i < 250; i++) many.set(`factory/bze1abc/t${String(i)}`, 1n);
+    t.chainData.balances.bze1a = many;
+    const r = await t.call<TokenInfo[]>('tokens.search', { query: 'bze1abc' });
+    expect(r.ok && r.value.length).toBe(100);
+  });
+
+  it('degrades to ubze when no address can be read', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.brokenAddresses.add('bze1a').add('bze1b');
+    const r = await t.call<TokenInfo[]>('tokens.search', { query: '' });
+    expect(r.ok && r.value.map((x) => x.denom)).toEqual(['ubze']);
+  });
+});
+
+describe('tokens.preferred when the node fails', () => {
+  it('keeps every picked denom, flagging the one it could not resolve', async () => {
+    const t = setup({ preferred: ['ubze', FACTORY, IBC] });
+    t.chainData.broken.add(FACTORY);
+    const r = await t.call<(TokenInfo & { unresolved?: boolean })[]>('tokens.preferred');
+    expect(r.ok && r.value.map((x) => x.denom)).toEqual(['ubze', FACTORY, IBC]);
+    expect(r.ok && r.value[1]).toMatchObject({
+      symbol: 'GOLD',
+      kind: 'factory',
+      source: 'fallback',
+      branding: null,
+      unresolved: true,
+    });
+    expect(r.ok && r.value[0]).not.toHaveProperty('unresolved');
   });
 });
 

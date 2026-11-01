@@ -1,5 +1,6 @@
 import type { NetworkId } from '@beepocket/core';
-import type { Storage } from '../../platform';
+import type { Platform, Storage } from '../../platform';
+import type { TokenSeams } from './handlers';
 import type { PreferredTokensStore, WalletAddresses } from './ports';
 
 /**
@@ -20,3 +21,7 @@ export class StoragePreferredTokens implements PreferredTokensStore {
 }
 
 export const noAddresses: WalletAddresses = { list: () => Promise.resolve([]) };
+
+export function interimSeams(platform: Pick<Platform, 'storage'>): TokenSeams {
+  return { preferred: new StoragePreferredTokens(platform.storage), addresses: noAddresses };
+}

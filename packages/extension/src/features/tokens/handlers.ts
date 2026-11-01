@@ -1,7 +1,6 @@
 import { ErrorCodes, fail, ok, type Result } from '../../protocol';
 import type { HandlerDeps } from '../../background/handlers';
 import type { HandlerRegistry } from '../../background/registry';
-import { noAddresses, StoragePreferredTokens } from './interim';
 import type { PreferredTokensStore, WalletAddresses } from './ports';
 import { TokenService } from './service';
 
@@ -25,19 +24,13 @@ function stringField<K extends string>(method: string, name: K) {
   };
 }
 
-/**
- * The seams default to the interim stand-ins; the wallet story passes the profile-backed ones.
- */
+/** The seams are passed in: the composition root hands over the wallet-backed ones (interim stand-ins until then). */
 export function registerTokenHandlers(
   registry: HandlerRegistry,
   deps: HandlerDeps,
-  seams?: TokenSeams,
+  seams: TokenSeams,
 ): void {
   const { platform, services } = deps;
-  const resolved: TokenSeams = seams ?? {
-    preferred: new StoragePreferredTokens(platform.storage),
-    addresses: noAddresses,
-  };
   const service = async (): Promise<TokenService> => {
     const { network, chain, scan } = await services.clients();
     return new TokenService({
@@ -47,7 +40,7 @@ export function registerTokenHandlers(
       cache: platform.cache,
       session: platform.session,
       clock: platform.clock,
-      ...resolved,
+      ...seams,
     });
   };
 
