@@ -6,6 +6,7 @@ export const lock = {
   'lock.unlock': 'Unlock',
   'lock.unlocking': 'Unlocking',
   'lock.wrongPassword': 'Wrong password.',
+  'lock.blocked': 'Too many attempts. Please wait before trying again.',
   'lock.retryIn': 'Try again in {time}',
   'lock.forgot': 'Forgot your password? Import your recovery phrase again',
   'lock.forgotWarning': 'Importing replaces the wallet stored in this browser.',

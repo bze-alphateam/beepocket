@@ -219,6 +219,33 @@ describe('UnlockScreen', () => {
 });
 
 describe('PasswordGate', () => {
+  it('clears the password when the service fails and autofills as current-password', async () => {
+    const { host } = setup(
+      { 'wallet.reauth': () => ({ ok: false, error: { code: 'transport', message: 'x' } }) },
+      <PasswordGate onUnlocked={vi.fn()} />,
+    );
+    expect(host.querySelector('input')?.getAttribute('autocomplete')).toBe('current-password');
+    type(host, 'pw');
+    await submit(host);
+    expect(host.querySelector('input')?.value).toBe('');
+  });
+
+  it('announces a block once and keeps the ticking countdown silent', async () => {
+    const clock = new FakeClock();
+    const { host } = setup(
+      { 'wallet.reauth': outcome({ status: 'throttled', retryAt: clock.t + 5_000 }) },
+      <PasswordGate onUnlocked={vi.fn()} />,
+      clock,
+    );
+    type(host, 'pw');
+    await submit(host);
+    expect(host.querySelectorAll('[role=status]')).toHaveLength(1);
+    expect(host.querySelector('[role=status]')?.textContent).toBe(
+      'Too many attempts. Please wait before trying again.',
+    );
+    expect(host.querySelector('.bp-banner')?.getAttribute('role')).toBeNull();
+  });
+
   it('calls reauth and reports success in place', async () => {
     const onUnlocked = vi.fn();
     const { host, call } = setup(
@@ -312,6 +339,50 @@ describe('state routing', () => {
     expect(route.name).toBe('shell.home');
     events.push('locked');
     expect(route.name).toBe('lock.unlock');
+  });
+
+  it.each(['unlocked', 'weakLocked'] as const)(
+    'leaves the unlock screen when another window pushes %s',
+    async (state) => {
+      let route: RouteBase = { name: 'lock.unlock' };
+      const events = new FakeEvents();
+      const { client } = fakeClient({ 'wallet.state': stateReply('locked') });
+      render(
+        <ClientProvider client={client}>
+          <LockEnvProvider clock={new FakeClock()} events={events}>
+            <Router
+              table={{ ...stubs, 'lock.unlock': UnlockScreen }}
+              initial={{ name: 'lock.unlock' }}
+            >
+              <StateSupervisor />
+              <Probe onRoute={(r) => (route = r)} />
+            </Router>
+          </LockEnvProvider>
+        </ClientProvider>,
+      );
+      await flush();
+      events.push(state);
+      expect(route.name).toBe('shell.home');
+    },
+  );
+
+  it('ignores an unlocked push while the user is elsewhere', async () => {
+    let route: RouteBase = { name: 'onboarding.welcome' };
+    const events = new FakeEvents();
+    const { client } = fakeClient({ 'wallet.state': stateReply('uninitialised') });
+    render(
+      <ClientProvider client={client}>
+        <LockEnvProvider clock={new FakeClock()} events={events}>
+          <Router table={{ ...stubs }} initial={{ name: 'onboarding.welcome' }}>
+            <StateSupervisor />
+            <Probe onRoute={(r) => (route = r)} />
+          </Router>
+        </LockEnvProvider>
+      </ClientProvider>,
+    );
+    await flush();
+    events.push('unlocked');
+    expect(route.name).toBe('onboarding.welcome');
   });
 });
 

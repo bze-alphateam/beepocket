@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { PasswordOutcome, Result } from '../../protocol';
-import { Banner, Button, TextField } from '../../ui';
+import { Button, TextField } from '../../ui';
 import { formatCountdown, useCountdown } from './countdown';
 import { useLockEnv } from './env';
 
@@ -34,6 +34,7 @@ export function PasswordForm(props: PasswordFormProps) {
     const res = await props.check(password);
     setBusy(false);
     if (!res.ok) {
+      setPassword('');
       setError(t('app.error.generic'));
       return;
     }
@@ -63,9 +64,19 @@ export function PasswordForm(props: PasswordFormProps) {
         onInput={setPassword}
         disabled={blocked || busy}
         autoFocus
+        autoComplete="current-password"
         {...(error === undefined ? {} : { error })}
       />
       {blocked && (
+        <>
+          <p class="bp-sr-only" role="status">
+            {t('lock.blocked')}
+          </p>
+          <div class="bp-banner bp-banner-amber" aria-live="off">
+            {t('lock.retryIn', { time: formatCountdown(left) })}
+          </div>
+        </>
+      )}
         <Banner tone="amber">{t('lock.retryIn', { time: formatCountdown(left) })}</Banner>
       )}
       <Button type="submit" disabled={blocked || busy || password === ''}>

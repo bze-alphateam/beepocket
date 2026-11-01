@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
 import type { WalletState } from '../../protocol';
@@ -13,7 +13,9 @@ import { useActivityPing } from './useActivityPing';
 export function StateSupervisor() {
   const client = useClient();
   const { events } = useLockEnv();
-  const { navigate } = useRoute();
+  const { route, navigate } = useRoute();
+  const routeName = useRef(route.name);
+  routeName.current = route.name;
   const [state, setState] = useState<WalletState | null>(null);
   useActivityPing(state === 'unlocked' || state === 'weakLocked');
 
@@ -21,6 +23,12 @@ export function StateSupervisor() {
     const off = events.subscribe((e) => {
       setState(e.state);
       if (e.state === 'locked') navigate(unlockTarget);
+      else if (
+        (e.state === 'unlocked' || e.state === 'weakLocked') &&
+        routeName.current === unlockTarget.name
+      ) {
+        navigate(homeTarget);
+      }
     });
     void client.call('wallet.state', {}).then((res) => {
       if (res.ok) setState((current) => current ?? res.value.state);
