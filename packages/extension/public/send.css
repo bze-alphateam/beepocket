@@ -1,0 +1,165 @@
+/* Send flow. Colours come from the --bp-* variables of the theme engine. */
+.bp-send,
+.bp-send-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 16px 16px;
+}
+
+.bp-send-center {
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  text-align: center;
+}
+
+.bp-send-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bp-send-label {
+  color: var(--bp-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bp-send-note,
+.bp-send-match {
+  margin: 0;
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-send-match {
+  min-height: 16px;
+}
+
+.bp-send-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.bp-send-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bp-send-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--bp-line-strong);
+  border-radius: 12px;
+  background: var(--bp-card);
+  color: var(--bp-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bp-send-row[aria-pressed='true'] {
+  border-color: var(--bp-primary);
+}
+
+.bp-send-row:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bp-send-row small {
+  display: block;
+  color: var(--bp-muted);
+}
+
+.bp-send-link {
+  border: 0;
+  background: none;
+  color: var(--bp-link, var(--bp-primary));
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bp-send-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 0;
+}
+
+.bp-send-hero small {
+  color: var(--bp-faint, var(--bp-muted));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bp-send-hero strong {
+  font-size: 32px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.bp-send-card {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--bp-line, var(--bp-line-strong));
+  border-radius: 16px;
+  background: var(--bp-card);
+}
+
+.bp-send-card > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.bp-send-card > div + div {
+  border-top: 1px solid var(--bp-line, var(--bp-line-strong));
+}
+
+.bp-send-card dt {
+  color: var(--bp-muted);
+}
+
+.bp-send-card dd {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 220px;
+  margin: 0;
+  text-align: right;
+}
+
+.bp-send-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.bp-send-result {
+  align-items: stretch;
+  text-align: center;
+}
+
+.bp-send-result h1 {
+  padding-top: 24px;
+  font-size: 22px;
+}

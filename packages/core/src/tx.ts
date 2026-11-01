@@ -1,3 +1,4 @@
+import { sha256 } from '@noble/hashes/sha2.js';
 import { Any } from './proto/google/protobuf/any';
 import { Coin } from './proto/cosmos/base/v1beta1/coin';
 import { PubKey } from './proto/cosmos/crypto/secp256k1/keys';
@@ -97,4 +98,11 @@ export function simulationTxBytes(
     authInfoBytes: buildAuthInfo({ pubKey, sequence, fee: { amount: [], gasLimit: 0n } }),
     signatures: [new Uint8Array()],
   });
+}
+
+/** The hash a node reports for a transaction: SHA-256 of the `TxRaw` bytes, uppercase hex. */
+export function txHash(txRaw: Uint8Array): string {
+  return Array.from(sha256(txRaw), (b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
 }

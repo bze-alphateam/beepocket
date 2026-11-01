@@ -356,6 +356,23 @@ export class WalletService {
     return this.exclusive(() => this.signNow(address, signDoc));
   }
 
+  /**
+   * The 33-byte public key of one of the wallet's own addresses, derived on demand; only while
+   * unlocked (the weak lock holds no key). The send flow needs it to simulate and to sign.
+   */
+  pubKey(address: string): Promise<Result<Uint8Array>> {
+    return this.exclusive(async () => {
+      const opened = await this.requireKey();
+      if (!opened.ok) return opened;
+      const { key, vault } = opened.value;
+      const profile = await this.sessionProfile();
+      const entry = profile?.addresses.find((a) => a.address === address);
+      if (!entry) return fail(Codes.unknownAddress, 'No such address.');
+      const signer = new LocalSigner(() => this.deps.vault.openMnemonic(key, vault));
+      return ok(await signer.pubKey(entry.index));
+    });
+  }
+
   private async signNow(address: string, signDoc: Uint8Array): Promise<Result<Uint8Array>> {
     const opened = await this.requireKey();
     if (!opened.ok) return opened;

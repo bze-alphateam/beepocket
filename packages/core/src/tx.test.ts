@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { fromB64, goldenCases } from '../test/golden';
 import { TxRaw } from './proto/cosmos/tx/v1beta1/tx';
-import { buildBody, decodeAuthInfo, decodeTxBody, encodeMsgSend, simulationTxBytes } from './index';
+import { createHash } from 'node:crypto';
+import {
+  txHash,
+  buildBody,
+  decodeAuthInfo,
+  decodeTxBody,
+  encodeMsgSend,
+  simulationTxBytes,
+} from './index';
 
 const c = goldenCases[0];
 if (!c) throw new Error('no golden cases');
@@ -23,5 +31,14 @@ describe('buildBody', () => {
   it('defaults to an empty memo and a zero timeout height', () => {
     const body = decodeTxBody(buildBody({ messages: [] }));
     expect(body).toMatchObject({ messages: [], memo: '', timeoutHeight: '0' });
+  });
+});
+
+describe('txHash', () => {
+  it('is the uppercase SHA-256 hex of the TxRaw bytes', () => {
+    for (const g of goldenCases) {
+      const raw = fromB64(g.txRaw);
+      expect(txHash(raw)).toBe(createHash('sha256').update(raw).digest('hex').toUpperCase());
+    }
   });
 });

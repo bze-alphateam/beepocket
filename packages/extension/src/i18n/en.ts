@@ -4,6 +4,7 @@ import { settings } from './settings';
 import { onboarding } from './onboarding';
 import { home } from './home';
 import { lock } from './lock';
+import { send } from './send';
 import { activity } from './activity';
 
 /**
@@ -17,6 +18,7 @@ export const en = {
   ...addressBook,
   ...home,
   ...lock,
+  ...send,
   ...activity,
 } as const;
 
