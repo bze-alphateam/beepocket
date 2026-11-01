@@ -90,10 +90,32 @@ describe('Layout', () => {
 });
 
 describe('App', () => {
-  it('routes an unlocked wallet to the shell home screen', async () => {
+  it('routes an unlocked wallet to the token home screen', async () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    const bze = {
+      denom: 'ubze',
+      symbol: 'BZE',
+      name: 'BeeZee',
+      decimals: 6,
+      kind: 'native',
+      source: 'chain',
+      branding: null,
+    };
+    const answers: Record<string, unknown> = {
+      'wallet.state': { state: 'unlocked', retryAt: null },
+      'home.context': { network: 'mainnet', brandThemes: true },
+      'tokens.preferred': [bze],
+      'wallet.addresses': { addresses: [] },
+      'tokens.balances': { denom: 'ubze', addresses: [], total: '0', partial: false },
+      'tokens.theme': null,
+    };
     const client: Client = {
-      call: vi.fn(() =>
-        Promise.resolve({ ok: true as const, value: { state: 'unlocked', retryAt: null } }),
+      call: vi.fn((method: string) =>
+        Promise.resolve({ ok: true as const, value: answers[method] }),
       ) as Client['call'],
     };
     const events = { subscribe: () => () => undefined };
@@ -105,7 +127,12 @@ describe('App', () => {
         </LockEnvProvider>
       </ClientProvider>,
     );
-    await act(() => Promise.resolve());
-    expect(host.querySelector('h1')?.textContent).toBe('BeePocket');
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+    expect(host.querySelector('.bp-home-token')?.textContent).toContain('BZE');
+    vi.unstubAllGlobals();
   });
 });

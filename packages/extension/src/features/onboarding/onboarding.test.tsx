@@ -71,7 +71,7 @@ function mount(client: Client, route: OnboardingRoute = { name: 'onboarding.welc
   const seen: unknown[] = [];
   const table = {
     ...onboardingRoutes,
-    'shell.home': ({ route: r }: { route: { name: 'shell.home' } }) => {
+    'home.main': ({ route: r }: { route: { name: 'home.main' } }) => {
       seen.push(r);
       return <p>home</p>;
     },
@@ -327,7 +327,7 @@ describe('start with a token code', () => {
     expect(client.calls.filter(([m]) => m === 'tokens.add')).toEqual([
       ['tokens.add', { denom: GOLD.denom }],
     ]);
-    expect(seen).toEqual([{ name: 'shell.home' }]);
+    expect(seen).toEqual([{ name: 'home.main' }]);
   });
 
   it('says so when no token has the code', async () => {
@@ -416,7 +416,7 @@ describe('retries and navigation', () => {
     expect(adds).toEqual(
       [{ denom: 'ubze' }, { denom: GOLD.denom }, { denom: GOLD.denom }].slice(0, 3),
     );
-    expect(seen).toEqual([{ name: 'shell.home' }]);
+    expect(seen).toEqual([{ name: 'home.main' }]);
   });
 });
 
@@ -456,7 +456,7 @@ describe('pick tokens', () => {
       { denom: GOLD.denom },
       { denom: 'ubze' },
     ]);
-    expect(seen).toEqual([{ name: 'shell.home' }]);
+    expect(seen).toEqual([{ name: 'home.main' }]);
   });
 
   it('can leave BZE out and unselect', async () => {
