@@ -31,10 +31,11 @@ async function call(
   method: string,
   payload: unknown,
 ): Promise<Record<string, unknown>> {
-  return await page.evaluate((m): Promise<unknown> => chrome.runtime.sendMessage(m), {
+  const reply = await page.evaluate((m): Promise<unknown> => chrome.runtime.sendMessage(m), {
     method,
     payload,
   });
+  return reply as Record<string, unknown>;
 }
 
 test('testnet toggle switches the node, back again, and the phrase needs the password', async ({

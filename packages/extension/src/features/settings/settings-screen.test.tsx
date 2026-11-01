@@ -71,7 +71,7 @@ const flush = () => act(() => new Promise<void>((r) => setTimeout(r, 0)));
 async function open(client: FakeClient) {
   const { host } = render(
     <ClientProvider client={client}>
-      <Router table={table} initial={{ name: 'settings.main' }} />
+      <Router<TestRoute> table={table} initial={{ name: 'settings.main' }} />
     </ClientProvider>,
   );
   await flush();

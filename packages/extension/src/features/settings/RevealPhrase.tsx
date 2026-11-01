@@ -57,7 +57,7 @@ export function RevealPhrase({ onClose }: { onClose: () => void }) {
             type="password"
             value={password}
             onInput={setPassword}
-            error={error ?? undefined}
+            {...(error === null ? {} : { error })}
             disabled={busy}
             autoFocus
           />
