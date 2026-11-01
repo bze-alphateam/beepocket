@@ -25,6 +25,7 @@ export const addressBook = {
   'book.error.own':
     'This is one of your own addresses; it is already listed under “Your addresses”.',
   'book.error.duplicate': 'This address is already saved as {name}.',
+  'book.error.duplicateName': 'Another contact already has this name.',
   'book.error.generic': 'Could not save. Unlock your wallet and try again.',
   'book.error.load': 'Could not load the address book.',
   'book.rename': 'Rename {name}',

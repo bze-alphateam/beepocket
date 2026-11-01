@@ -208,3 +208,82 @@ describe('book.match', () => {
     });
   });
 });
+
+describe('normalisation and stored data', () => {
+  it('drops stored entries that break the rules, so a picker never returns them', async () => {
+    const t = setup({
+      addressBook: [
+        { name: 'Good', address: A },
+        { name: 'Bad', address: 'cosmos1abc' },
+        { name: '', address: B },
+        { name: 'Shout', address: A.toUpperCase() },
+      ],
+    });
+    const r = await t.call('book.list');
+    expect(r.ok && r.value.contacts).toEqual([{ name: 'Good', address: A }]);
+  });
+
+  it('treats an upper-case address as the same address everywhere', async () => {
+    const t = setup({ addressBook: [{ name: 'Alex', address: A }] });
+    expect(await t.call('book.add', { name: 'Again', address: A.toUpperCase() })).toMatchObject({
+      ok: false,
+      error: { code: 'duplicate-contact' },
+    });
+    expect(await t.call('book.add', { name: 'Me', address: OWN2.toUpperCase() })).toMatchObject({
+      ok: false,
+      error: { code: 'own-address' },
+    });
+    expect(await t.call('book.match', { input: OWN2.toUpperCase() })).toEqual({
+      ok: true,
+      value: { kind: 'own', label: 'Savings' },
+    });
+    expect(await t.call('book.match', { input: A.toUpperCase() })).toEqual({
+      ok: true,
+      value: { kind: 'contact', name: 'Alex' },
+    });
+    expect(await t.call('book.update', { name: 'Alexa', address: A.toUpperCase() })).toMatchObject({
+      ok: true,
+    });
+    expect(await t.call('book.remove', { address: A.toUpperCase() })).toEqual({
+      ok: true,
+      value: { contacts: [] },
+    });
+    const added = await t.call('book.add', { name: 'Bo', address: B.toUpperCase() });
+    expect(added).toEqual({ ok: true, value: { contacts: [{ name: 'Bo', address: B }] } });
+  });
+
+  it('counts code points, strips format characters and needs a visible character', async () => {
+    const t = setup();
+    expect(await t.call('book.add', { name: '😀'.repeat(32), address: A })).toMatchObject({
+      ok: true,
+    });
+    expect(await t.call('book.add', { name: '😀'.repeat(33), address: B })).toMatchObject({
+      ok: false,
+      error: { code: 'invalid-name' },
+    });
+    expect(await t.call('book.add', { name: '\u200b\u202e \u2060', address: B })).toMatchObject({
+      ok: false,
+      error: { code: 'invalid-name' },
+    });
+    const r = await t.call('book.add', { name: 'Al\u202eex', address: B });
+    expect(r.ok && r.value.contacts).toContainEqual({ name: 'Alex', address: B });
+  });
+
+  it('refuses a name another contact has, ignoring case', async () => {
+    const t = setup({
+      addressBook: [
+        { name: 'Alex', address: A },
+        { name: 'Bo', address: B },
+      ],
+    });
+    expect(await t.call('book.add', { name: 'ALEX', address: C })).toMatchObject({
+      ok: false,
+      error: { code: 'duplicate-name' },
+    });
+    expect(await t.call('book.update', { name: 'alex', address: B })).toMatchObject({
+      ok: false,
+      error: { code: 'duplicate-name' },
+    });
+    expect(await t.call('book.update', { name: 'ALEX', address: A })).toMatchObject({ ok: true });
+  });
+});

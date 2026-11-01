@@ -1,9 +1,24 @@
-import { isBzeAddress } from '@beepocket/core';
 import { useState } from 'preact/hooks';
-import { t } from '../../i18n';
+import { t, type StringKey } from '../../i18n';
 import { BookErrorCodes, type Contact } from '../../protocol';
 import { useClient } from '../../popup/client-context';
 import { Banner, Button, TextField } from '../../ui';
+import { normalizeAddress, normalizeName } from './contact';
+
+function errorKey(code: string): StringKey {
+  switch (code) {
+    case BookErrorCodes.ownAddress:
+      return 'book.error.own';
+    case BookErrorCodes.duplicateName:
+      return 'book.error.duplicateName';
+    case BookErrorCodes.invalidName:
+      return 'book.error.name';
+    case BookErrorCodes.invalidAddress:
+      return 'book.error.address';
+    default:
+      return 'book.error.generic';
+  }
+}
 
 export interface ContactFormProps {
   /** Present when editing: the address is fixed and only the name changes. */
@@ -25,15 +40,15 @@ export function ContactForm({ existing, onDone, onCancel, onRename, contacts }: 
   const [serverError, setServerError] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const nameOk = name.trim().length >= 1 && name.trim().length <= 32;
-  const addressOk = isBzeAddress(address.trim());
+  const nameOk = normalizeName(name) !== null;
+  const addressOk = normalizeAddress(address) !== null;
   const nameError = touched && !nameOk ? t('book.error.name') : undefined;
   const addressError =
     existing || !(touched || address !== '') || addressOk ? undefined : t('book.error.address');
 
   const duplicate =
     serverError?.code === BookErrorCodes.duplicate
-      ? contacts.find((c) => c.address === address.trim())
+      ? contacts.find((c) => c.address === normalizeAddress(address))
       : undefined;
 
   const submit = (e: Event) => {
@@ -67,13 +82,7 @@ export function ContactForm({ existing, onDone, onCancel, onRename, contacts }: 
         disabled={existing !== undefined}
         {...(addressError === undefined ? {} : { error: addressError })}
       />
-      {serverError && !duplicate && (
-        <Banner tone="red">
-          {serverError.code === BookErrorCodes.ownAddress
-            ? t('book.error.own')
-            : t('book.error.generic')}
-        </Banner>
-      )}
+      {serverError && !duplicate && <Banner tone="red">{t(errorKey(serverError.code))}</Banner>}
       {duplicate && (
         <Banner tone="amber">
           {t('book.error.duplicate', { name: duplicate.name })}{' '}

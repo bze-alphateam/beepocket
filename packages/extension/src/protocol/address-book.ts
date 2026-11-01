@@ -2,6 +2,8 @@
 export const BookErrorCodes = {
   /** The name is empty or longer than 32 characters. */
   invalidName: 'invalid-name',
+  /** Another contact already has this name (compared case-insensitively). */
+  duplicateName: 'duplicate-name',
   /** Not a BeeZee address. */
   invalidAddress: 'invalid-address',
   /** The address is already saved; the message names the existing contact. */
