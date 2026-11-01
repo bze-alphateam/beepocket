@@ -1,6 +1,7 @@
 import {
   Argon2idKdf,
   deriveAccount,
+  LocalSigner,
   Vault,
   WebCryptoCipher,
   type ChainAccount,
@@ -507,20 +508,64 @@ describe('reveal, rename, mnemonic secrecy', () => {
 });
 
 describe('signDirect', () => {
-  it('signs for an own address while unlocked and re-arms the timers', async () => {
+  const doc = new Uint8Array([1, 2, 3]);
+  const bytes = (b: Uint8Array): string => Buffer.from(b).toString('hex');
+
+  it('signs with the key of the requested address and re-arms the timers', async () => {
     const t = await created();
+    value(await t.call('wallet.deriveNext', {}));
     t.alarms.active.clear();
-    const sig = value(await t.service.signDirect(addr(0), new Uint8Array([1, 2, 3])));
-    expect(sig).toHaveLength(64);
+    const reference = new LocalSigner(() => Promise.resolve(PHRASE));
+    const sig1 = value(await t.service.signDirect(addr(1), doc));
+    const sig0 = value(await t.service.signDirect(addr(0), doc));
+    // RFC 6979 signatures are deterministic: equal to the reference means that exact key.
+    expect(bytes(sig1)).toBe(bytes(await reference.signDirect(1, doc)));
+    expect(bytes(sig0)).toBe(bytes(await reference.signDirect(0, doc)));
+    expect(bytes(sig0)).not.toBe(bytes(sig1));
     expect(t.alarms.active.size).toBe(2);
   });
 
   it('needs the password in weak lock, refuses unknown addresses and a locked wallet', async () => {
     const t = await created();
-    expect(code(await t.service.signDirect(addr(7), new Uint8Array(1)))).toBe('unknown_address');
+    expect(code(await t.service.signDirect(addr(7), doc))).toBe('unknown_address');
+    expect(code(await t.service.signDirect('bze1notanaddress', doc))).toBe('unknown_address');
     await t.service.onAlarm('weak-lock');
-    expect(code(await t.service.signDirect(addr(0), new Uint8Array(1)))).toBe('needs-password');
+    expect(code(await t.service.signDirect(addr(0), doc))).toBe('needs-password');
     await t.service.lock();
-    expect(code(await t.service.signDirect(addr(0), new Uint8Array(1)))).toBe('wallet_locked');
+    expect(code(await t.service.signDirect(addr(0), doc))).toBe('wallet_locked');
+  });
+
+  it('a lock racing a signature waits for it', async () => {
+    const t = await created();
+    const [signed] = await Promise.all([t.service.signDirect(addr(0), doc), t.service.lock()]);
+    expect(signed.ok).toBe(true);
+    expect(t.sessionArea.data.size).toBe(0);
+  });
+});
+
+describe('storage safety', () => {
+  it('writes vault and profile in one atomic call', async () => {
+    const t = await rig();
+    const calls: string[][] = [];
+    const original = t.local.set.bind(t.local);
+    t.local.set = (items) => {
+      calls.push(Object.keys(items));
+      return original(items);
+    };
+    value(await t.call('wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE }));
+    value(await t.call('wallet.importWallet', { password: PASSWORD, mnemonic: PHRASE }));
+    const withVault = calls.filter((keys) => keys.includes('vault'));
+    expect(withVault).toHaveLength(2);
+    for (const keys of withVault) expect(keys).toContain('profile');
+  });
+
+  it('a damaged throttle record means the strictest lockout, not a fresh start', async () => {
+    const t = await created();
+    await t.call('wallet.lock', {});
+    t.local.data.set('throttle', { failures: 'x' });
+    const blocked = value(await t.call('wallet.unlock', { password: PASSWORD }));
+    expect(blocked).toEqual({ status: 'throttled', retryAt: t.clock.t + 900_000 });
+    t.clock.t += 900_000;
+    expect(value(await t.call('wallet.unlock', { password: PASSWORD })).status).toBe('ok');
   });
 });

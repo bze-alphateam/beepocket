@@ -45,6 +45,8 @@ export const SESSION_PROFILE = 'wallet.profile';
 
 const CREATE_WORDS = 24;
 const IMPORT_SCAN = 5;
+const CORRUPT_FAILURES = 30;
+const MAX_LOCKOUT_MS = 15 * 60_000;
 
 export interface WalletDeps {
   storage: Storage;
@@ -217,7 +219,11 @@ export class WalletService {
   }
 
   /** Full lock: nothing stays in session storage. */
-  async lock(): Promise<void> {
+  lock(): Promise<void> {
+    return this.exclusive(() => this.lockNow());
+  }
+
+  private async lockNow(): Promise<void> {
     await this.deps.session.remove(SESSION_KEY);
     await this.deps.session.remove(SESSION_PROFILE);
     await this.deps.alarms.clear(WEAK_LOCK_ALARM);
@@ -225,7 +231,11 @@ export class WalletService {
   }
 
   /** Weak lock: only K goes, the decrypted profile stays so the wallet can still be shown. */
-  async weakLock(): Promise<void> {
+  weakLock(): Promise<void> {
+    return this.exclusive(() => this.weakLockNow());
+  }
+
+  private async weakLockNow(): Promise<void> {
     await this.deps.session.remove(SESSION_KEY);
     await this.deps.alarms.clear(WEAK_LOCK_ALARM);
   }
@@ -322,7 +332,11 @@ export class WalletService {
   // ---- signing seam ----
 
   /** Signs with the key of one of the wallet's own addresses; only while unlocked. */
-  async signDirect(address: string, signDoc: Uint8Array): Promise<Result<Uint8Array>> {
+  signDirect(address: string, signDoc: Uint8Array): Promise<Result<Uint8Array>> {
+    return this.exclusive(() => this.signNow(address, signDoc));
+  }
+
+  private async signNow(address: string, signDoc: Uint8Array): Promise<Result<Uint8Array>> {
     const opened = await this.requireKey();
     if (!opened.ok) return opened;
     const { key, vault } = opened.value;
@@ -344,7 +358,15 @@ export class WalletService {
 
   private async loadThrottle(): Promise<ThrottleState> {
     const stored = await this.deps.storage.get(THROTTLE_KEY);
-    return validThrottle(stored) ? stored : { ...INITIAL_THROTTLE_STATE };
+    if (stored === undefined) return { ...INITIAL_THROTTLE_STATE };
+    if (validThrottle(stored)) return stored;
+    // A damaged record must not hand out free guesses: fall back to the strictest lockout.
+    const strict = {
+      failures: CORRUPT_FAILURES,
+      lockedUntil: this.deps.clock.now() + MAX_LOCKOUT_MS,
+    };
+    await this.deps.storage.set(THROTTLE_KEY, strict);
+    return strict;
   }
 
   private async sessionKey(): Promise<Uint8Array | null> {
@@ -477,9 +499,11 @@ export class WalletService {
   ): Promise<Result<{ addresses: WalletAddress[] }>> {
     const created = await this.deps.vault.create(password, mnemonic, profile);
     try {
-      await this.lock();
-      await this.deps.storage.set(VAULT_KEY, created.vault);
-      await this.deps.storage.set(PROFILE_KEY, created.profile);
+      await this.lockNow();
+      await this.deps.storage.setMany({
+        [VAULT_KEY]: created.vault,
+        [PROFILE_KEY]: created.profile,
+      });
       await this.deps.storage.remove(THROTTLE_KEY);
       await this.deps.session.set(SESSION_KEY, toBase64(created.key));
       await this.deps.session.set(SESSION_PROFILE, profile);

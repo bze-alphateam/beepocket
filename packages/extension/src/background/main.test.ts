@@ -1,5 +1,5 @@
 import { webcrypto } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeArea } from '../platform/test-support';
 import { startBackground, type BackgroundEnv, type MessageSender } from './main';
 
@@ -19,9 +19,27 @@ class FlakySession extends FakeArea {
   }
 }
 
+/** Rejects the first `remove`: the service's own lock fails, the direct clear must still work. */
+class FailingRemove extends FakeArea {
+  private armed = false;
+
+  arm(): void {
+    this.armed = true;
+  }
+
+  override remove(keys: string): Promise<void> {
+    if (this.armed && keys === 'wallet.key') {
+      this.armed = false;
+      return Promise.reject(new Error('storage busy'));
+    }
+    return super.remove(keys);
+  }
+}
+
 function start(session: FakeArea = new FakeArea()) {
   const local = new FakeArea();
   let listener: Listener | undefined;
+  let onAlarm: ((alarm: { name: string }) => void) | undefined;
   startBackground({
     chrome: {
       storage: { local, session },
@@ -36,7 +54,11 @@ function start(session: FakeArea = new FakeArea()) {
       alarms: {
         create: () => Promise.resolve(),
         clear: () => Promise.resolve(true),
-        onAlarm: { addListener: () => undefined },
+        onAlarm: {
+          addListener: (l) => {
+            onAlarm = l;
+          },
+        },
       },
     },
     crypto: webcrypto as unknown as Crypto,
@@ -52,7 +74,8 @@ function start(session: FakeArea = new FakeArea()) {
       });
       if (async !== true) resolve({ async, reply });
     });
-  return { send, local, session };
+  const alarm = (name: string) => onAlarm?.({ name });
+  return { send, local, session, alarm };
 }
 
 const ping = { method: 'app.ping', payload: { nonce: 'abc' } };
@@ -112,5 +135,21 @@ describe('startBackground', () => {
     expect(first.reply).toMatchObject({ ok: false, error: { code: 'internal' } });
     const second = await send(ping);
     expect(second.reply).toMatchObject({ ok: true, value: { nonce: 'abc' } });
+  });
+
+  it('still drops the session secrets when the auto-lock fails', async () => {
+    const failing = new FailingRemove();
+    const t = start(failing);
+    const phrase = `${'abandon '.repeat(23)}art`;
+    await t.send({
+      method: 'wallet.createWallet',
+      payload: { password: 'correct horse', mnemonic: phrase },
+    });
+    expect(t.session.data.size).toBe(2);
+    failing.arm();
+    t.alarm('full-lock');
+    await vi.waitFor(() => {
+      expect(t.session.data.size).toBe(0);
+    });
   });
 });

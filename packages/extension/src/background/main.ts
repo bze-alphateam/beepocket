@@ -5,6 +5,8 @@ import {
   createWalletService,
   type AlarmEventLike,
   type AlarmsLike,
+  SESSION_KEY,
+  SESSION_PROFILE,
   type WalletService,
 } from '../features/wallet';
 import { registerHandlers } from './handlers';
@@ -61,8 +63,25 @@ export function startBackground(env: BackgroundEnv): void {
   env.chrome.alarms.onAlarm.addListener((alarm) => {
     void registry()
       .then((r) => r.wallet.onAlarm(alarm.name))
-      .catch(() => undefined);
+      .catch(() => retryLock(env, alarm.name));
   });
+}
+
+/**
+ * An auto-lock that failed must not leave the wallet open: try the service once more, then
+ * drop the session secrets directly. Nothing is logged (the reason may carry secrets).
+ */
+async function retryLock(env: BackgroundEnv, alarm: string): Promise<void> {
+  try {
+    const { wallet } = await createRegistry(env);
+    await wallet.onAlarm(alarm);
+    return;
+  } catch {
+    // fall through to the direct clear
+  }
+  const session = env.chrome.storage.session;
+  const keys = alarm === 'weak-lock' ? [SESSION_KEY] : [SESSION_KEY, SESSION_PROFILE];
+  for (const key of keys) await session.remove(key).catch(() => undefined);
 }
 
 interface Started {

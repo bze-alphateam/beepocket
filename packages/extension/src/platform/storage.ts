@@ -13,6 +13,10 @@ export class ChromeStorage implements Storage {
     return this.area.set({ [key]: value });
   }
 
+  setMany(items: Record<string, unknown>): Promise<void> {
+    return this.area.set(items);
+  }
+
   remove(key: string): Promise<void> {
     return this.area.remove(key);
   }
