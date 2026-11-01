@@ -1,11 +1,6 @@
-import { version } from '@beepocket/core';
+import { initialRoute, routeTable, type AppRoute } from '../features';
+import { Router } from './router';
 
 export function App() {
-  return (
-    <main class="app">
-      <img src="icons/icon-48.png" width="48" height="48" alt="" />
-      <h1>BeePocket</h1>
-      <small>v{version}</small>
-    </main>
-  );
+  return <Router<AppRoute> table={routeTable} initial={initialRoute} />;
 }

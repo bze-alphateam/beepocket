@@ -1,4 +1,3 @@
-// Placeholder MV3 service worker; wallet logic lands in later stories.
-chrome.runtime.onInstalled.addListener(() => {
-  // Intentionally empty.
-});
+import { startBackground } from './background/main';
+
+startBackground({ chrome, crypto, fetch: fetch.bind(globalThis) });
