@@ -1,6 +1,8 @@
 import type { Platform } from '../../platform';
 import type { HandlerRegistry } from '../registry';
 import type { Services } from '../services';
+import { registerTokenHandlers } from '../../features/tokens/handlers';
+import { walletTokenSeams } from '../../features/tokens/wallet-seams';
 import type { WalletService } from '../../features/wallet';
 import { registerWalletHandlers } from '../../features/wallet/handlers';
 import { registerAppHandlers } from './app';
@@ -16,4 +18,5 @@ export interface HandlerDeps {
 export function registerHandlers(registry: HandlerRegistry, deps: HandlerDeps): void {
   registerAppHandlers(registry, deps);
   registerWalletHandlers(registry, deps.wallet);
+  registerTokenHandlers(registry, deps, walletTokenSeams(deps.wallet));
 }
