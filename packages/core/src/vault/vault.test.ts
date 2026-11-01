@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   Argon2idKdf,
   DecryptError,
+  InvalidRecordError,
   WebCryptoCipher,
   WrongPasswordError,
   Vault,
@@ -150,5 +151,78 @@ describe('Vault', () => {
     await expect(
       vault.changePassword('nope-nope', 'new-password', created.vault, created.profile),
     ).rejects.toBeInstanceOf(WrongPasswordError);
+  });
+
+  it('does not accept the profile record as the vault, or the other way round', async () => {
+    const vault = makeVault();
+    const created = await vault.create('pw-pw-pw-pw', mnemonic, profile);
+    await expect(vault.openMnemonic(created.key, created.profile)).rejects.toBeInstanceOf(
+      DecryptError,
+    );
+    await expect(vault.openProfile(created.key, created.vault)).rejects.toBeInstanceOf(
+      DecryptError,
+    );
+  });
+
+  it('binds the KDF parameters to the ciphertext', async () => {
+    const vault = makeVault();
+    const created = await vault.create('pw-pw-pw-pw', mnemonic, profile);
+    const changed = { ...created.vault, kdf: { ...created.vault.kdf, t: 2 } };
+    await expect(vault.openMnemonic(created.key, changed)).rejects.toBeInstanceOf(DecryptError);
+  });
+
+  it('rejects out-of-bounds KDF parameters before deriving anything', async () => {
+    let calls = 0;
+    const counting: Kdf = {
+      derive: () => {
+        calls++;
+        return Promise.resolve(new Uint8Array(32));
+      },
+    };
+    const vault = makeVault(fast, counting);
+    const created = await vault.create('pw-pw-pw-pw', mnemonic, profile);
+    const tweaks: Partial<KdfParams>[] = [
+      { m: 2 ** 30 },
+      { m: 4 },
+      { t: 1000 },
+      { p: 64 },
+      { t: 0 },
+      { m: 1.5 },
+    ];
+    calls = 0;
+    for (const tweak of tweaks) {
+      const bad = { ...created.vault, kdf: { ...created.vault.kdf, ...tweak } };
+      await expect(vault.unlock('pw-pw-pw-pw', bad)).rejects.toBeInstanceOf(InvalidRecordError);
+    }
+    expect(calls).toBe(0);
+  });
+
+  it('rejects records with invalid base64 or wrong field sizes', async () => {
+    const vault = makeVault();
+    const created = await vault.create('pw-pw-pw-pw', mnemonic, profile);
+    const bads: EncryptedRecord[] = [
+      { ...created.vault, nonce: '!!!!' },
+      { ...created.vault, ct: 'not base64***' },
+      { ...created.vault, kdf: { ...created.vault.kdf, salt: '%%' } },
+      { ...created.vault, nonce: 'AAAA' },
+      { ...created.vault, ct: 'AAAA' },
+      { ...created.vault, kdf: { ...created.vault.kdf, salt: 'AAAA' } },
+    ];
+    for (const bad of bads) {
+      await expect(vault.unlock('pw-pw-pw-pw', bad)).rejects.toBeInstanceOf(InvalidRecordError);
+      await expect(vault.openMnemonic(created.key, bad)).rejects.toBeInstanceOf(InvalidRecordError);
+    }
+  });
+
+  it('refuses a random source that returns the wrong number of bytes', async () => {
+    const short = new Vault({
+      random: { bytes: (n) => new Uint8Array(n - 1) },
+      cipher,
+      kdf: new Argon2idKdf(),
+      params: fast,
+    });
+    await expect(short.create('pw-pw-pw-pw', mnemonic, profile)).rejects.toThrow(
+      'wrong number of bytes',
+    );
   });
 });
