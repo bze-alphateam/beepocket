@@ -1,4 +1,4 @@
-import { addressBook } from './address-book';
+import { addressBook } from './book';
 import { app } from './app';
 
 /**

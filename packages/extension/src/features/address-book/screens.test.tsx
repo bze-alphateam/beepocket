@@ -46,7 +46,9 @@ function mockClient(initial: Contact[]) {
   return { client, calls };
 }
 
-const flush = () => act(() => new Promise<void>((r) => setTimeout(r, 0)));
+const flush = async () => {
+  for (let i = 0; i < 3; i++) await act(() => new Promise<void>((r) => setTimeout(r, 0)));
+};
 const type = (el: Element | null, value: string) => {
   (el as HTMLInputElement).value = value;
   fireEvent(el, 'input');
