@@ -77,8 +77,6 @@ export function PasswordForm(props: PasswordFormProps) {
           </div>
         </>
       )}
-        <Banner tone="amber">{t('lock.retryIn', { time: formatCountdown(left) })}</Banner>
-      )}
       <Button type="submit" disabled={blocked || busy || password === ''}>
         {busy ? t('lock.unlocking') : props.submitLabel}
       </Button>
