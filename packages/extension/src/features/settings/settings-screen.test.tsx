@@ -94,7 +94,6 @@ describe('SettingsScreen', () => {
   it('saves the brand themes flag and a lock timer', async () => {
     const client = new FakeClient();
     const host = await open(client);
-    const sw = host.querySelectorAll<HTMLInputElement>('input[role="switch"]')[0];
     const sw = must(host.querySelector<HTMLInputElement>('input[role="switch"]'));
     sw.checked = false;
     fireEvent(sw, 'change');
