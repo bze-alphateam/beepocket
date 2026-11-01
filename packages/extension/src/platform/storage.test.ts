@@ -8,6 +8,8 @@ describe('ChromeStorage', () => {
     expect(await storage.get('k')).toBeUndefined();
     await storage.set('k', { a: 1 });
     expect(await storage.get('k')).toEqual({ a: 1 });
+    await storage.setMany({ a: 1, b: 2 });
+    expect([await storage.get('a'), await storage.get('b')]).toEqual([1, 2]);
     await storage.remove('k');
     expect(await storage.get('k')).toBeUndefined();
   });
