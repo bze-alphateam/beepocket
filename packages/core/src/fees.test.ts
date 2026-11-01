@@ -126,14 +126,29 @@ describe('FeeEstimator.feeTokenRates', () => {
     expect((await estimator(chain).feeTokenRates()).has(X)).toBe(false);
   });
 
-  it('keeps the first pool of a pair', async () => {
-    const first = deepPool;
+  const ineligible: [string, Pool][] = [
+    ['empty', pool(NATIVE, X, 1_000_000_000_000n, 0n)],
+    ['halted', pool(NATIVE, X, 1_000_000_000_000n, 500_000_000_000n, { halted: true })],
+    ['too thin', pool(NATIVE, X, MIN_LIQUIDITY - 1n, 500_000_000_000n)],
+  ];
+
+  it.each(ineligible)(
+    'an %s first pool does not shadow an eligible second pool',
+    async (_, bad) => {
+      const rates = await estimator(chainWith([bad, deepPool])).feeTokenRates();
+      expect(rates.get(X)).toEqual((await estimator(chainWith([deepPool])).feeTokenRates()).get(X));
+    },
+  );
+
+  it('never uses an ineligible pool, even when every pool of the pair is ineligible', async () => {
+    const rates = await estimator(chainWith(ineligible.map(([, p]) => p))).feeTokenRates();
+    expect(rates.has(X)).toBe(false);
+  });
+
+  it('keeps the first eligible pool of a pair', async () => {
     const second = pool(NATIVE, X, 2_000_000_000_000n, 500_000_000_000n);
-    const [a, b] = await Promise.all([
-      estimator(chainWith([first, second])).feeTokenRates(),
-      estimator(chainWith([first])).feeTokenRates(),
-    ]);
-    expect(a.get(X)).toEqual(b.get(X));
+    const rates = await estimator(chainWith([deepPool, second])).feeTokenRates();
+    expect(rates.get(X)).toEqual((await estimator(chainWith([deepPool])).feeTokenRates()).get(X));
   });
 
   it('refuses a gas price that is not in the native denom', async () => {

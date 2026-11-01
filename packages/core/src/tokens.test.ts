@@ -94,7 +94,6 @@ describe('TokenResolver.resolve', () => {
   it.each([
     ['Scan is down', () => Promise.reject(new TransportError('offline'))],
     ['Scan does not know the denom', () => Promise.resolve(null)],
-    ['Scan has no symbol yet', () => Promise.resolve({ ...usdc, symbol: null })],
   ])('shows an IBC denom shortened when %s', async (_, token) => {
     const chain = stubChain({ denomBranding: vi.fn().mockResolvedValue(null) });
     const info = await new TokenResolver(chain, stubScan({ token: vi.fn(token) })).resolve(IBC);
@@ -103,6 +102,20 @@ describe('TokenResolver.resolve', () => {
       decimals: 0,
       kind: 'ibc',
       source: 'fallback',
+    });
+  });
+
+  it('keeps the exponent Scan gave when it has no symbol yet', async () => {
+    const scan = stubScan({
+      token: vi.fn().mockResolvedValue({ ...usdc, symbol: null, name: null, exponent: 8 }),
+    });
+    const chain = stubChain({ denomBranding: vi.fn().mockResolvedValue(null) });
+    const info = await new TokenResolver(chain, scan).resolve(IBC);
+    expect(info).toMatchObject({
+      symbol: 'ibc/27394F…',
+      name: 'ibc/27394F…',
+      decimals: 8,
+      source: 'scan',
     });
   });
 
@@ -143,7 +156,7 @@ describe('TokenResolver.resolve', () => {
     const chain = stubChain({
       denomMetadata: vi.fn().mockResolvedValue({
         ...vdlMeta,
-        symbol: 'A‮B\u0000C',
+        symbol: 'A\u202eB\u0000C',
         name: 'N'.repeat(500),
       }),
       denomBranding: vi.fn().mockResolvedValue(null),
@@ -153,12 +166,16 @@ describe('TokenResolver.resolve', () => {
     expect(info.name).toHaveLength(64);
   });
 
-  it('falls back when the symbol is empty after cleaning', async () => {
+  it('keeps the chain exponent but guesses the symbol when it is empty after cleaning', async () => {
     const chain = stubChain({
-      denomMetadata: vi.fn().mockResolvedValue({ ...vdlMeta, symbol: ' ‮ ' }),
+      denomMetadata: vi.fn().mockResolvedValue({ ...vdlMeta, symbol: ' \u202e ' }),
       denomBranding: vi.fn().mockResolvedValue(null),
     });
-    expect((await new TokenResolver(chain, stubScan()).resolve(VDL)).source).toBe('fallback');
+    expect(await new TokenResolver(chain, stubScan()).resolve(VDL)).toMatchObject({
+      symbol: 'UVDL',
+      decimals: 6,
+      source: 'chain',
+    });
   });
 
   it.each(['', 'a b', 'x'.repeat(129), '1abc', 'ubze\n', '../x'])(

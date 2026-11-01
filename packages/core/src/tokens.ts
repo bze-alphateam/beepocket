@@ -32,7 +32,7 @@ const MAX_SYMBOL_LENGTH = 32;
 const MAX_NAME_LENGTH = 64;
 // Control characters and bidi overrides: token creators choose these strings.
 // eslint-disable-next-line no-control-regex
-const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 function kindOf(denom: string): TokenKind {
   if (denom === NATIVE_DENOM) return 'native';
@@ -121,27 +121,31 @@ export class TokenResolver {
   ): Promise<Pick<TokenInfo, 'symbol' | 'name' | 'decimals' | 'source'>> {
     if (kind === 'native') return { symbol: 'BZE', name: 'BeeZee', decimals: 6, source: 'builtin' };
 
+    // Decimals from a source that answered are authoritative even when its text is
+    // unusable: guessing 0 would show wrong amounts. Only the text falls back.
+    let found: { symbol: string | null; name: string | null; decimals: number } | null;
+    let source: TokenSource;
     if (kind === 'ibc') {
       // The chain only holds a placeholder for IBC denoms; Scan has the real data.
       const token = await this.scan.token(denom).catch(() => null);
-      const symbol = token?.symbol ? cleanText(token.symbol, MAX_SYMBOL_LENGTH) : null;
-      if (token && symbol)
-        return {
-          symbol,
-          name: (token.name ? cleanText(token.name, MAX_NAME_LENGTH) : null) ?? symbol,
-          decimals: token.exponent,
-          source: 'scan',
-        };
+      found = token && {
+        symbol: token.symbol && cleanText(token.symbol, MAX_SYMBOL_LENGTH),
+        name: token.name && cleanText(token.name, MAX_NAME_LENGTH),
+        decimals: token.exponent,
+      };
+      source = 'scan';
     } else {
       const meta = await this.chain.denomMetadata(denom);
-      const symbol = meta ? cleanText(meta.symbol, MAX_SYMBOL_LENGTH) : null;
-      if (meta && symbol)
-        return {
-          symbol,
-          name: cleanText(meta.name, MAX_NAME_LENGTH) ?? symbol,
-          decimals: meta.exponent,
-          source: 'chain',
-        };
+      found = meta && {
+        symbol: cleanText(meta.symbol, MAX_SYMBOL_LENGTH),
+        name: cleanText(meta.name, MAX_NAME_LENGTH),
+        decimals: meta.exponent,
+      };
+      source = 'chain';
+    }
+    if (found) {
+      const symbol = found.symbol ?? fallbackSymbol(denom, kind);
+      return { symbol, name: found.name ?? symbol, decimals: found.decimals, source };
     }
 
     const symbol = fallbackSymbol(denom, kind);
