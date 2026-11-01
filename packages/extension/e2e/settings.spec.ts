@@ -22,6 +22,11 @@ async function mockNodes(context: BrowserContext): Promise<void> {
         },
       });
     }
+    if (url.pathname.endsWith('/supply/by_denom')) {
+      return route.fulfill({
+        json: { amount: { denom: url.searchParams.get('denom'), amount: '1000000' } },
+      });
+    }
     return route.fulfill({ status: 404, json: { code: 5, message: 'not found', details: [] } });
   });
 }
@@ -76,4 +81,39 @@ test('testnet toggle switches the node, back again, and the phrase needs the pas
   expect(await call(page, 'settings.set', { fullLockMinutes: 1 })).toMatchObject({
     error: { code: 'invalid_settings' },
   });
+});
+
+test('home settings icon, Testnet toggle with pill, and the reveal sheet in the popup', async ({
+  context,
+  extensionId,
+}) => {
+  // Creating the wallet runs the real key derivation, which is slow on CI.
+  test.setTimeout(90_000);
+  await mockNodes(context);
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await call(page, 'wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE });
+  await call(page, 'tokens.add', { denom: 'ubze' });
+  await page.reload();
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.locator('.bp-pill')).toHaveCount(0);
+
+  await page.getByRole('switch', { name: /Testnet/ }).check();
+  await expect(page.getByText('Pick your tokens')).toBeVisible();
+  await expect(page.locator('.bp-pill')).toHaveText('Testnet');
+  expect(await call(page, 'network.get', {})).toEqual({ ok: true, value: { id: 'testnet' } });
+
+  await page.getByRole('button', { name: 'Switch network' }).click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('switch', { name: /Testnet/ })).not.toBeChecked();
+  await expect(page.locator('.bp-pill')).toHaveCount(0);
+
+  await page.getByRole('button', { name: /Show recovery phrase/ }).click();
+  await page.getByLabel('Password').fill('wrong password');
+  await page.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect(page.getByText('Wrong password.')).toBeVisible();
+  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect(page.locator('.bp-phrase li')).toHaveCount(24);
 });

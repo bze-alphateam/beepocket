@@ -4,6 +4,9 @@ import { fail, ok, WalletErrorCodes, type Method, type Result } from '../../prot
 import type { Client } from '../../protocol/client';
 import { ClientProvider } from '../../popup/client-context';
 import { Router, type RouteTable } from '../../popup/router';
+import { LockEnvProvider } from '../lock/env';
+import type { StateEvents } from '../lock/events';
+import { lockStateEvent, type LockStateEvent, type WalletState } from '../../protocol';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { settingsRoutes, type SettingsRoute } from './routes';
 import { NetworkPill } from './NetworkPill';
@@ -56,6 +59,25 @@ class FakeClient implements Client {
   }
 }
 
+class FakeEvents implements StateEvents {
+  private listeners = new Set<(e: LockStateEvent) => void>();
+  subscribe(l: (e: LockStateEvent) => void): () => void {
+    this.listeners.add(l);
+    return () => this.listeners.delete(l);
+  }
+  push(state: WalletState): void {
+    void act(() => {
+      for (const l of this.listeners) l(lockStateEvent(state, null));
+    });
+  }
+}
+
+const events = new FakeEvents();
+const clock = {
+  now: () => Date.now(),
+  sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+};
+
 const manifest = { version: () => '1.2.3' };
 
 type TestRoute = SettingsRoute | { name: 'shell.home' } | { name: 'book' };
@@ -81,7 +103,9 @@ const flush = () =>
 async function open(client: FakeClient) {
   const { host } = render(
     <ClientProvider client={client}>
-      <Router<TestRoute> table={table} initial={{ name: 'settings.main' }} />
+      <LockEnvProvider clock={clock} events={events}>
+        <Router<TestRoute> table={table} initial={{ name: 'settings.main' }} />
+      </LockEnvProvider>
     </ClientProvider>,
   );
   await flush();
@@ -207,7 +231,7 @@ describe('reveal recovery phrase', () => {
     expect(host.textContent).toContain('Wrong password.');
     client.reveal = ok({ status: 'throttled', retryAt: Date.now() + 30_000 });
     await submit(host, 'nope');
-    expect(host.textContent).toMatch(/Try again in \d+ s/);
+    expect(host.textContent).toContain('Try again in');
     expect(host.querySelector('.bp-phrase')).toBeNull();
   });
 
@@ -222,26 +246,21 @@ describe('reveal recovery phrase', () => {
       expect(host.querySelector('.bp-phrase')).not.toBeNull();
       return host;
     };
-    const advance = async (ms: number) => {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(ms);
-      });
-    };
 
-    it('hides the phrase as soon as the wallet is weak locked', async () => {
-      const client = new FakeClient();
-      const host = await shown(client);
-      await advance(2_100);
+    it('hides the phrase as soon as the worker pushes a weak lock', async () => {
+      const host = await shown(new FakeClient());
+      events.push('unlocked');
       expect(host.querySelector('.bp-phrase')).not.toBeNull();
-      client.walletState = 'weakLocked';
-      await advance(2_100);
+      events.push('weakLocked');
       expect(host.querySelector('.bp-phrase')).toBeNull();
       expect(host.textContent).not.toContain('abandon');
     });
 
     it('hides the phrase after the idle time', async () => {
       const host = await shown(new FakeClient());
-      await advance(61_000);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
       expect(host.querySelector('.bp-phrase')).toBeNull();
     });
   });

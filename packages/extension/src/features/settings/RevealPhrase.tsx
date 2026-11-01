@@ -1,55 +1,43 @@
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
-import { Banner, Button, Sheet, TextField } from '../../ui';
+import type { PasswordOutcome, Result } from '../../protocol';
+import { Banner, Button, Sheet } from '../../ui';
+import { useLockEnv } from '../lock/env';
+import { PasswordForm } from '../lock/PasswordForm';
+
+/** A shown phrase hides on its own after this idle time. */
+export const REVEAL_IDLE_MS = 60_000;
 
 /**
  * Password prompt, then the 24 words. Asks every time, even when unlocked. The phrase lives in
- * this component's state only and is dropped when the sheet closes or the screen unmounts.
+ * this component's state only: it is dropped when the sheet closes, when the screen unmounts
+ * and as soon as the worker pushes any state but "unlocked" (weak lock included).
  */
-/** Shown phrases hide on their own after this idle time, and as soon as the wallet is no longer unlocked. */
-export const REVEAL_IDLE_MS = 60_000;
-export const REVEAL_POLL_MS = 2_000;
-
 export function RevealPhrase({ onClose }: { onClose: () => void }) {
   const client = useClient();
-  const [password, setPassword] = useState('');
+  const { events } = useLockEnv();
   const [phrase, setPhrase] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Only an unlocked wallet may show the phrase: a weak or full lock closes the sheet.
+  useEffect(() => {
+    return events.subscribe((e) => {
+      if (e.state !== 'unlocked') onClose();
+    });
+  }, [events, onClose]);
+
   useEffect(() => {
     if (phrase === null) return;
     const idle = setTimeout(onClose, REVEAL_IDLE_MS);
-    const poll = setInterval(() => {
-      void client.call('wallet.state', {}).then((r) => {
-        if (!r.ok || r.value.state !== 'unlocked') onClose();
-      });
-    }, REVEAL_POLL_MS);
     return () => {
       clearTimeout(idle);
-      clearInterval(poll);
     };
-  }, [client, phrase, onClose]);
+  }, [phrase, onClose]);
 
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
+  const check = async (password: string): Promise<Result<PasswordOutcome>> => {
     const r = await client.call('wallet.revealMnemonic', { password });
-    setBusy(false);
-    setPassword('');
-    if (!r.ok) {
-      setError(t('settings.reveal.failed'));
-    } else if (r.value.status === 'ok') {
-      setPhrase(r.value.mnemonic);
-    } else if (r.value.status === 'throttled') {
-      const seconds = Math.max(1, Math.ceil((r.value.retryAt - Date.now()) / 1000));
-      setError(t('settings.reveal.throttled', { seconds }));
-    } else {
-      setError(t('settings.reveal.wrong'));
-    }
+    if (r.ok && r.value.status === 'ok') setPhrase(r.value.mnemonic);
+    return r;
   };
 
   const copy = async () => {
@@ -65,25 +53,12 @@ export function RevealPhrase({ onClose }: { onClose: () => void }) {
   return (
     <Sheet open title={t('settings.reveal.title')} onClose={onClose}>
       {phrase === null ? (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submit();
-          }}
-        >
-          <TextField
-            label={t('settings.reveal.password')}
-            type="password"
-            value={password}
-            onInput={setPassword}
-            {...(error === null ? {} : { error })}
-            disabled={busy}
-            autoFocus
-          />
-          <Button type="submit" disabled={busy || password === ''}>
-            {t('settings.reveal.submit')}
-          </Button>
-        </form>
+        <PasswordForm
+          label={t('settings.reveal.password')}
+          submitLabel={t('settings.reveal.submit')}
+          check={check}
+          onSuccess={() => undefined}
+        />
       ) : (
         <div>
           <Banner tone="amber">{t('settings.reveal.warning')}</Banner>
