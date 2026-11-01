@@ -1,4 +1,6 @@
 import { render } from 'preact';
+import { RandomProvider } from '../features/onboarding';
+import { CryptoRandom } from '../platform';
 import { RuntimeClient } from '../protocol/client';
 import { applyTheme, systemScheme } from '../theme';
 import { App } from './App';
@@ -21,7 +23,9 @@ const root = document.getElementById('root');
 if (root) {
   render(
     <ClientProvider client={new RuntimeClient(chrome.runtime)}>
-      <App />
+      <RandomProvider random={new CryptoRandom(crypto)}>
+        <App />
+      </RandomProvider>
     </ClientProvider>,
     root,
   );

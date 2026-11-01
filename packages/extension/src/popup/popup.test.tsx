@@ -1,3 +1,4 @@
+import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Client } from '../protocol/client';
 import { cleanup, fireEvent, render } from '../ui/test-render';
@@ -88,8 +89,24 @@ describe('Layout', () => {
 });
 
 describe('App', () => {
-  it('opens on the shell home screen', () => {
-    const { host } = render(<App />);
+  it('opens on the shell home screen and hands a fresh install to onboarding', async () => {
+    const client: Client = {
+      call: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          value: { state: 'uninitialised', retryAt: null },
+        }),
+      ) as Client['call'],
+    };
+    const { host } = render(
+      <ClientProvider client={client}>
+        <App />
+      </ClientProvider>,
+    );
     expect(host.querySelector('h1')?.textContent).toBe('BeePocket');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(host.textContent).toContain('Create a new wallet');
   });
 });
