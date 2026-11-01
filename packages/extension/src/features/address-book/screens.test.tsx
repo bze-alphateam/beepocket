@@ -75,6 +75,7 @@ describe('AddressBookScreen', () => {
     expect(host.textContent).toContain('Nothing found.');
     type(host.querySelector('input'), A.slice(-6));
     expect(host.textContent).toContain('Alex');
+    type(host.querySelector('input'), '');
 
     fireEvent(button(host, 'Add contact'), 'click');
     const inputs = host.querySelectorAll('input');
