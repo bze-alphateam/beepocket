@@ -27,7 +27,7 @@ function stringField<K extends string>(method: string, name: K) {
 /** The seams are passed in by the composition root: the wallet-backed ones (see wallet-seams.ts). */
 export function registerTokenHandlers(
   registry: HandlerRegistry,
-  deps: HandlerDeps,
+  deps: Pick<HandlerDeps, 'platform' | 'services'>,
   seams: TokenSeams,
 ): void {
   const { platform, services } = deps;
