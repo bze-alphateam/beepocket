@@ -1,6 +1,8 @@
 import type { Platform } from '../../platform';
 import type { HandlerRegistry } from '../registry';
 import type { Services } from '../services';
+import { registerBookHandlers } from '../../features/address-book/handlers';
+import { walletBookStore } from '../../features/address-book/wallet-store';
 import { registerTokenHandlers } from '../../features/tokens/handlers';
 import { walletTokenSeams } from '../../features/tokens/wallet-seams';
 import type { WalletService } from '../../features/wallet';
@@ -20,5 +22,6 @@ export function registerHandlers(registry: HandlerRegistry, deps: HandlerDeps): 
   registerAppHandlers(registry, deps);
   registerWalletHandlers(registry, deps.wallet);
   registerTokenHandlers(registry, deps, walletTokenSeams(deps.wallet));
+  registerBookHandlers(registry, walletBookStore(deps.wallet));
   registerHomeHandlers(registry, deps);
 }
