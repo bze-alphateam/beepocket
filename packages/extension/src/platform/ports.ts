@@ -5,6 +5,8 @@
 export interface Storage {
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown): Promise<void>;
+  /** Writes several keys in one call: all of them land or none does. */
+  setMany(items: Record<string, unknown>): Promise<void>;
   remove(key: string): Promise<void>;
 }
 

@@ -5,6 +5,7 @@ import { HandlerRegistry } from '../../background/registry';
 import type { Services } from '../../background/services';
 import type { Platform } from '../../platform';
 import { registerTokenHandlers } from './handlers';
+import type { WalletService } from '../wallet';
 import type { PreferredTokensStore, WalletAddress, WalletAddresses } from './ports';
 
 const FACTORY = 'factory/bze1abc/gold';
@@ -478,31 +479,85 @@ describe('tokens.theme', () => {
   });
 });
 
-describe('registerHandlers', () => {
-  it('registers the token methods with the interim stores', async () => {
-    const registry = new HandlerRegistry();
-    const data = new Map<string, unknown>();
-    const storage = {
-      get: (k: string) => Promise.resolve(data.get(k)),
-      set: (k: string, v: unknown) => Promise.resolve(void data.set(k, v)),
+describe('wired to the wallet profile', () => {
+  const ADDR = 'bze1a';
+  function wired(unlocked: boolean) {
+    let profile = {
+      addresses: [{ index: 0, label: 'Main', address: ADDR }],
+      preferredTokens: { mainnet: ['ubze'], testnet: ['ubze'] },
     };
+    const locked = { ok: false, error: { code: 'locked', message: 'locked' } };
+    const wallet = {
+      getProfile: () => Promise.resolve(unlocked ? { ok: true, value: profile } : locked),
+      addresses: () =>
+        Promise.resolve(unlocked ? { ok: true, value: { addresses: profile.addresses } } : locked),
+      updateProfile: (patch: (p: typeof profile) => typeof profile) => {
+        if (!unlocked) return Promise.resolve(locked);
+        profile = patch(structuredClone(profile));
+        return Promise.resolve({ ok: true, value: profile });
+      },
+    };
+    const writes: string[] = [];
+    const registry = new HandlerRegistry();
     registerHandlers(registry, {
-      platform: { storage } as unknown as Platform,
+      platform: {
+        storage: { set: (k: string) => Promise.resolve(void writes.push(k)) },
+        session: {
+          get: () => Promise.resolve(undefined),
+          set: () => Promise.resolve(),
+        },
+        clock: { now: () => 1 },
+        cache: { get: () => Promise.resolve(undefined), set: () => Promise.resolve() },
+      } as unknown as Platform,
       services: {
         clients: () =>
           Promise.resolve({
             network: NETWORKS.mainnet,
             chain: {
               supply: () => Promise.resolve(1n),
+              denomMetadata: () => Promise.resolve(null),
               denomBranding: () => Promise.resolve(null),
+              balances: () => Promise.resolve(new Map([['ubze', 3n]])),
             },
             scan: {},
           }),
       } as unknown as Services,
+      wallet: wallet as unknown as WalletService,
     });
-    expect(await registry.dispatch({ method: 'tokens.preferred', payload: {} })).toEqual({
+    return { registry, writes, profile: () => profile };
+  }
+
+  it('keeps the preferred list in the profile of the active network, not in plain storage', async () => {
+    const t = wired(true);
+    await t.registry.dispatch({ method: 'tokens.add', payload: { denom: FACTORY } });
+    expect(t.profile().preferredTokens).toEqual({ mainnet: ['ubze', FACTORY], testnet: ['ubze'] });
+    const listed = await t.registry.dispatch({ method: 'tokens.preferred', payload: {} });
+    expect(listed).toMatchObject({ ok: true });
+    expect(t.writes).toEqual([]);
+  });
+
+  it('balances the profile addresses', async () => {
+    const r = await wired(true).registry.dispatch({
+      method: 'tokens.balances',
+      payload: { denom: 'ubze' },
+    });
+    expect(r).toMatchObject({
+      ok: true,
+      value: { total: '3', addresses: [{ index: 0, address: ADDR, amount: '3' }] },
+    });
+  });
+
+  it('shows no tokens and no addresses while the wallet is locked, and refuses to write', async () => {
+    const t = wired(false);
+    expect(await t.registry.dispatch({ method: 'tokens.preferred', payload: {} })).toEqual({
       ok: true,
       value: [],
     });
+    expect(
+      await t.registry.dispatch({ method: 'tokens.balances', payload: { denom: 'ubze' } }),
+    ).toMatchObject({ ok: true, value: { addresses: [], total: '0' } });
+    expect(
+      await t.registry.dispatch({ method: 'tokens.add', payload: { denom: FACTORY } }),
+    ).toMatchObject({ ok: false, error: { code: 'internal' } });
   });
 });

@@ -24,7 +24,7 @@ function stringField<K extends string>(method: string, name: K) {
   };
 }
 
-/** The seams are passed in: the composition root hands over the wallet-backed ones (interim stand-ins until then). */
+/** The seams are passed in by the composition root: the wallet-backed ones (see wallet-seams.ts). */
 export function registerTokenHandlers(
   registry: HandlerRegistry,
   deps: HandlerDeps,
