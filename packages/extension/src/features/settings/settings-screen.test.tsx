@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'preact/test-utils';
 import { fail, ok, WalletErrorCodes, type Method, type Result } from '../../protocol';
 import type { Client } from '../../protocol/client';
@@ -17,7 +17,8 @@ class FakeClient implements Client {
   calls: { method: string; request: unknown }[] = [];
   settings = { brandThemes: true, weakLockMinutes: 15, fullLockMinutes: 60 };
   network = 'mainnet';
-  preferred = ['ubze'];
+  preferred: Record<string, string[]> = { mainnet: ['ubze'], testnet: ['ubze'] };
+  walletState = 'unlocked';
   reveal: Result<unknown> = ok({ status: 'ok', mnemonic: PHRASE });
   call(method: Method, request: unknown): Promise<Result<never>> {
     this.calls.push({ method, request });
@@ -39,7 +40,12 @@ class FakeClient implements Client {
           this.network = (request as { id: string }).id;
           return ok({ id: this.network });
         case 'tokens.preferred':
-          return ok(this.preferred);
+          return ok(this.preferred[this.network] ?? []);
+        case 'tokens.add':
+          this.preferred[this.network] = ['ubze'];
+          return ok(['ubze']);
+        case 'wallet.state':
+          return ok({ state: this.walletState, retryAt: null });
         case 'wallet.revealMnemonic':
           return this.reveal;
         default:
@@ -124,7 +130,7 @@ describe('SettingsScreen', () => {
 
   it('the testnet toggle shows the pill and a network without tokens lands on pick tokens', async () => {
     const client = new FakeClient();
-    client.preferred = [];
+    client.preferred.testnet = [];
     const host = await open(client);
     expect(host.querySelector('.bp-pill')).toBeNull();
     const sw = must(host.querySelectorAll<HTMLInputElement>('input[role="switch"]')[1]);
@@ -199,6 +205,86 @@ describe('reveal recovery phrase', () => {
     await submit(host, 'nope');
     expect(host.textContent).toMatch(/Try again in \d+ s/);
     expect(host.querySelector('.bp-phrase')).toBeNull();
+  });
+
+  describe('while the phrase is shown', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+    const shown = async (client: FakeClient) => {
+      const host = await openSheet(client);
+      await submit(host, 'pw');
+      vi.useFakeTimers();
+      expect(host.querySelector('.bp-phrase')).not.toBeNull();
+      return host;
+    };
+    const advance = async (ms: number) => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    };
+
+    it('hides the phrase as soon as the wallet is weak locked', async () => {
+      const client = new FakeClient();
+      const host = await shown(client);
+      await advance(2_100);
+      expect(host.querySelector('.bp-phrase')).not.toBeNull();
+      client.walletState = 'weakLocked';
+      await advance(2_100);
+      expect(host.querySelector('.bp-phrase')).toBeNull();
+      expect(host.textContent).not.toContain('abandon');
+    });
+
+    it('hides the phrase after the idle time', async () => {
+      const host = await shown(new FakeClient());
+      await advance(61_000);
+      expect(host.querySelector('.bp-phrase')).toBeNull();
+    });
+  });
+});
+
+describe('pick tokens screen', () => {
+  const openPick = async (client: FakeClient) => {
+    client.network = 'testnet';
+    client.preferred.testnet = [];
+    const { host } = render(
+      <ClientProvider client={client}>
+        <Router<TestRoute> table={table} initial={{ name: 'settings.pickTokens' }} />
+      </ClientProvider>,
+    );
+    await flush();
+    return host;
+  };
+  const button = (host: HTMLElement, text: string) =>
+    [...host.querySelectorAll('button')].find((b) => b.textContent === text);
+
+  it('names the active network and switch network really switches it', async () => {
+    const client = new FakeClient();
+    client.preferred.mainnet = [];
+    const host = await openPick(client);
+    expect(host.textContent).toContain('No tokens are picked on Testnet yet.');
+    fireEvent(button(host, 'Switch network'), 'click');
+    await flush();
+    expect(client.network).toBe('mainnet');
+    expect(host.textContent).toContain('No tokens are picked on Mainnet yet.');
+    expect(host.querySelector('.bp-pill')).toBeNull();
+  });
+
+  it('switching to a network that has tokens goes home', async () => {
+    const client = new FakeClient();
+    const host = await openPick(client);
+    fireEvent(button(host, 'Switch network'), 'click');
+    await flush();
+    expect(client.network).toBe('mainnet');
+    expect(host.textContent).toBe('at:shell.home');
+  });
+
+  it('add BZE picks the token and goes home', async () => {
+    const client = new FakeClient();
+    const host = await openPick(client);
+    fireEvent(button(host, 'Add BZE'), 'click');
+    await flush();
+    expect(host.textContent).toBe('at:shell.home');
   });
 });
 

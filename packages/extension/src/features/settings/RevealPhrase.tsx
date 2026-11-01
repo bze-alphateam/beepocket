@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import { Banner, Button, Sheet, TextField } from '../../ui';
@@ -7,6 +7,10 @@ import { Banner, Button, Sheet, TextField } from '../../ui';
  * Password prompt, then the 24 words. Asks every time, even when unlocked. The phrase lives in
  * this component's state only and is dropped when the sheet closes or the screen unmounts.
  */
+/** Shown phrases hide on their own after this idle time, and as soon as the wallet is no longer unlocked. */
+export const REVEAL_IDLE_MS = 60_000;
+export const REVEAL_POLL_MS = 2_000;
+
 export function RevealPhrase({ onClose }: { onClose: () => void }) {
   const client = useClient();
   const [password, setPassword] = useState('');
@@ -14,6 +18,21 @@ export function RevealPhrase({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Only an unlocked wallet may show the phrase: a weak or full lock closes the sheet.
+  useEffect(() => {
+    if (phrase === null) return;
+    const idle = setTimeout(onClose, REVEAL_IDLE_MS);
+    const poll = setInterval(() => {
+      void client.call('wallet.state', {}).then((r) => {
+        if (!r.ok || r.value.state !== 'unlocked') onClose();
+      });
+    }, REVEAL_POLL_MS);
+    return () => {
+      clearTimeout(idle);
+      clearInterval(poll);
+    };
+  }, [client, phrase, onClose]);
 
   const submit = async () => {
     setBusy(true);

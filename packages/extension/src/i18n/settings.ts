@@ -2,7 +2,6 @@
 export const settings = {
   'settings.title': 'Settings',
   'settings.back': 'Back',
-  'settings.loading': 'Loading settings',
   'settings.loadFailed': 'Settings could not be loaded.',
   'settings.saveFailed': 'The change could not be saved.',
   'settings.needsUnlock': 'Unlock the wallet to change settings.',
