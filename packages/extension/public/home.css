@@ -1,0 +1,176 @@
+/* Token home. Colours come from the --bp-* variables of the theme engine. */
+.bp-home {
+  position: relative;
+  padding: 0 16px 16px;
+}
+
+.bp-home-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 16px;
+}
+
+.bp-home-token {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bp-text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.bp-home-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bp-home-icon {
+  min-width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--bp-muted);
+  cursor: pointer;
+}
+
+.bp-home-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bp-home-icon:focus-visible,
+.bp-home-token:focus-visible,
+.bp-home-label:focus-visible,
+.bp-home-link:focus-visible,
+.bp-home-tabs button:focus-visible {
+  outline: 2px solid var(--bp-primary);
+}
+
+.bp-home-balance h1 {
+  font-size: 32px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.bp-home-balance h1 small {
+  font-size: 16px;
+  color: var(--bp-accent-text);
+}
+
+.bp-home-balance p,
+.bp-home-note {
+  color: var(--bp-muted);
+  font-size: 13px;
+}
+
+.bp-home-tabs {
+  display: flex;
+  gap: 16px;
+  margin: 16px 0 8px;
+  border-bottom: 1px solid var(--bp-line-strong);
+}
+
+.bp-home-tabs button {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--bp-muted);
+  cursor: pointer;
+}
+
+.bp-home-tabs button[aria-selected='true'] {
+  color: var(--bp-text);
+  border-bottom-color: var(--bp-primary);
+}
+
+.bp-home-addresses ul,
+.bp-home-tokens {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bp-home-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--bp-line-strong);
+}
+
+.bp-home-addresses .bp-home-row {
+  grid-template-columns: 1fr auto auto;
+  grid-template-areas: 'label icon amount' 'short icon amount';
+}
+
+.bp-home-label {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bp-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bp-home-short {
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-home-addresses .bp-home-label {
+  grid-area: label;
+}
+
+.bp-home-addresses .bp-home-short {
+  grid-area: short;
+}
+
+.bp-home-addresses .bp-home-icon {
+  grid-area: icon;
+}
+
+.bp-home-addresses .bp-home-amount {
+  grid-area: amount;
+}
+
+.bp-home-amount {
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-home-link {
+  display: block;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bp-accent-text);
+  cursor: pointer;
+}
+
+.bp-home-empty {
+  margin: 8px 0;
+  padding: 12px;
+  border: 1px dashed var(--bp-soft-line);
+  border-radius: 12px;
+  background: var(--bp-soft);
+}
+
+.bp-home-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bp-raised);
+  box-shadow: var(--bp-shadow);
+}

@@ -1,4 +1,5 @@
 import { app } from './app';
+import { home } from './home';
 import { lock } from './lock';
 
 /**
@@ -7,6 +8,7 @@ import { lock } from './lock';
  */
 export const en = {
   ...app,
+  ...home,
   ...lock,
 } as const;
 

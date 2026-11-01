@@ -72,7 +72,7 @@ const outcome = (o: PasswordOutcome) => () => ok(o);
 const flush = () => act(() => Promise.resolve());
 
 const stubs = {
-  'shell.home': () => null,
+  'home.main': () => null,
   'lock.unlock': () => null,
   'onboarding.welcome': () => null,
   'onboarding.import': () => null,
@@ -194,7 +194,7 @@ describe('UnlockScreen', () => {
     type(host, 'right');
     await submit(host);
     expect(call).toHaveBeenCalledWith('wallet.unlock', { password: 'right' });
-    expect(route).toEqual({ name: 'shell.home' });
+    expect(route).toEqual({ name: 'home.main' });
   });
 
   it('sends the forgot-password link to onboarding import', async () => {
@@ -302,8 +302,8 @@ describe('state routing', () => {
   it.each([
     ['uninitialised', 'onboarding.welcome'],
     ['locked', 'lock.unlock'],
-    ['unlocked', 'shell.home'],
-    ['weakLocked', 'shell.home'],
+    ['unlocked', 'home.main'],
+    ['weakLocked', 'home.main'],
   ] as const)('%s opens %s', async (state, expected) => {
     let route: RouteBase = { name: 'lock.root' };
     const { client } = fakeClient({ 'wallet.state': stateReply(state) });
@@ -321,13 +321,13 @@ describe('state routing', () => {
   });
 
   it('switches to the unlock screen when the worker pushes a full lock', async () => {
-    let route: RouteBase = { name: 'shell.home' };
+    let route: RouteBase = { name: 'home.main' };
     const events = new FakeEvents();
     const { client } = fakeClient({ 'wallet.state': stateReply('unlocked') });
     render(
       <ClientProvider client={client}>
         <LockEnvProvider clock={new FakeClock()} events={events}>
-          <Router table={{ ...stubs }} initial={{ name: 'shell.home' }}>
+          <Router table={{ ...stubs }} initial={{ name: 'home.main' }}>
             <StateSupervisor />
             <Probe onRoute={(r) => (route = r)} />
           </Router>
@@ -336,7 +336,7 @@ describe('state routing', () => {
     );
     await flush();
     events.push('weakLocked');
-    expect(route.name).toBe('shell.home');
+    expect(route.name).toBe('home.main');
     events.push('locked');
     expect(route.name).toBe('lock.unlock');
   });
@@ -362,7 +362,7 @@ describe('state routing', () => {
       );
       await flush();
       events.push(state);
-      expect(route.name).toBe('shell.home');
+      expect(route.name).toBe('home.main');
     },
   );
 
@@ -415,7 +415,7 @@ describe('useActivityPing', () => {
 
 describe('useLock', () => {
   it('locks and shows the unlock screen', async () => {
-    let route: RouteBase = { name: 'shell.home' };
+    let route: RouteBase = { name: 'home.main' };
     let lock: () => Promise<void> = () => Promise.resolve();
     function Grab() {
       lock = useLock();
@@ -424,7 +424,7 @@ describe('useLock', () => {
     const { client, call } = fakeClient({});
     render(
       <ClientProvider client={client}>
-        <Router table={{ ...stubs }} initial={{ name: 'shell.home' }}>
+        <Router table={{ ...stubs }} initial={{ name: 'home.main' }}>
           <Grab />
           <Probe onRoute={(r) => (route = r)} />
         </Router>
