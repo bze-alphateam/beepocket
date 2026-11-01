@@ -13,6 +13,7 @@ import { HandlerRegistry } from '../../background/registry';
 import type { Services } from '../../background/services';
 import type { Platform } from '../../platform';
 import { fail, ok, type Result } from '../../protocol';
+import type { SendQuote } from '../../protocol/send';
 import type { WalletService } from '../wallet';
 import { registerSendHandlers } from './handlers';
 
@@ -167,8 +168,7 @@ function setup(opts: Options = {}) {
   registerSendHandlers(registry, { platform, services, wallet });
   const call = (method: string, payload: unknown) =>
     registry.dispatch({ method, payload }) as Promise<
-      | { ok: true; value: Record<string, any> }
-      | { ok: false; error: { code: string; message: string } }
+      { ok: true; value: unknown } | { ok: false; error: { code: string; message: string } }
     >;
   return { call, calls, signed, sent, waits, control };
 }
@@ -181,7 +181,7 @@ const prepareReq = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const submitFrom = (q: Record<string, any>) => ({
+const submitFrom = (q: SendQuote) => ({
   fromIndex: 0,
   to: q.to,
   denom: q.token.denom,
@@ -194,7 +194,7 @@ const submitFrom = (q: Record<string, any>) => ({
 async function quoteOf(s: ReturnType<typeof setup>, over: Record<string, unknown> = {}) {
   const res = await s.call('send.prepare', prepareReq(over));
   if (!res.ok) throw new Error(res.error.code);
-  return res.value;
+  return res.value as SendQuote;
 }
 
 describe('golden transactions', () => {
