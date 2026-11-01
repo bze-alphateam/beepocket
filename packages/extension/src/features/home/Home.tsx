@@ -24,6 +24,12 @@ export interface SettingsTarget {
   name: 'settings.main';
 }
 
+/** The send flow's route (registered by the send feature). */
+export interface SendTarget {
+  name: 'send';
+  denom: string;
+}
+
 interface Loaded {
   network: 'mainnet' | 'testnet';
   brandThemes: boolean;
@@ -37,7 +43,7 @@ const COPIED_MS = 1800;
 export function Home() {
   const client = useClient();
   const env = useHomeEnv();
-  const { navigate } = useRoute<HomeRoute | SettingsTarget>();
+  const { navigate } = useRoute<HomeRoute | SettingsTarget | SendTarget>();
   const lockWallet = useLock();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
@@ -256,6 +262,14 @@ export function Home() {
           </h1>
           {balances && !allFailed && <p>{subline(balances.addresses)}</p>}
           {allFailed && <p role="status">{t('home.balance.unavailable')}</p>}
+          <Button
+            disabled={balances === null || allFailed || BigInt(balances.total) === 0n}
+            onClick={() => {
+              navigate({ name: 'send', denom: token.denom });
+            }}
+          >
+            {t('send.title', { symbol: token.symbol })}
+          </Button>
           {balances?.partial === true && !allFailed && (
             <p role="status">{t('home.balance.partial')}</p>
           )}

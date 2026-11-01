@@ -3,6 +3,7 @@ import { bookRoutes, type BookRoute } from './address-book/routes';
 import { homeRoutes, type HomeRoute } from './home/routes';
 import { shellRoutes, type ShellRoute } from './shell/routes';
 import { settingsRoutes, type SettingsRoute } from './settings/routes';
+import { sendRoutes, type SendRoute } from './send/routes';
 import type { RouteTable } from '../popup/router';
 import { lockRoutes, type LockRoute } from './lock/routes';
 
@@ -11,7 +12,7 @@ import { lockRoutes, type LockRoute } from './lock/routes';
  * `export type AppRoute = ShellRoute | WalletRoute | ...`
  */
 export type AppRoute =
-  ShellRoute | HomeRoute | LockRoute | BookRoute | OnboardingRoute | SettingsRoute;
+  ShellRoute | HomeRoute | LockRoute | BookRoute | OnboardingRoute | SettingsRoute | SendRoute;
 
 export const routeTable: RouteTable<AppRoute> = {
   ...shellRoutes,
@@ -20,6 +21,7 @@ export const routeTable: RouteTable<AppRoute> = {
   ...settingsRoutes,
   ...onboardingRoutes,
   ...bookRoutes,
+  ...sendRoutes,
 };
 
 export const initialRoute: AppRoute = { name: 'lock.root' };
