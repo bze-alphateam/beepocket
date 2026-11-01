@@ -1,6 +1,10 @@
-import { fireEvent, render } from './test-render';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'preact/hooks';
+import { act } from 'preact/test-utils';
+import { cleanup, fireEvent, render } from './test-render';
 import { Banner, Button, Pill, Sheet, Spinner, TextField } from '.';
+
+afterEach(cleanup);
 
 describe('Button', () => {
   it('renders each variant and fires onClick', () => {
@@ -71,6 +75,44 @@ describe('TextField', () => {
   });
 });
 
+function Harness({ onClose = () => undefined }: { onClose?: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        id="trigger"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        Open
+      </button>
+      <Sheet
+        open={open}
+        title="Pick"
+        onClose={() => {
+          onClose();
+          setOpen(false);
+        }}
+      >
+        <button type="button" id="first">
+          One
+        </button>
+        <button type="button" id="last">
+          Two
+        </button>
+      </Sheet>
+    </div>
+  );
+}
+
+function press(key: string, shiftKey = false): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true });
+  document.dispatchEvent(event);
+  return event;
+}
+
 describe('Sheet', () => {
   it('renders nothing while closed', () => {
     const { host } = render(
@@ -81,20 +123,64 @@ describe('Sheet', () => {
     expect(host.textContent).toBe('');
   });
 
-  it('shows a labelled dialog and closes on backdrop and Escape', () => {
-    const onClose = vi.fn();
-    const { host } = render(
-      <Sheet open title="Pick" onClose={onClose}>
-        body
-      </Sheet>,
-    );
+  it('shows a labelled dialog and focuses it on open', () => {
+    const { host } = render(<Harness />);
+    const trigger = host.querySelector<HTMLElement>('#trigger');
+    trigger?.focus();
+    fireEvent(trigger, 'click');
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog?.getAttribute('aria-label')).toBe('Pick');
-    expect(dialog?.textContent).toContain('body');
+    expect(dialog?.textContent).toContain('One');
+    expect(document.activeElement).toBe(dialog);
+  });
+
+  it('closes on Escape pressed anywhere in the document and returns focus to the trigger', () => {
+    const onClose = vi.fn();
+    const { host } = render(<Harness onClose={onClose} />);
+    const trigger = host.querySelector<HTMLElement>('#trigger');
+    trigger?.focus();
+    fireEvent(trigger, 'click');
+    void act(() => {
+      press('Escape');
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('closes on a tap on the backdrop', () => {
+    const onClose = vi.fn();
+    const { host } = render(<Harness onClose={onClose} />);
+    fireEvent(host.querySelector('#trigger'), 'click');
     fireEvent(host.querySelector('.bp-sheet-backdrop'), 'click');
-    expect(onClose).toHaveBeenCalledTimes(1);
-    fireEvent(dialog, 'keydown', { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps Tab and Shift+Tab inside the dialog', () => {
+    const { host } = render(<Harness />);
+    fireEvent(host.querySelector('#trigger'), 'click');
+    const first = host.querySelector<HTMLElement>('#first');
+    const last = host.querySelector<HTMLElement>('#last');
+    last?.focus();
+    expect(press('Tab').defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(first);
+    expect(press('Tab', true).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(last);
+    // From the dialog itself, Tab enters the first control.
+    host.querySelector<HTMLElement>('[role="dialog"]')?.focus();
+    press('Tab');
+    expect(document.activeElement).toBe(first);
+    // Focus that escaped the dialog is pulled back.
+    host.querySelector<HTMLElement>('#trigger')?.focus();
+    press('Tab');
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('lets Tab move normally between controls in the middle', () => {
+    const { host } = render(<Harness />);
+    fireEvent(host.querySelector('#trigger'), 'click');
+    host.querySelector<HTMLElement>('#first')?.focus();
+    expect(press('Tab').defaultPrevented).toBe(false);
   });
 });
 

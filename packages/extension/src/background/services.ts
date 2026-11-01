@@ -24,7 +24,8 @@ export interface NetworkClients {
  */
 export interface Services {
   activeNetwork(): Promise<Network>;
-  clients(): Promise<NetworkClients>;
+  /** Clients for the active network, or for a given one. */
+  clients(network?: NetworkId): Promise<NetworkClients>;
 }
 
 export function createServices(platform: Platform): Services {
@@ -36,8 +37,8 @@ export function createServices(platform: Platform): Services {
   };
   return {
     activeNetwork,
-    async clients() {
-      const network = await activeNetwork();
+    async clients(id) {
+      const network = id === undefined ? await activeNetwork() : NETWORKS[id];
       return {
         network,
         chain: new RestChainClient(platform.transport, network),

@@ -14,8 +14,12 @@ export function fail(code: string, message: string): Result<never> {
   return { ok: false, error: { code, message } };
 }
 
-/** What a feature declares: for each method name, its request and response payloads. */
-export type FeatureProtocol = Record<string, { req: unknown; res: unknown }>;
+/**
+ * What a feature declares: for each method name, its request and response payloads. The
+ * shape is checked here and the interface itself stays closed, so `keyof` is the real union
+ * of method names: `export type Protocol = FeatureProtocol<AppProtocol> & ...`.
+ */
+export type FeatureProtocol<T extends { [K in keyof T]: { req: unknown; res: unknown } }> = T;
 
 /** What travels in `chrome.runtime.sendMessage`. */
 export interface Envelope {

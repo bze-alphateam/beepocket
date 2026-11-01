@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { RuntimeClient } from './client';
 
 describe('RuntimeClient', () => {
+  it('only accepts known method names at compile time', async () => {
+    const client = new RuntimeClient({ sendMessage: () => Promise.resolve(undefined) });
+    // @ts-expect-error `no.such.method` is not a method of any feature protocol
+    const res = await client.call('no.such.method', {});
+    expect(res.ok).toBe(false);
+  });
+
   it('sends the method and payload and returns the result', async () => {
     const sendMessage = vi.fn(() => Promise.resolve({ ok: true, value: { nonce: 'n', at: 1 } }));
     const res = await new RuntimeClient({ sendMessage }).call('app.ping', { nonce: 'n' });

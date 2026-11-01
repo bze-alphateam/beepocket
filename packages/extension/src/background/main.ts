@@ -4,11 +4,17 @@ import { registerHandlers } from './handlers';
 import { HandlerRegistry } from './registry';
 import { createServices } from './services';
 
+export interface MessageSender {
+  id?: string | undefined;
+  url?: string | undefined;
+  tab?: unknown;
+}
+
 export interface MessageEventLike {
   addListener(
     listener: (
       message: unknown,
-      sender: { id?: string | undefined },
+      sender: MessageSender,
       sendResponse: (response: unknown) => void,
     ) => boolean | undefined,
   ): void;
@@ -23,19 +29,32 @@ export interface BackgroundEnv extends PlatformEnv {
 /**
  * Composition root of the service worker: builds the platform adapters, core clients and the
  * handler registry, then answers popup messages. Listeners are attached synchronously so
- * MV3 delivers events that woke the worker; the answer waits for the platform to be ready.
+ * MV3 delivers events that woke the worker. The registry is built on the first message and
+ * a failed start is forgotten, so the next message retries.
  */
 export function startBackground(env: BackgroundEnv): void {
-  const registry = createRegistry(env);
+  let pending: Promise<HandlerRegistry> | undefined;
+  const registry = (): Promise<HandlerRegistry> => {
+    pending ??= createRegistry(env).catch((e: unknown) => {
+      pending = undefined;
+      throw e;
+    });
+    return pending;
+  };
   env.chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Only the extension's own pages (popup, wallet windows) may talk to the wallet.
-    if (sender.id !== env.chrome.runtime.id) return undefined;
-    void registry
+    if (!isOwnPage(sender, env.chrome.runtime.id)) return undefined;
+    void registry()
       .then((r) => r.dispatch(message))
       .catch(() => fail(ErrorCodes.internal, 'The wallet is not ready.'))
       .then(sendResponse);
     return true;
   });
+}
+
+/** Only the extension's own pages (popup, wallet windows) may talk to the wallet; never a tab. */
+function isOwnPage(sender: MessageSender, id: string | undefined): boolean {
+  if (id === undefined || sender.id !== id || sender.tab !== undefined) return false;
+  return sender.url?.startsWith(`chrome-extension://${id}/`) === true;
 }
 
 async function createRegistry(env: BackgroundEnv): Promise<HandlerRegistry> {

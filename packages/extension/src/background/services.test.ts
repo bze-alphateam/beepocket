@@ -29,6 +29,11 @@ describe('createServices', () => {
     expect(await services(v).activeNetwork()).toBe(NETWORKS.mainnet);
   });
 
+  it('builds clients for a given network regardless of the stored one', async () => {
+    const c = await services('testnet').clients('mainnet');
+    expect(c.network.id).toBe('mainnet');
+  });
+
   it('builds clients for the active network', async () => {
     const c = await services('testnet').clients();
     expect(c.network.id).toBe('testnet');

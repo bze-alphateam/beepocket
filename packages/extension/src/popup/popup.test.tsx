@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Client } from '../protocol/client';
-import { fireEvent, render } from '../ui/test-render';
+import { cleanup, fireEvent, render } from '../ui/test-render';
 import { ClientProvider, useClient } from './client-context';
 import { Layout } from './Layout';
 import { Router, useRoute, type RouteTable } from './router';
 import { App } from './App';
+
+afterEach(cleanup);
 
 type TestRoute = { name: 'test.a' } | { name: 'test.b'; id: string };
 

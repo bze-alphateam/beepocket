@@ -1,5 +1,5 @@
 import type { DenomBranding, Palette } from '@beepocket/core';
-import { isHexColor, mix } from './color';
+import { contrast, isHexColor, mix } from './color';
 
 export type Scheme = 'light' | 'dark';
 
@@ -71,18 +71,30 @@ function validPalette(p: Palette | undefined): p is Palette {
   );
 }
 
+/** Chain data may be unreadable: text on the background, and button text on the whole gradient. */
+export const MIN_CONTRAST = 3;
+
+function readable(k: Kit): boolean {
+  return (
+    contrast(k.text, k.bg) >= MIN_CONTRAST &&
+    contrast(k.bg, k.primary) >= MIN_CONTRAST &&
+    contrast(k.bg, k.end) >= MIN_CONTRAST
+  );
+}
+
 /** Picks the kit for a scheme: branding, else the denom's built-in kit, else BeePocket's. */
 export function resolveKit(input: KitInput, scheme: Scheme): Kit {
   if (!input.brandThemes) return BEEPOCKET[scheme];
   const palette = input.branding?.[scheme];
   if (validPalette(palette)) {
-    return {
+    const kit: Kit = {
       bg: palette.background,
       text: palette.text,
       primary: palette.primary,
       secondary: palette.secondary,
       end: mix(palette.primary, '#000000', 0.25),
     };
+    if (readable(kit)) return kit;
   }
   return input.denom === BZE_DENOM ? BZE[scheme] : BEEPOCKET[scheme];
 }

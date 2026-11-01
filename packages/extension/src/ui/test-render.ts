@@ -1,9 +1,10 @@
 import { render as preactRender, type ComponentChildren } from 'preact';
 import { act } from 'preact/test-utils';
 
-/** Renders into a detached host and flushes effects; shared by the UI tests. */
+/** Renders into a host attached to the document (so focus works); call `cleanup` after. */
 export function render(vnode: ComponentChildren): { host: HTMLElement } {
   const host = document.createElement('div');
+  document.body.append(host);
   void act(() => {
     preactRender(vnode, host);
   });
@@ -17,4 +18,13 @@ export function fireEvent(el: Element | null | undefined, type: string, init: ob
     if (type === 'click' && el instanceof HTMLElement) el.click();
     else el.dispatchEvent(Object.assign(new Event(type, { bubbles: true }), init));
   });
+}
+
+export function cleanup(): void {
+  for (const host of [...document.body.children]) {
+    void act(() => {
+      preactRender(null, host);
+    });
+    host.remove();
+  }
 }

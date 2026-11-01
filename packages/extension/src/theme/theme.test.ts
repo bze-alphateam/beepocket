@@ -67,6 +67,37 @@ describe('themeVars', () => {
     },
   );
 
+  it('falls back when the text is unreadable on the background', () => {
+    const lowText = { ...branding, dark: { ...branding.dark, text: '#2A1A14' } };
+    expect(themeVars({ ...base, denom: 'factory/x/PAGE', branding: lowText })).toEqual(
+      themeVars(base),
+    );
+    const sameColours = { ...branding, dark: { ...branding.dark, text: '#1A0F0B' } };
+    expect(themeVars({ ...base, denom: 'factory/x/PAGE', branding: sameColours })).toEqual(
+      themeVars(base),
+    );
+  });
+
+  it('falls back when button text would be unreadable on the primary', () => {
+    // Primary almost the background colour: the button label (background colour) vanishes.
+    const flat = { ...branding, dark: { ...branding.dark, primary: '#241610' } };
+    expect(themeVars({ ...base, denom: 'factory/x/PAGE', branding: flat })).toEqual(
+      themeVars(base),
+    );
+    // Same check in the light scheme.
+    const flatLight = { ...branding, light: { ...branding.light, primary: '#FFF0DD' } };
+    expect(
+      themeVars({ ...base, scheme: 'light', denom: 'factory/x/PAGE', branding: flatLight }),
+    ).toEqual(themeVars({ ...base, scheme: 'light' }));
+  });
+
+  it('keeps a kit whose colours are readable', () => {
+    for (const scheme of ['dark', 'light'] as const) {
+      const v = themeVars({ ...base, scheme, denom: 'factory/x/PAGE', branding });
+      expect(v['--bp-primary']).toBe(branding[scheme].primary);
+    }
+  });
+
   it('keeps status colours the same for every token kit', () => {
     for (const scheme of ['dark', 'light'] as const) {
       const plain = themeVars({ ...base, scheme });

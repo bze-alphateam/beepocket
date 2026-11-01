@@ -13,6 +13,11 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+/** Every literal first argument of a `t(...)` call, whatever the quotes. */
+function referencedKeys(text: string): string[] {
+  return [...text.matchAll(/\bt\(\s*(['"`])([^'"`]*)\1/g)].map((m) => m[2] ?? '');
+}
+
 describe('t', () => {
   it('returns the string for a key', () => {
     expect(t('app.name')).toBe('BeePocket');
@@ -35,13 +40,23 @@ describe('en', () => {
     }
   });
 
-  it('defines every key referenced as t("...") in the source', () => {
+  it('finds keys in single, double and backtick quotes, and flags dynamic ones', () => {
+    expect(referencedKeys(`t('a.b') t("c.d") t(\`e.f\`) t( 'g.h', { n: 1 })`)).toEqual([
+      'a.b',
+      'c.d',
+      'e.f',
+      'g.h',
+    ]);
+    expect(referencedKeys('t(`feature.${name}`)')).toEqual(['feature.${name}']);
+  });
+
+  it('defines every key referenced as t(...) in the source, and none is built dynamically', () => {
     const missing: string[] = [];
     for (const file of sourceFiles(srcDir)) {
-      const text = readFileSync(file, 'utf8');
-      for (const m of text.matchAll(/\bt\(\s*'([\w.]+)'/g)) {
-        const key = m[1] ?? '';
-        if (!Object.hasOwn(en, key)) missing.push(`${relative(srcDir, file)}: ${key}`);
+      for (const key of referencedKeys(readFileSync(file, 'utf8'))) {
+        if (key.includes('${') || !Object.hasOwn(en, key)) {
+          missing.push(`${relative(srcDir, file)}: ${key}`);
+        }
       }
     }
     expect(missing).toEqual([]);
