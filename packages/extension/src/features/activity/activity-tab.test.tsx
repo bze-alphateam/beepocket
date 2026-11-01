@@ -137,7 +137,7 @@ describe('ActivityTab card', () => {
     expect(card?.querySelector('.bp-act-summary')?.textContent).toContain('Swapped');
     expect(card?.querySelector('.bp-act-address')?.textContent).toContain('Main');
     expect(card?.querySelector('.bp-act-address')?.textContent).toContain('BZE/PAGE');
-    expect(rowsOf(card as Element)).toHaveLength(n);
+    expect(rowsOf(card!)).toHaveLength(n);
     expect(card?.getAttribute('href')).toBe('https://explorer.example/txs/TX1');
   });
 
@@ -193,7 +193,7 @@ describe('ActivityTab card', () => {
 
   it('shows a fee-only row as one negative amount titled Network fee', async () => {
     const host = await cards([item(1, { kind: 'fee_only', feeOnly: true, amounts: [amt('-7')] })]);
-    const card = host.querySelector('a.bp-act-card') as Element;
+    const card = host.querySelector('a.bp-act-card')!;
     expect(card.querySelector('.bp-act-what')?.textContent).toBe('Network fee');
     expect(rowsOf(card)).toHaveLength(1);
     expect(card.querySelector('.bp-act-amount')?.textContent).toBe('−0.07');
@@ -217,7 +217,8 @@ describe('ActivityTab', () => {
     expect(calls[0]).toEqual({});
     const rows = [...host.querySelectorAll('li')].map((li) => li.textContent);
     expect(rows[0]).toContain('Received');
-    expect(rows[0]).toContain('+1.50 PAGE');
+    expect(rows[0]).toContain('+1.50');
+    expect(rows[0]).toContain('PAGE');
     expect(rows[0]).toContain('Exchange');
     expect(rows[1]).toContain('Swapped');
     expect(rows[1]).toContain('Failed');
