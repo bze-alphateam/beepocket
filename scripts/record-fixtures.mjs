@@ -68,6 +68,41 @@ async function findAddress(net) {
   throw new Error('no suitable address found');
 }
 
+// Markets (paginated, no id field on the wire) and one open order of the first
+// market that has any, found through its creator's orders.
+async function recordMarkets(net, rest) {
+  await rest('markets', 'GET', '/bze/tradebin/all_markets');
+  await rest('markets-page1', 'GET', '/bze/tradebin/all_markets?pagination.limit=1');
+  const p1 = await call(net.rest, 'GET', '/bze/tradebin/all_markets?pagination.limit=1');
+  if (p1.body?.pagination?.next_key) {
+    await rest(
+      'markets-page2',
+      'GET',
+      `/bze/tradebin/all_markets?pagination.limit=1&pagination.key=${enc(p1.body.pagination.next_key)}`,
+    );
+  }
+  const all = await call(net.rest, 'GET', '/bze/tradebin/all_markets');
+  for (const m of all.body?.market ?? []) {
+    const id = `${m.base}/${m.quote}`;
+    const mine = await call(
+      net.rest,
+      'GET',
+      `/bze/tradebin/user_market_orders/${m.creator}?market=${enc(id)}&pagination.limit=1`,
+    );
+    const ref = mine.body?.list?.[0];
+    if (!ref) continue;
+    const query = `market=${enc(ref.market_id)}&order_type=${ref.order_type}&order_id=${ref.id}`;
+    await rest('market-order', 'GET', `/bze/tradebin/market_order?${query}`);
+    await rest(
+      'market-order-missing',
+      'GET',
+      `/bze/tradebin/market_order?market=${enc(ref.market_id)}&order_type=${ref.order_type}&order_id=0`,
+    );
+    return;
+  }
+  console.warn('no open order found, skipping market-order fixtures');
+}
+
 for (const [network, net] of Object.entries(NETWORKS)) {
   let address;
   try {
@@ -141,6 +176,7 @@ for (const [network, net] of Object.entries(NETWORKS)) {
     );
   }
   await rest('halted-denoms', 'GET', '/bze/tradebin/halted_denoms');
+  await recordMarkets(net, rest);
   // Garbage tx bytes: the node rejects them, nothing is executed or stored.
   const garbage = Buffer.from([1, 2, 3]).toString('base64');
   await rest('simulate-error', 'POST', '/cosmos/tx/v1beta1/simulate', { tx_bytes: garbage });

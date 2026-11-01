@@ -77,6 +77,7 @@ function isAnyLike(v: object): v is AnyMsg {
 function toJson(v: unknown): Json {
   if (typeof v === 'bigint') return v.toString();
   if (v instanceof Uint8Array) return base64.encode(v);
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString();
   if (Array.isArray(v)) return v.map(toJson);
   if (typeof v === 'object' && v !== null) {
     if (isAnyLike(v)) return decodeAny(v);

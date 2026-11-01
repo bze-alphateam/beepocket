@@ -1,0 +1,18 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/all_markets?pagination.limit=1",
+  "status": 200,
+  "body": {
+    "market": [
+      {
+        "base": "factory/bze12gyp30f29zg26nuqrwdhl26ej4q066pt572fhm/GGE",
+        "quote": "ubze",
+        "creator": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l"
+      }
+    ],
+    "pagination": {
+      "next_key": "ZmFjdG9yeS9iemUxM2d6cTQwY2hlOTN0Z2ZtOWt6bWtwamFtYWg1bmowajczcHlocWsvdXZkbC91Ynpl",
+      "total": "0"
+    }
+  }
+}

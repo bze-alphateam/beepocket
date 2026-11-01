@@ -1,0 +1,18 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/all_markets?pagination.limit=1&pagination.key=ZmFjdG9yeS9iemUxM2d6cTQwY2hlOTN0Z2ZtOWt6bWtwamFtYWg1bmowajczcHlocWsvdXZkbC91Ynpl",
+  "status": 200,
+  "body": {
+    "market": [
+      {
+        "base": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+        "quote": "ubze",
+        "creator": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk"
+      }
+    ],
+    "pagination": {
+      "next_key": "ZmFjdG9yeS9iemUxOTcyYXFmemRnMjl1Z2psbjc0ZWR4MHh2Y2c0ZWh2eXNqcHRrNzcvQ1RML3ViemU=",
+      "total": "0"
+    }
+  }
+}

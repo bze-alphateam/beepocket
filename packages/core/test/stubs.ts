@@ -19,6 +19,8 @@ export function stubChain(overrides: Partial<ChainClient> = {}): ChainClient {
     tradebinParams: vi.fn(notStubbed('tradebinParams')),
     liquidityPools: vi.fn(notStubbed('liquidityPools')),
     haltedDenoms: vi.fn(notStubbed('haltedDenoms')),
+    markets: vi.fn(notStubbed('markets')),
+    marketOrder: vi.fn(notStubbed('marketOrder')),
     simulate: vi.fn(notStubbed('simulate')),
     broadcast: vi.fn(notStubbed('broadcast')),
     waitForTx: vi.fn(notStubbed('waitForTx')),

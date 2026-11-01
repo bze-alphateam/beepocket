@@ -1,0 +1,16 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/market_order?market=ibc%2F12C0B8B561AFCFDA3C73DEE0F7F84AA2B860D48493C27E8E81A5D14724FAB08B%2Fibc%2F6490A7EAB61059BFC1CDDEB05917DD70BDF3A611654162A1A47DB930D40D8AF4&order_type=sell&order_id=000000000000000000228789",
+  "status": 200,
+  "body": {
+    "order": {
+      "id": "000000000000000000228789",
+      "market_id": "ibc/12C0B8B561AFCFDA3C73DEE0F7F84AA2B860D48493C27E8E81A5D14724FAB08B/ibc/6490A7EAB61059BFC1CDDEB05917DD70BDF3A611654162A1A47DB930D40D8AF4",
+      "order_type": "sell",
+      "amount": "200000",
+      "price": "6",
+      "created_at": "1737198200",
+      "owner": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l"
+    }
+  }
+}

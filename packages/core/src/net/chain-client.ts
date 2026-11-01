@@ -62,6 +62,26 @@ export interface Pool {
   halted?: boolean;
 }
 
+export interface Market {
+  /** `base + "/" + quote`. Denoms contain `/` themselves, so an id is never split. */
+  id: string;
+  base: string;
+  quote: string;
+}
+
+export type OrderType = 'buy' | 'sell';
+
+export interface MarketOrder {
+  id: string;
+  marketId: string;
+  orderType: OrderType;
+  /** Base units of the market's base denom. */
+  amount: bigint;
+  /** Quote base units per base base-unit, a decimal string. */
+  price: string;
+  owner: string;
+}
+
 export interface SimulationResult {
   gasUsed: bigint;
 }
@@ -105,6 +125,9 @@ export interface ChainClient {
   tradebinParams(): Promise<TradebinParams>;
   liquidityPools(): Promise<Pool[]>;
   haltedDenoms(): Promise<string[]>;
+  markets(): Promise<Market[]>;
+  /** `null` when the order does not exist (any more). */
+  marketOrder(marketId: string, orderType: OrderType, orderId: string): Promise<MarketOrder | null>;
   /** Throws `SimulationError` when the node rejects the transaction. */
   simulate(txBytes: Uint8Array): Promise<SimulationResult>;
   /** Throws `BroadcastError` when the node rejects the transaction. */
@@ -296,6 +319,41 @@ export class RestChainClient implements ChainClient {
 
   haltedDenoms(): Promise<string[]> {
     return this.paginate('/bze/tradebin/halted_denoms', 'denoms', v.string);
+  }
+
+  markets(): Promise<Market[]> {
+    // The wire has no id field: the chain derives it as base + "/" + quote.
+    return this.paginate('/bze/tradebin/all_markets', 'market', (raw, path) => {
+      const market = v.object(raw, path);
+      const base = v.string(v.field(market, 'base', path), `${path}.base`);
+      const quote = v.string(v.field(market, 'quote', path), `${path}.quote`);
+      return { id: `${base}/${quote}`, base, quote };
+    });
+  }
+
+  async marketOrder(
+    marketId: string,
+    orderType: OrderType,
+    orderId: string,
+  ): Promise<MarketOrder | null> {
+    const body = await this.getJson(
+      `/bze/tradebin/market_order?market=${encodeURIComponent(marketId)}` +
+        `&order_type=${orderType}&order_id=${encodeURIComponent(orderId)}`,
+      true,
+    );
+    if (body === null) return null;
+    const order = v.object(v.field(v.object(body, '$'), 'order', '$'), 'order');
+    const type = v.string(v.field(order, 'order_type', 'order'), 'order.order_type');
+    if (type !== 'buy' && type !== 'sell')
+      throw new UnexpectedResponseError('order.order_type', `unknown order type ${type}`);
+    return {
+      id: v.string(v.field(order, 'id', 'order'), 'order.id'),
+      marketId: v.string(v.field(order, 'market_id', 'order'), 'order.market_id'),
+      orderType: type,
+      amount: v.uintString(v.field(order, 'amount', 'order'), 'order.amount'),
+      price: v.decimalString(v.field(order, 'price', 'order'), 'order.price'),
+      owner: v.string(v.field(order, 'owner', 'order'), 'order.owner'),
+    };
   }
 
   async simulate(txBytes: Uint8Array): Promise<SimulationResult> {
