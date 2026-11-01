@@ -1,5 +1,12 @@
 import { ErrorCodes, fail } from '../protocol';
 import { createPlatform, type PlatformEnv } from '../platform';
+import {
+  ChromeAlarms,
+  createWalletService,
+  type AlarmEventLike,
+  type AlarmsLike,
+  type WalletService,
+} from '../features/wallet';
 import { registerHandlers } from './handlers';
 import { HandlerRegistry } from './registry';
 import { createServices } from './services';
@@ -23,6 +30,7 @@ export interface MessageEventLike {
 export interface BackgroundEnv extends PlatformEnv {
   chrome: PlatformEnv['chrome'] & {
     runtime: { id?: string | undefined; onMessage: MessageEventLike };
+    alarms: AlarmsLike & { onAlarm: AlarmEventLike };
   };
 }
 
@@ -33,8 +41,8 @@ export interface BackgroundEnv extends PlatformEnv {
  * a failed start is forgotten, so the next message retries.
  */
 export function startBackground(env: BackgroundEnv): void {
-  let pending: Promise<HandlerRegistry> | undefined;
-  const registry = (): Promise<HandlerRegistry> => {
+  let pending: Promise<Started> | undefined;
+  const registry = (): Promise<Started> => {
     pending ??= createRegistry(env).catch((e: unknown) => {
       pending = undefined;
       throw e;
@@ -44,11 +52,22 @@ export function startBackground(env: BackgroundEnv): void {
   env.chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!isOwnPage(sender, env.chrome.runtime.id)) return undefined;
     void registry()
-      .then((r) => r.dispatch(message))
+      .then((r) => r.registry.dispatch(message))
       .catch(() => fail(ErrorCodes.internal, 'The wallet is not ready.'))
       .then(sendResponse);
     return true;
   });
+  // Alarms wake a stopped worker, so the listener is attached synchronously too.
+  env.chrome.alarms.onAlarm.addListener((alarm) => {
+    void registry()
+      .then((r) => r.wallet.onAlarm(alarm.name))
+      .catch(() => undefined);
+  });
+}
+
+interface Started {
+  registry: HandlerRegistry;
+  wallet: WalletService;
 }
 
 /**
@@ -61,9 +80,11 @@ function isOwnPage(sender: MessageSender, id: string | undefined): boolean {
   return sender.url?.startsWith(`chrome-extension://${id}/`) === true;
 }
 
-async function createRegistry(env: BackgroundEnv): Promise<HandlerRegistry> {
+async function createRegistry(env: BackgroundEnv): Promise<Started> {
   const platform = await createPlatform(env);
+  const services = createServices(platform);
+  const wallet = createWalletService(platform, services, new ChromeAlarms(env.chrome.alarms));
   const registry = new HandlerRegistry();
-  registerHandlers(registry, { platform, services: createServices(platform) });
-  return registry;
+  registerHandlers(registry, { platform, services, wallet });
+  return { registry, wallet };
 }

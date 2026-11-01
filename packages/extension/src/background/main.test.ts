@@ -33,6 +33,11 @@ function start(session: FakeArea = new FakeArea()) {
           },
         },
       },
+      alarms: {
+        create: () => Promise.resolve(),
+        clear: () => Promise.resolve(true),
+        onAlarm: { addListener: () => undefined },
+      },
     },
     crypto: webcrypto as unknown as Crypto,
     fetch: () => Promise.reject(new Error('no network')),
