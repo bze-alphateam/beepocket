@@ -12,7 +12,7 @@ import type { Network } from './networks';
 import type { HttpTransport } from './transport';
 import * as v from './validate';
 
-export interface Account {
+export interface ChainAccount {
   accountNumber: bigint;
   sequence: bigint;
   /** Compressed secp256k1 public key; null until the account has sent a transaction. */
@@ -94,7 +94,7 @@ export interface ChainClientOptions {
 /** Read and broadcast access to a BZE node over REST. */
 export interface ChainClient {
   /** `null` when the address has never been seen on chain. */
-  account(address: string): Promise<Account | null>;
+  account(address: string): Promise<ChainAccount | null>;
   balances(address: string): Promise<Map<string, bigint>>;
   supply(denom: string): Promise<bigint>;
   /** `null` when the denom has no bank metadata (e.g. `ubze`). */
@@ -125,7 +125,7 @@ export class RestChainClient implements ChainClient {
     private readonly options: ChainClientOptions = {},
   ) {}
 
-  async account(address: string): Promise<Account | null> {
+  async account(address: string): Promise<ChainAccount | null> {
     const body = await this.getJson(
       `/cosmos/auth/v1beta1/accounts/${encodeURIComponent(address)}`,
       true,
