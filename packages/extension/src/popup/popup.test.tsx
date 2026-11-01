@@ -88,8 +88,19 @@ describe('Layout', () => {
 });
 
 describe('App', () => {
-  it('opens on the shell home screen', () => {
-    const { host } = render(<App />);
-    expect(host.querySelector('h1')?.textContent).toBe('BeePocket');
+  it('opens on the token home screen', () => {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    const client: Client = { call: () => new Promise(() => undefined) };
+    const { host } = render(
+      <ClientProvider client={client}>
+        <App />
+      </ClientProvider>,
+    );
+    expect(host.querySelector('[role="status"]')).not.toBeNull();
+    vi.unstubAllGlobals();
   });
 });
