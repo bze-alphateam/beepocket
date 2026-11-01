@@ -1,0 +1,335 @@
+{
+  "method": "GET",
+  "path": "/cosmos/tx/v1beta1/txs/3D61C323C1D1EC77EB3E69EB12D727BB693C96804D579119F171E8072E797E7F",
+  "status": 200,
+  "body": {
+    "tx": {
+      "body": {
+        "messages": [
+          {
+            "@type": "/bze.burner.MsgFundBurner",
+            "creator": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+            "amount": "2000000000000000ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212"
+          }
+        ],
+        "memo": "burner.getbze.com",
+        "timeout_height": "0",
+        "extension_options": [],
+        "non_critical_extension_options": []
+      },
+      "auth_info": {
+        "signer_infos": [
+          {
+            "public_key": {
+              "@type": "/cosmos.crypto.secp256k1.PubKey",
+              "key": "A2dPbU2U45p7ZpBRMPUIXnfacm4YgAczdPMFemVQoPdP"
+            },
+            "mode_info": {
+              "single": {
+                "mode": "SIGN_MODE_LEGACY_AMINO_JSON"
+              }
+            },
+            "sequence": "263"
+          }
+        ],
+        "fee": {
+          "amount": [
+            {
+              "denom": "ubze",
+              "amount": "1128"
+            }
+          ],
+          "gas_limit": "112779",
+          "payer": "",
+          "granter": ""
+        },
+        "tip": null
+      },
+      "signatures": [
+        "10/7AuBNA9jv1KqQJWb/WSrLkwMKUC/sS9GI++ariIQacSvKbJ7K1oh1ueKcRsoqDaFjIuHWUtwAbHzmpl7A/g=="
+      ]
+    },
+    "tx_response": {
+      "height": "4027742",
+      "txhash": "3D61C323C1D1EC77EB3E69EB12D727BB693C96804D579119F171E8072E797E7F",
+      "codespace": "",
+      "code": 0,
+      "data": "12230A212F627A652E6275726E65722E4D736746756E644275726E6572526573706F6E7365",
+      "raw_log": "",
+      "logs": [],
+      "info": "",
+      "gas_wanted": "112779",
+      "gas_used": "75284",
+      "tx": {
+        "@type": "/cosmos.tx.v1beta1.Tx",
+        "body": {
+          "messages": [
+            {
+              "@type": "/bze.burner.MsgFundBurner",
+              "creator": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "amount": "2000000000000000ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212"
+            }
+          ],
+          "memo": "burner.getbze.com",
+          "timeout_height": "0",
+          "extension_options": [],
+          "non_critical_extension_options": []
+        },
+        "auth_info": {
+          "signer_infos": [
+            {
+              "public_key": {
+                "@type": "/cosmos.crypto.secp256k1.PubKey",
+                "key": "A2dPbU2U45p7ZpBRMPUIXnfacm4YgAczdPMFemVQoPdP"
+              },
+              "mode_info": {
+                "single": {
+                  "mode": "SIGN_MODE_LEGACY_AMINO_JSON"
+                }
+              },
+              "sequence": "263"
+            }
+          ],
+          "fee": {
+            "amount": [
+              {
+                "denom": "ubze",
+                "amount": "1128"
+              }
+            ],
+            "gas_limit": "112779",
+            "payer": "",
+            "granter": ""
+          },
+          "tip": null
+        },
+        "signatures": [
+          "10/7AuBNA9jv1KqQJWb/WSrLkwMKUC/sS9GI++ariIQacSvKbJ7K1oh1ueKcRsoqDaFjIuHWUtwAbHzmpl7A/g=="
+        ]
+      },
+      "timestamp": "2026-11-01T10:58:33Z",
+      "events": [
+        {
+          "type": "coin_spent",
+          "attributes": [
+            {
+              "key": "spender",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "index": true
+            },
+            {
+              "key": "amount",
+              "value": "1128ubze",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "coin_received",
+          "attributes": [
+            {
+              "key": "receiver",
+              "value": "bze17xpfvakm2amg962yls6f84z3kell8c5lda0te2",
+              "index": true
+            },
+            {
+              "key": "amount",
+              "value": "1128ubze",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "transfer",
+          "attributes": [
+            {
+              "key": "recipient",
+              "value": "bze17xpfvakm2amg962yls6f84z3kell8c5lda0te2",
+              "index": true
+            },
+            {
+              "key": "sender",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "index": true
+            },
+            {
+              "key": "amount",
+              "value": "1128ubze",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "attributes": [
+            {
+              "key": "sender",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "tx",
+          "attributes": [
+            {
+              "key": "fee",
+              "value": "1128ubze",
+              "index": true
+            },
+            {
+              "key": "fee_payer",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "tx",
+          "attributes": [
+            {
+              "key": "acc_seq",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/263",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "tx",
+          "attributes": [
+            {
+              "key": "signature",
+              "value": "10/7AuBNA9jv1KqQJWb/WSrLkwMKUC/sS9GI++ariIQacSvKbJ7K1oh1ueKcRsoqDaFjIuHWUtwAbHzmpl7A/g==",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "attributes": [
+            {
+              "key": "action",
+              "value": "/bze.burner.MsgFundBurner",
+              "index": true
+            },
+            {
+              "key": "sender",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "index": true
+            },
+            {
+              "key": "module",
+              "value": "burner",
+              "index": true
+            },
+            {
+              "key": "msg_index",
+              "value": "0",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "coin_spent",
+          "attributes": [
+            {
+              "key": "spender",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "index": true
+            },
+            {
+              "key": "amount",
+              "value": "2000000000000000ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212",
+              "index": true
+            },
+            {
+              "key": "msg_index",
+              "value": "0",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "coin_received",
+          "attributes": [
+            {
+              "key": "receiver",
+              "value": "bze1pc5zjcvhx3e8l305zjl72grytfa30r5mdypmw4",
+              "index": true
+            },
+            {
+              "key": "amount",
+              "value": "2000000000000000ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212",
+              "index": true
+            },
+            {
+              "key": "msg_index",
+              "value": "0",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "transfer",
+          "attributes": [
+            {
+              "key": "recipient",
+              "value": "bze1pc5zjcvhx3e8l305zjl72grytfa30r5mdypmw4",
+              "index": true
+            },
+            {
+              "key": "sender",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "index": true
+            },
+            {
+              "key": "amount",
+              "value": "2000000000000000ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212",
+              "index": true
+            },
+            {
+              "key": "msg_index",
+              "value": "0",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "message",
+          "attributes": [
+            {
+              "key": "sender",
+              "value": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+              "index": true
+            },
+            {
+              "key": "msg_index",
+              "value": "0",
+              "index": true
+            }
+          ]
+        },
+        {
+          "type": "bze.burner.FundBurnerEvent",
+          "attributes": [
+            {
+              "key": "amount",
+              "value": "\"2000000000000000ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212\"",
+              "index": true
+            },
+            {
+              "key": "from",
+              "value": "\"bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l\"",
+              "index": true
+            },
+            {
+              "key": "msg_index",
+              "value": "0",
+              "index": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

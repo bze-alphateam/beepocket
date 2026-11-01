@@ -1,0 +1,29 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/all_liquidity_pools?pagination.limit=1",
+  "status": 200,
+  "body": {
+    "list": [
+      {
+        "id": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl_factory/bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77/CTL",
+        "base": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+        "quote": "factory/bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77/CTL",
+        "lp_denom": "ulp/DD05723298B4D20BEB042D01D2497915BC4B15446AB59DA4CD26BFCD77C78DD2",
+        "creator": "bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77",
+        "fee": "0.002000000000000000",
+        "fee_dest": {
+          "treasury": "0.250000000000000000",
+          "burner": "0.250000000000000000",
+          "providers": "0.500000000000000000"
+        },
+        "reserve_base": "12997855903",
+        "reserve_quote": "1411257067686",
+        "stable": false
+      }
+    ],
+    "pagination": {
+      "next_key": "ZmFjdG9yeS9iemUxM2d6cTQwY2hlOTN0Z2ZtOWt6bWtwamFtYWg1bmowajczcHlocWsvdXZkbF91Ynpl",
+      "total": "0"
+    }
+  }
+}

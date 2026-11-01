@@ -1,0 +1,17 @@
+{
+  "method": "GET",
+  "path": "/cosmos/bank/v1beta1/balances/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l?pagination.limit=1",
+  "status": 200,
+  "body": {
+    "balances": [
+      {
+        "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/noadmin",
+        "amount": "969649382489"
+      }
+    ],
+    "pagination": {
+      "next_key": "ZmFjdG9yeS9iemUxejNta2NyMmp6NDI0dzZtNDlmcmdqbXk5dWhscng2OXBocXdnM2wvdGVzdHVzZA==",
+      "total": "0"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "method": "POST",
+  "path": "/cosmos/tx/v1beta1/simulate",
+  "status": 500,
+  "body": {
+    "code": 2,
+    "message": "invalid length; proto: invalid field number: tx parse error [cosmos/cosmos-sdk@v0.50.15/x/auth/tx/decoder.go:23] with gas used: '1174'",
+    "details": []
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "method": "GET",
+  "path": "/bze/tokenfactory/denom_branding?denom=factory%2Fbze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l%2Fvidulum",
+  "status": 200,
+  "body": {
+    "branding": {
+      "font": "inter",
+      "light": {
+        "background": "#F0F9FF",
+        "text": "#0C1A2B",
+        "primary": "#0369A1",
+        "secondary": "#475569"
+      },
+      "dark": {
+        "background": "#071722",
+        "text": "#E0F2FE",
+        "primary": "#38BDF8",
+        "secondary": "#94A3B8"
+      }
+    }
+  }
+}

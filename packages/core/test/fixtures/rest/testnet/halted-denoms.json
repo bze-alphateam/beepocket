@@ -1,0 +1,12 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/halted_denoms",
+  "status": 200,
+  "body": {
+    "denoms": [],
+    "pagination": {
+      "next_key": null,
+      "total": "0"
+    }
+  }
+}
