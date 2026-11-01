@@ -2,7 +2,7 @@ import { Vault } from '@beepocket/core';
 import type { Platform } from '../../platform';
 import type { Services } from '../../background/services';
 import type { Alarms } from './alarms';
-import { WalletService } from './service';
+import { WalletService, type WalletDeps } from './service';
 
 export { registerWalletHandlers } from './handlers';
 export { ChromeAlarms, type AlarmEventLike, type AlarmsLike, type Alarms } from './alarms';
@@ -14,6 +14,7 @@ export function createWalletService(
   platform: Platform,
   services: Services,
   alarms: Alarms,
+  onStateChange?: WalletDeps['onStateChange'],
 ): WalletService {
   return new WalletService({
     storage: platform.storage,
@@ -23,5 +24,6 @@ export function createWalletService(
     clock: platform.clock,
     alarms,
     chain: async () => (await services.clients()).chain,
+    ...(onStateChange ? { onStateChange } : {}),
   });
 }
