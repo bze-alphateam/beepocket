@@ -93,6 +93,7 @@ async function rig() {
     kdf: new Argon2idKdf(),
     params: { alg: 'argon2id', m: 8, t: 1, p: 1 },
   });
+  const pushed: string[] = [];
   /** A fresh service over the same storage = the worker was stopped and restarted. */
   const boot = () => {
     const service = new WalletService({
@@ -103,6 +104,7 @@ async function rig() {
       clock,
       alarms,
       chain: () => Promise.resolve(chain.asClient()),
+      onStateChange: (s) => pushed.push(s.state),
     });
     const registry = new HandlerRegistry();
     registerWalletHandlers(registry, service);
@@ -113,7 +115,7 @@ async function rig() {
       (await registry.dispatch({ method, payload })) as Result<ResponseOf<M>>;
     return { service, call };
   };
-  return { ...boot(), boot, local, sessionArea, clock, alarms, chain };
+  return { ...boot(), boot, local, sessionArea, clock, alarms, chain, pushed };
 }
 
 const value = <T>(r: Result<T>): T => {
@@ -251,6 +253,17 @@ describe('unlock, locks and timers', () => {
     expect(value(await t.call('wallet.unlock', { password: PASSWORD })).status).toBe('ok');
     expect(value(await t.call('wallet.state', {})).state).toBe('unlocked');
     expect(value(await t.call('wallet.addresses', {})).addresses).toHaveLength(1);
+  });
+
+  it('pushes every state change to the popup listener', async () => {
+    const t = await rig();
+    value(await t.call('wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE }));
+    await t.service.onAlarm('weak-lock');
+    value(await t.call('wallet.reauth', { password: PASSWORD }));
+    await t.service.onAlarm('full-lock');
+    value(await t.call('wallet.unlock', { password: PASSWORD }));
+    await t.call('wallet.unlock', { password: 'wrong' });
+    expect(t.pushed).toEqual(['unlocked', 'weakLocked', 'unlocked', 'locked', 'unlocked']);
   });
 
   it('the weak-lock alarm removes only K and keeps the profile readable', async () => {
