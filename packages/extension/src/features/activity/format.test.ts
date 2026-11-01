@@ -12,14 +12,14 @@ const amt = (amount: string, over: Partial<ActivityAmount> = {}): ActivityAmount
 
 describe('amountText', () => {
   it("signs and formats a change with Scan's symbol and exponent", () => {
-    expect(amountText(amt('1500000'))).toBe('+1.5 BZE');
+    expect(amountText(amt('1500000'))).toBe('+1.50 BZE');
     expect(amountText(amt('-20000'))).toBe('−0.02 BZE');
   });
 
   it("falls back to the wallet's own token data when Scan has none", () => {
     const known = [{ denom: 'uoth', symbol: 'OTH', decimals: 2 }];
     expect(amountText(amt('500', { denom: 'uoth', symbol: null, exponent: null }), known)).toBe(
-      '+5 OTH',
+      '+5.00 OTH',
     );
   });
 

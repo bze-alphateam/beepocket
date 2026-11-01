@@ -129,7 +129,7 @@ describe('ActivityTab', () => {
     expect(calls[0]).toEqual({});
     const rows = [...host.querySelectorAll('li')].map((li) => li.textContent);
     expect(rows[0]).toContain('Received');
-    expect(rows[0]).toContain('+1.5 PAGE');
+    expect(rows[0]).toContain('+1.50 PAGE');
     expect(rows[0]).toContain('with Exchange');
     expect(rows[1]).toContain('Failed: Swapped');
     expect(rows[1]).toContain('−25');
@@ -164,10 +164,10 @@ describe('ActivityTab', () => {
     await tick();
     const rows = [...host.querySelectorAll('li')];
     const first = rows[0]?.textContent ?? '';
-    expect(first).toContain('−2 BZE');
-    expect(first).toContain('+5 PAGE');
+    expect(first).toContain('−2.00 BZE');
+    expect(first).toContain('+5.00 PAGE');
     expect(first).toContain('+42 factory/…/zzz');
-    expect(first.indexOf('−2 BZE')).toBeLessThan(first.indexOf('+5 PAGE'));
+    expect(first.indexOf('−2.00 BZE')).toBeLessThan(first.indexOf('+5.00 PAGE'));
     expect(rows[1]?.textContent).toContain('Swapped');
     expect(rows[1]?.textContent).not.toMatch(/\b0\b/);
   });

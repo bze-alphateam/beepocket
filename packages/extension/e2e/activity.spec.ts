@@ -57,8 +57,8 @@ test('the activity tab pages through 25 rows in three loads and reaches the end 
   await expect(rows.first()).toContainText('Faucet');
 
   // The fourth row moved two tokens: both amounts show.
-  await expect(rows.nth(3)).toContainText('−2.5 BZE');
-  await expect(rows.nth(3)).toContainText('+42 OTH');
+  await expect(rows.nth(3)).toContainText('−2.50 BZE');
+  await expect(rows.nth(3)).toContainText('+42.00 OTH');
 
   await page.getByRole('button', { name: 'Load more' }).click();
   await expect(rows).toHaveCount(20);
