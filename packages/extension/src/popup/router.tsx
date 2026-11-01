@@ -1,4 +1,4 @@
-import { createContext, type ComponentType } from 'preact';
+import { createContext, type ComponentChildren, type ComponentType } from 'preact';
 import { useCallback, useContext, useMemo, useState } from 'preact/hooks';
 
 /** A route is plain data with a `name`; a feature declares a union of its own. */
@@ -21,10 +21,12 @@ const RouterContext = createContext<RouterState | null>(null);
 export interface RouterProps<R extends RouteBase> {
   table: RouteTable<R>;
   initial: R;
+  /** Rendered next to the screen, inside the router context (supervisors, global listeners). */
+  children?: ComponentChildren;
 }
 
 /** Hash-free router: the current route lives in component state. */
-export function Router<R extends RouteBase>({ table, initial }: RouterProps<R>) {
+export function Router<R extends RouteBase>({ table, initial, children }: RouterProps<R>) {
   const [route, setRoute] = useState<R>(initial);
   const navigate = useCallback((next: R) => {
     setRoute(next);
@@ -35,6 +37,7 @@ export function Router<R extends RouteBase>({ table, initial }: RouterProps<R>) 
   return (
     <RouterContext.Provider value={state as unknown as RouterState}>
       <Screen route={route} />
+      {children}
     </RouterContext.Provider>
   );
 }

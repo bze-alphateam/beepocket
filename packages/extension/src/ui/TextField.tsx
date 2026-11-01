@@ -8,6 +8,8 @@ export interface TextFieldProps {
   /** Shown under the field and announced with it. */
   error?: string;
   autoFocus?: boolean;
+  /** Autofill hint; defaults to `off`. */
+  autoComplete?: string;
 }
 
 let nextId = 0;
@@ -30,7 +32,7 @@ export function TextField(props: TextFieldProps) {
         autoFocus={props.autoFocus}
         aria-invalid={props.error !== undefined}
         aria-describedby={props.error === undefined ? undefined : errorId}
-        autoComplete="off"
+        autoComplete={props.autoComplete ?? 'off'}
         spellcheck={false}
         onInput={(e) => {
           props.onInput(e.currentTarget.value);

@@ -5,6 +5,8 @@ import { ClientProvider, useClient } from './client-context';
 import { Layout } from './Layout';
 import { Router, useRoute, type RouteTable } from './router';
 import { App } from './App';
+import { act } from 'preact/test-utils';
+import { LockEnvProvider } from '../features/lock';
 
 afterEach(cleanup);
 
@@ -88,8 +90,22 @@ describe('Layout', () => {
 });
 
 describe('App', () => {
-  it('opens on the shell home screen', () => {
-    const { host } = render(<App />);
+  it('routes an unlocked wallet to the shell home screen', async () => {
+    const client: Client = {
+      call: vi.fn(() =>
+        Promise.resolve({ ok: true as const, value: { state: 'unlocked', retryAt: null } }),
+      ) as Client['call'],
+    };
+    const events = { subscribe: () => () => undefined };
+    const clock = { now: () => 0, sleep: () => Promise.resolve() };
+    const { host } = render(
+      <ClientProvider client={client}>
+        <LockEnvProvider clock={clock} events={events}>
+          <App />
+        </LockEnvProvider>
+      </ClientProvider>,
+    );
+    await act(() => Promise.resolve());
     expect(host.querySelector('h1')?.textContent).toBe('BeePocket');
   });
 });
