@@ -73,6 +73,7 @@ function setup(
   pages: (req: RequestOf<'activity.page'>) => Result<ActivityPageResult>,
   addresses = [addr(0, 'Main')],
   balances: TokenBalances | null = null,
+  tokens: ListedToken[] = [PAGE],
 ) {
   const calls: RequestOf<'activity.page'>[] = [];
   const client: Client = {
@@ -83,7 +84,7 @@ function setup(
   };
   const view = (b: TokenBalances | null) => (
     <ClientProvider client={client}>
-      <ActivityTab token={PAGE} addresses={addresses} balances={b} />
+      <ActivityTab tokens={tokens} addresses={addresses} balances={b} />
     </ClientProvider>
   );
   const { host } = render(view(balances));
@@ -177,6 +178,40 @@ describe('ActivityTab card', () => {
     const label = host.querySelector('a')?.getAttribute('aria-label') ?? '';
     expect(label).not.toContain('unknown token BZE');
     expect(label).toContain('unknown token factory/…/uguildcoi…');
+  });
+
+  it('reads another registered token the way the wallet knows it, never as unknown', async () => {
+    const OTHER: ListedToken = {
+      ...PAGE,
+      denom: 'factory/bze1x/other',
+      symbol: 'OTHER',
+      decimals: 3,
+    };
+    const { host, tick } = setup(
+      () =>
+        reply({
+          items: [
+            item(1, {
+              kind: 'dex_swap',
+              amounts: [
+                amt('-4000', { denom: 'ubze', symbol: 'BZE', exponent: 2 }),
+                amt('2500', { denom: OTHER.denom, symbol: null, exponent: null }),
+              ],
+            }),
+          ],
+        }),
+      undefined,
+      null,
+      [PAGE, OTHER],
+    );
+    await tick();
+    const text = host.querySelector('a.bp-act-card')?.textContent ?? '';
+    expect(text).toContain('OTHER');
+    expect(text).toContain('+2.50');
+    expect(host.querySelector('a.bp-act-card')?.getAttribute('aria-label')).not.toContain(
+      'unknown token',
+    );
+    expect(host.querySelectorAll('[data-unknown]')).toHaveLength(0);
   });
 
   it('tags a failed card, strikes its amounts and says so to screen readers', async () => {
@@ -342,8 +377,8 @@ describe('ActivityTab', () => {
     fireEvent(select, 'change');
     await tick();
     expect(calls.at(-1)).toEqual({ addressIndex: 0 });
-    // The card always names its address, whatever the filter.
-    expect(calls.at(-1)).toEqual({ addressIndex: 0 });
+    // The card names its address whatever the filter says (the stub answers with Savings).
+    expect(host.querySelector('.bp-act-addr-label')?.textContent).toBe('Savings');
   });
 
   it('starts over when the balance total changes', async () => {

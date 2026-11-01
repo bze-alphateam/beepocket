@@ -7,7 +7,8 @@ import { amountParts, whenText } from './format';
 import { wordsFor } from './words';
 
 export interface ActivityTabProps {
-  token: ListedToken;
+  /** The wallet's tokens: a row's token Scan has no symbol for still reads as the wallet knows it. */
+  tokens: ListedToken[];
   addresses: WalletAddress[];
   /** A change of the total means a transaction landed: the feed starts over. */
   balances: TokenBalances | null;
@@ -164,7 +165,7 @@ function ActivityCard({ item, explorer, known }: CardProps) {
 /** The wallet's whole activity, whatever token it involved, newest first, 10 rows at a time. */
 export function ActivityTab(props: ActivityTabProps) {
   const client = useClient();
-  const { token, addresses } = props;
+  const { tokens, addresses } = props;
   const [filter, setFilter] = useState<number | null>(null);
   const [feed, setFeed] = useState<Feed>(FRESH);
   const latest = useRef(0);
@@ -238,9 +239,9 @@ export function ActivityTab(props: ActivityTabProps) {
           {feed.items.map((item, i) => (
             <li
               key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}
-              class="bp-act-row"
+             
             >
-              <ActivityCard item={item} explorer={feed.explorer} known={[token]} />
+              <ActivityCard item={item} explorer={feed.explorer} known={tokens} />
             </li>
           ))}
         </ul>

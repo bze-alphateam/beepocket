@@ -10,7 +10,7 @@ export function registerActivityTab(): void {
     render: (ctx) => (
       <ActivityTab
         key={ctx.token.denom}
-        token={ctx.token}
+        tokens={ctx.tokens}
         addresses={ctx.addresses}
         balances={ctx.balances}
       />
