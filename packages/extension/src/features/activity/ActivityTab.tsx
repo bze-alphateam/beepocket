@@ -237,10 +237,7 @@ export function ActivityTab(props: ActivityTabProps) {
       {!first && (
         <ul class="bp-act-list" aria-label={t('activity.list')}>
           {feed.items.map((item, i) => (
-            <li
-              key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}
-             
-            >
+            <li key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}>
               <ActivityCard item={item} explorer={feed.explorer} known={tokens} />
             </li>
           ))}

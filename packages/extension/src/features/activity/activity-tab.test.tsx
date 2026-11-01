@@ -265,7 +265,7 @@ describe('ActivityTab', () => {
     expect(rows[3]).toContain('Staked');
     expect(rows[3]).toContain('−0.03');
     expect(host.textContent).toContain("That's everything from the last 30 days");
-    expect(host.querySelector('a')?.getAttribute('href')).toBe(
+    expect(host.querySelector('.bp-act-end a')?.getAttribute('href')).toBe(
       'https://explorer.example/accounts/bze1a',
     );
     expect(host.textContent).toContain('Older activity on Explorer');
