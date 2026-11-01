@@ -83,5 +83,9 @@ export const activity = {
   'activity.word.relay': 'IBC relay',
   'activity.word.ibc_in': 'Received from another chain',
   'activity.word.ibc_refund': 'Refunded',
+  'activity.word.ibc_out': 'Sent to another chain',
+  'activity.word.ibc_fee': 'Paid an IBC fee',
+  'activity.word.ica': 'Interchain account action',
+  'activity.word.evidence': 'Submitted evidence',
   'activity.word.fee_only': 'Network fee',
 } as const;

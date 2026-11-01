@@ -14,6 +14,7 @@ import {
   type TokenBalances,
   type WalletAddress,
 } from '../../protocol';
+import { applyTheme } from '../../theme';
 import { ClientProvider } from '../../popup/client-context';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { ActivityTab } from './ActivityTab';
@@ -111,6 +112,7 @@ describe('ActivityTab', () => {
           item(1, { amount: '150', counterparty: 'Exchange' }),
           item(2, { kind: 'dex_swap', amount: '-2500', success: false }),
           item(3, { kind: 'fee_only', amount: '-7', feeOnly: true }),
+          item(4, { kind: 'delegate', category: 'staking', amount: '-3', feeOnly: true }),
         ],
       }),
     );
@@ -124,6 +126,9 @@ describe('ActivityTab', () => {
     expect(rows[1]).toContain('−25');
     expect(rows[2]).toContain('Network fee');
     expect(rows[2]).toContain('−0.07');
+    expect(rows[3]).toContain('Network fee');
+    expect(rows[3]).toContain('Staked');
+    expect(rows[3]).toContain('−0.03');
     expect(host.textContent).toContain("That's everything from the last 30 days");
     expect(host.querySelector('a')?.getAttribute('href')).toBe(
       'https://explorer.example/accounts/bze1a',
@@ -229,5 +234,47 @@ describe('ActivityTab', () => {
     await tick();
     expect(calls).toHaveLength(2);
     expect(calls[1]).toEqual({ denom: PAGE.denom });
+  });
+
+  it.each(['dark', 'light'] as const)('renders under the %s theme variables', async (scheme) => {
+    const { host, tick } = setup(() => reply({ items: [item(1), item(2)] }));
+    const style = new Map<string, string>();
+    const dataset: { scheme?: string | undefined } = {};
+    applyTheme(
+      {
+        style: {
+          setProperty: (n, v) => {
+            style.set(n, v);
+          },
+        },
+        dataset,
+      },
+      {
+        denom: PAGE.denom,
+        branding: {
+          font: 'inter',
+          light: {
+            background: '#FFFFFF',
+            text: '#111111',
+            primary: '#CC8800',
+            secondary: '#888888',
+          },
+          dark: {
+            background: '#000000',
+            text: '#EEEEEE',
+            primary: '#FFB000',
+            secondary: '#777777',
+          },
+        },
+        brandThemes: true,
+        scheme,
+      },
+    );
+    await tick();
+    expect(style.get('--bp-primary')).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(dataset.scheme).toBe(scheme);
+    // The tab draws only with those variables: no scheme-specific markup to differ.
+    expect(host.querySelectorAll('li')).toHaveLength(2);
+    expect(host.querySelector('.bp-act-row')).not.toBeNull();
   });
 });

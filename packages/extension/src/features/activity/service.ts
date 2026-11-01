@@ -9,8 +9,10 @@ import {
   type WalletAddress,
 } from '../../protocol';
 
-export const PAGE_SIZE = 10;
-export const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const PAGE_SIZE = 10;
+const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+/** Longer than the transport's own timeout, so that one normally wins; this one guards any other transport. */
+const SCAN_TIMEOUT_MS = 20_000;
 
 /** The wallet's addresses, in derivation order; an error result while the wallet is locked. */
 export interface ActivityAddresses {
@@ -22,7 +24,7 @@ export interface ActivityServiceDeps {
   /** Explorer base URL of the active network, no trailing slash. */
   explorer: string;
   addresses: ActivityAddresses;
-  clock: Pick<Clock, 'now'>;
+  clock: Pick<Clock, 'now' | 'sleep'>;
 }
 
 /** Where one address stands: rows fetched but not yet shown, and the way to its older rows. */
@@ -180,11 +182,16 @@ export class ActivityService {
   }
 
   private async fill(lane: Lane, state: CursorState, address: WalletAddress): Promise<void> {
-    const page = await this.deps.scan.activity(address.address, {
-      denom: state.denom,
-      limit: PAGE_SIZE,
-      ...(lane.next === null ? {} : { cursor: lane.next }),
-    });
+    const page = await Promise.race([
+      this.deps.scan.activity(address.address, {
+        denom: state.denom,
+        limit: PAGE_SIZE,
+        ...(lane.next === null ? {} : { cursor: lane.next }),
+      }),
+      this.deps.clock.sleep(SCAN_TIMEOUT_MS).then(() => {
+        throw new Error('Scan did not answer in time');
+      }),
+    ]);
     const kept = page.items.filter((row) => !(Date.parse(row.time) < state.cutoff));
     lane.fetched = true;
     lane.buffer.push(...kept.map((row) => toItem(row, state.denom, address)));

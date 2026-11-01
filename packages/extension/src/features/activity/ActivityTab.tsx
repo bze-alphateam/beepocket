@@ -113,15 +113,13 @@ export function ActivityTab(props: ActivityTabProps) {
               key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}
               class="bp-act-row"
             >
-              <span class="bp-act-what">
-                {item.feeOnly && item.kind === 'fee_only' ? t('activity.fee') : wordsFor(item)}
-              </span>
+              <span class="bp-act-what">{item.feeOnly ? t('activity.fee') : wordsFor(item)}</span>
               <span class="bp-act-amount" data-negative={item.amount?.startsWith('-') ? '' : null}>
                 {item.amount === null ? '' : signedAmount(item.amount, token.decimals)}
               </span>
               <span class="bp-act-meta">
                 {[
-                  item.feeOnly && item.kind !== 'fee_only' ? t('activity.fee') : null,
+                  item.feeOnly && item.kind !== 'fee_only' ? wordsFor(item) : null,
                   item.counterparty === null
                     ? null
                     : t('activity.counterparty', { name: item.counterparty }),

@@ -47,7 +47,13 @@ function fakeScan(feeds: Record<string, ActivityRow[]>) {
 function setup(feeds: Record<string, ActivityRow[]>, addresses = ADDRS) {
   const { scan, activity } = fakeScan(feeds);
   const registry = new HandlerRegistry();
-  const clock = { t: NOW, now: () => clock.t };
+  // `sleep` never ends unless a test says Scan hangs: then it is the timeout that fires.
+  const clock = {
+    t: NOW,
+    hang: false,
+    now: () => clock.t,
+    sleep: () => (clock.hang ? Promise.resolve() : new Promise<void>(() => undefined)),
+  };
   registerActivityHandlers(registry, {
     platform: { clock },
     services: {
@@ -310,5 +316,53 @@ describe('activity.page', () => {
     } as never);
     const r = await registry.dispatch({ method: 'activity.page', payload: { denom: DENOM } });
     expect(r).toMatchObject({ ok: false, error: { code: 'wallet_locked' } });
+  });
+
+  it('times out a Scan that never answers, and the same cursor works once Scan is back', async () => {
+    const feeds = { bze1addr0: feedOf(15, 1000, 1000, 'A') };
+    const { page, activity, clock } = setup(feeds, ADDRS.slice(0, 1));
+    const first = valueOf(await page({ denom: DENOM }));
+    const working = activity.getMockImplementation();
+    if (!working) throw new Error('no scan implementation');
+    activity.mockImplementation(() => new Promise<ActivityPage>(() => undefined));
+    clock.hang = true;
+    const failed = await page({ denom: DENOM, cursor: first.cursor ?? '' });
+    expect(failed).toMatchObject({ ok: false, error: { code: ActivityErrorCodes.unavailable } });
+    activity.mockImplementation(working);
+    clock.hang = false;
+    const retried = valueOf(await page({ denom: DENOM, cursor: first.cursor ?? '' }));
+    expect(retried.items.map((i) => i.txHash)).toEqual(['A10', 'A11', 'A12', 'A13', 'A14']);
+  });
+
+  it('marks a row of another token whose fee was paid in the token as a fee, whatever its kind', async () => {
+    const { page } = setup(
+      {
+        bze1addr0: [
+          row({
+            time: ago(1000),
+            txHash: 'STAKE',
+            kind: 'delegate',
+            category: 'staking',
+            isSigner: true,
+            deltas: [{ denom: 'uother', amount: -9n, symbol: 'O', exponent: 6 }],
+            fee: [{ denom: DENOM, amount: 3n, symbol: 'BZE', exponent: 6 }],
+          }),
+          row({
+            time: ago(2000),
+            txHash: 'SEND',
+            category: 'sent',
+            isSigner: true,
+            deltas: [{ denom: DENOM, amount: -10n, symbol: 'BZE', exponent: 6 }],
+            fee: [{ denom: DENOM, amount: 3n, symbol: 'BZE', exponent: 6 }],
+          }),
+        ],
+      },
+      ADDRS.slice(0, 1),
+    );
+    const v = valueOf(await page({ denom: DENOM }));
+    expect(v.items.map((i) => [i.kind, i.amount, i.feeOnly])).toEqual([
+      ['delegate', '-3', true],
+      ['send', '-10', false],
+    ]);
   });
 });

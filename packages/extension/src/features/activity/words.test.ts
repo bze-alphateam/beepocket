@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { wordsFor } from './words';
 
@@ -9,77 +11,16 @@ const row = (kind: string, over: Partial<Parameters<typeof wordsFor>[0]> = {}) =
   ...over,
 });
 
-/** Every kind Scan's classify tables emit (messages and block events). */
-const KINDS = [
-  'send',
-  'nft_send',
-  'vesting_create',
-  'delegate',
-  'undelegate',
-  'redelegate',
-  'cancel_unbonding',
-  'validator',
-  'claim_rewards',
-  'claim_commission',
-  'withdraw_address',
-  'community_pool_fund',
-  'validator_rewards_deposit',
-  'proposal',
-  'proposal_deposit',
-  'vote',
-  'proposal_cancel',
-  'authz_exec',
-  'authz_grant',
-  'authz_revoke',
-  'feegrant_grant',
-  'feegrant_revoke',
-  'feegrant_prune',
-  'group',
-  'dex_order',
-  'dex_cancel',
-  'dex_fill',
-  'dex_swap',
-  'liquidity',
-  'dex_pool',
-  'dex_market',
-  'burner_fund',
-  'raffle_join',
-  'raffle_start',
-  'burner_move',
-  'token_create',
-  'token_mint',
-  'token_burn',
-  'token_admin',
-  'token_update',
-  'reward_join',
-  'reward_exit',
-  'reward_claim',
-  'reward_program',
-  'article',
-  'respect',
-  'dex_order_saved',
-  'dex_refund',
-  'dex_cancel_skipped',
-  'dex_failed',
-  'unbonding_completed',
-  'redelegation_completed',
-  'reward_won',
-  'raffle_won',
-  'raffle_lost',
-  'raffle_finished',
-  'burned',
-  'slashed',
-  'proposal_resolved',
-  'proposal_dropped',
-  'epoch',
-  'relay',
-  'ibc_in',
-  'ibc_refund',
-  'fee_only',
-];
+/** Copied from Scan's classify tables (see the fixture's `source`): a new kind there fails below. */
+const KINDS = (
+  JSON.parse(
+    readFileSync(join(import.meta.dirname, '../../../test/fixtures/scan-kinds.json'), 'utf8'),
+  ) as { kinds: string[] }
+).kinds;
 
 describe('wordsFor', () => {
   it('has words for every documented kind, none of them the fallback', () => {
+    expect(KINDS.length).toBeGreaterThan(60);
     for (const kind of KINDS) {
       expect(wordsFor(row(kind)), kind).not.toBe('Transaction');
       expect(wordsFor(row(kind)), kind).not.toBe('');

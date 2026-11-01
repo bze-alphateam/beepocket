@@ -58,7 +58,7 @@ export function mockReply(pathAndQuery: string): MockReply {
 }
 
 /** How many recorded-style rows the mock Scan holds per address, for the base token only. */
-export const MOCK_ACTIVITY_ROWS = 25;
+const MOCK_ACTIVITY_ROWS = 25;
 
 /**
  * `GET /api/v1/accounts/{address}/activity?denom=&limit=&cursor=` over generated rows: 25
