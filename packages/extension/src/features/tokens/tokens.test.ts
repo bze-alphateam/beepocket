@@ -104,6 +104,8 @@ function setup(
 
   const registry = new HandlerRegistry();
   registerTokenHandlers(registry, { platform, services }, { preferred, addresses });
+  // The type parameter only types the (already validated) reply for the assertions.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
   const call = <T = unknown>(method: string, payload: unknown = {}) =>
     registry.dispatch({ method, payload }) as Promise<
       { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
@@ -244,11 +246,11 @@ describe('preferred tokens', () => {
 describe('tokens.balances', () => {
   function withBalances() {
     const t = setup({ addresses: ADDRS });
-    t.chainData.balances['bze1a'] = new Map([
+    t.chainData.balances.bze1a = new Map([
       ['ubze', 5n],
       [FACTORY, 7n],
     ]);
-    t.chainData.balances['bze1b'] = new Map([['ubze', 2n]]);
+    t.chainData.balances.bze1b = new Map([['ubze', 2n]]);
     return t;
   }
 
@@ -326,7 +328,7 @@ describe('tokens.search', () => {
 
   it('matches symbol, name and denom case-insensitively over held tokens', async () => {
     const t = setup({ addresses: ADDRS });
-    t.chainData.balances['bze1a'] = new Map([
+    t.chainData.balances.bze1a = new Map([
       [FACTORY, 7n],
       [IBC, 0n],
     ]);
