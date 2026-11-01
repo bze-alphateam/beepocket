@@ -5,6 +5,7 @@ import type { Client } from '../../protocol/client';
 import {
   fail,
   ok,
+  type ActivityAmount,
   type ActivityItem,
   type ActivityPageResult,
   type ListedToken,
@@ -36,6 +37,14 @@ const addr = (index: number, label: string): WalletAddress => ({
   address: `bze1address${String(index)}`,
 });
 
+const amt = (amount: string, over: Partial<ActivityAmount> = {}): ActivityAmount => ({
+  denom: PAGE.denom,
+  amount,
+  symbol: 'PAGE',
+  exponent: 2,
+  ...over,
+});
+
 const item = (n: number, over: Partial<ActivityItem> = {}): ActivityItem => ({
   addressIndex: 0,
   addressLabel: 'Main',
@@ -46,7 +55,7 @@ const item = (n: number, over: Partial<ActivityItem> = {}): ActivityItem => ({
   isSigner: false,
   success: true,
   counterparty: null,
-  amount: '150',
+  amounts: [amt('150')],
   feeOnly: false,
   ...over,
 });
@@ -109,18 +118,18 @@ describe('ActivityTab', () => {
     const { host, tick, calls } = setup(() =>
       reply({
         items: [
-          item(1, { amount: '150', counterparty: 'Exchange' }),
-          item(2, { kind: 'dex_swap', amount: '-2500', success: false }),
-          item(3, { kind: 'fee_only', amount: '-7', feeOnly: true }),
-          item(4, { kind: 'delegate', category: 'staking', amount: '-3', feeOnly: true }),
+          item(1, { amounts: [amt('150')], counterparty: 'Exchange' }),
+          item(2, { kind: 'dex_swap', amounts: [amt('-2500')], success: false }),
+          item(3, { kind: 'fee_only', amounts: [amt('-7')], feeOnly: true }),
+          item(4, { kind: 'delegate', category: 'staking', amounts: [amt('-3')], feeOnly: true }),
         ],
       }),
     );
     await tick();
-    expect(calls[0]).toEqual({ denom: PAGE.denom });
+    expect(calls[0]).toEqual({});
     const rows = [...host.querySelectorAll('li')].map((li) => li.textContent);
     expect(rows[0]).toContain('Received');
-    expect(rows[0]).toContain('+1.5');
+    expect(rows[0]).toContain('+1.5 PAGE');
     expect(rows[0]).toContain('with Exchange');
     expect(rows[1]).toContain('Failed: Swapped');
     expect(rows[1]).toContain('−25');
@@ -136,6 +145,33 @@ describe('ActivityTab', () => {
     expect(host.textContent).toContain('Older activity on Explorer');
   });
 
+  it('shows every amount of a multi-token row, the largest first, with fallbacks for unknown tokens', async () => {
+    const { host, tick } = setup(() =>
+      reply({
+        items: [
+          item(1, {
+            kind: 'dex_swap',
+            amounts: [
+              amt('-2000000', { denom: 'ubze', symbol: 'BZE', exponent: 6 }),
+              amt('500'),
+              amt('42', { denom: 'factory/bze1abc/zzz', symbol: null, exponent: null }),
+            ],
+          }),
+          item(2, { kind: 'dex_swap', amounts: [] }),
+        ],
+      }),
+    );
+    await tick();
+    const rows = [...host.querySelectorAll('li')];
+    const first = rows[0]?.textContent ?? '';
+    expect(first).toContain('−2 BZE');
+    expect(first).toContain('+5 PAGE');
+    expect(first).toContain('+42 factory/…/zzz');
+    expect(first.indexOf('−2 BZE')).toBeLessThan(first.indexOf('+5 PAGE'));
+    expect(rows[1]?.textContent).toContain('Swapped');
+    expect(rows[1]?.textContent).not.toMatch(/\b0\b/);
+  });
+
   it('loads 10 more on request and hides the button when done', async () => {
     const { host, tick, calls } = setup((req) =>
       req.cursor === undefined
@@ -147,7 +183,7 @@ describe('ActivityTab', () => {
     expect(host.textContent).not.toContain("That's everything");
     click(host, 'Load more');
     await tick();
-    expect(calls[1]).toEqual({ denom: PAGE.denom, cursor: 'c1' });
+    expect(calls[1]).toEqual({ cursor: 'c1' });
     expect(host.querySelectorAll('li')).toHaveLength(3);
     expect(host.textContent).not.toContain('Load more');
     expect(host.textContent).toContain("That's everything");
@@ -156,7 +192,7 @@ describe('ActivityTab', () => {
   it('says so when there is nothing in 30 days', async () => {
     const { host, tick } = setup(() => reply({}));
     await tick();
-    expect(host.textContent).toContain('No PAGE activity in the last 30 days');
+    expect(host.textContent).toContain('No activity in the last 30 days');
     expect(host.querySelector('ul')).toBeNull();
   });
 
@@ -167,7 +203,7 @@ describe('ActivityTab', () => {
     );
     await tick();
     expect(host.textContent).toContain("Couldn't load activity");
-    expect(host.textContent).not.toContain('No PAGE activity');
+    expect(host.textContent).not.toContain('No activity in the last 30 days');
     down = false;
     click(host, 'Retry');
     await tick();
@@ -193,7 +229,7 @@ describe('ActivityTab', () => {
     down = false;
     click(host, 'Retry');
     await tick();
-    expect(calls.at(-1)).toEqual({ denom: PAGE.denom, cursor: 'c1' });
+    expect(calls.at(-1)).toEqual({ cursor: 'c1' });
     expect(host.querySelectorAll('li')).toHaveLength(2);
   });
 
@@ -212,7 +248,7 @@ describe('ActivityTab', () => {
     select.value = '0';
     fireEvent(select, 'change');
     await tick();
-    expect(calls.at(-1)).toEqual({ denom: PAGE.denom, addressIndex: 0 });
+    expect(calls.at(-1)).toEqual({ addressIndex: 0 });
     // One address selected: the label would only repeat the filter.
     expect(host.querySelector('li')?.textContent).not.toContain('Savings');
   });
@@ -233,7 +269,7 @@ describe('ActivityTab', () => {
     update(bal('2'));
     await tick();
     expect(calls).toHaveLength(2);
-    expect(calls[1]).toEqual({ denom: PAGE.denom });
+    expect(calls[1]).toEqual({});
   });
 
   it.each(['dark', 'light'] as const)('renders under the %s theme variables', async (scheme) => {

@@ -3,7 +3,7 @@ import { t } from '../../i18n';
 import type { ActivityItem, ListedToken, TokenBalances, WalletAddress } from '../../protocol';
 import { useClient } from '../../popup/client-context';
 import { Banner, Button, Spinner } from '../../ui';
-import { signedAmount, whenText } from './format';
+import { amountText, whenText } from './format';
 import { wordsFor } from './words';
 
 export interface ActivityTabProps {
@@ -32,7 +32,7 @@ const FRESH: Feed = {
   busy: true,
 };
 
-/** The selected token's activity, newest first, 10 rows at a time. */
+/** The wallet's whole activity, whatever token it involved, newest first, 10 rows at a time. */
 export function ActivityTab(props: ActivityTabProps) {
   const client = useClient();
   const { token, addresses } = props;
@@ -47,7 +47,6 @@ export function ActivityTab(props: ActivityTabProps) {
       const id = ++latest.current;
       setFeed((f) => ({ ...(more ? f : FRESH), error: false, busy: true }));
       const res = await client.call('activity.page', {
-        denom: token.denom,
         ...(filter === null ? {} : { addressIndex: filter }),
         ...(more && cursor.current !== null ? { cursor: cursor.current } : {}),
       });
@@ -65,7 +64,7 @@ export function ActivityTab(props: ActivityTabProps) {
           : { ...f, error: true, busy: false },
       );
     },
-    [client, token.denom, filter],
+    [client, filter],
   );
 
   useEffect(() => {
@@ -114,9 +113,25 @@ export function ActivityTab(props: ActivityTabProps) {
               class="bp-act-row"
             >
               <span class="bp-act-what">{item.feeOnly ? t('activity.fee') : wordsFor(item)}</span>
-              <span class="bp-act-amount" data-negative={item.amount?.startsWith('-') ? '' : null}>
-                {item.amount === null ? '' : signedAmount(item.amount, token.decimals)}
+              <span
+                class="bp-act-amount"
+                data-negative={item.amounts[0]?.amount.startsWith('-') ? '' : null}
+              >
+                {item.amounts[0] ? amountText(item.amounts[0], [token]) : ''}
               </span>
+              {item.amounts.length > 1 && (
+                <span class="bp-act-extra">
+                  {item.amounts.slice(1).map((a) => (
+                    <span
+                      key={a.denom}
+                      class="bp-act-amount"
+                      data-negative={a.amount.startsWith('-') ? '' : null}
+                    >
+                      {amountText(a, [token])}
+                    </span>
+                  ))}
+                </span>
+              )}
               <span class="bp-act-meta">
                 {[
                   item.feeOnly && item.kind !== 'fee_only' ? wordsFor(item) : null,
@@ -163,9 +178,7 @@ export function ActivityTab(props: ActivityTabProps) {
       )}
       {!feed.busy && !feed.error && feed.done && (
         <div class="bp-act-end">
-          <p class="bp-home-note">
-            {first ? t('activity.empty', { symbol: token.symbol }) : t('activity.end')}
-          </p>
+          <p class="bp-home-note">{first ? t('activity.empty') : t('activity.end')}</p>
           <a class="bp-home-link" href={feed.explorer} target="_blank" rel="noreferrer">
             {t('activity.older')}
           </a>
