@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/market_order?market=ibc%2F12C0B8B561AFCFDA3C73DEE0F7F84AA2B860D48493C27E8E81A5D14724FAB08B%2Fibc%2F6490A7EAB61059BFC1CDDEB05917DD70BDF3A611654162A1A47DB930D40D8AF4&order_type=sell&order_id=0",
+  "status": 404,
+  "body": {
+    "code": 5,
+    "message": "not found",
+    "details": []
+  }
+}

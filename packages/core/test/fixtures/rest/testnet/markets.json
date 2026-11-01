@@ -1,0 +1,23 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/all_markets",
+  "status": 200,
+  "body": {
+    "market": [
+      {
+        "base": "ibc/9DA252F9F9C86132CC282EA431DFB7DE7729501F6DC9A3E0F50EC8C6EE380CC7",
+        "quote": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+        "creator": "bze1n60y35rwk0zh03vxvwfzvxe0lxmhx6ek6r5nx5"
+      },
+      {
+        "base": "ubze",
+        "quote": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+        "creator": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l"
+      }
+    ],
+    "pagination": {
+      "next_key": null,
+      "total": "2"
+    }
+  }
+}

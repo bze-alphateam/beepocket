@@ -5,6 +5,11 @@ import balancesPage1 from '../../test/fixtures/rest/mainnet/balances-page1.json'
 import balancesPage2 from '../../test/fixtures/rest/mainnet/balances-page2.json';
 import broadcastError from '../../test/fixtures/rest/mainnet/broadcast-error.json';
 import brandingMissing from '../../test/fixtures/rest/mainnet/denom-branding-missing.json';
+import marketOrderMain from '../../test/fixtures/rest/mainnet/market-order.json';
+import marketOrderMissing from '../../test/fixtures/rest/mainnet/market-order-missing.json';
+import marketsMain from '../../test/fixtures/rest/mainnet/markets.json';
+import marketsPage1 from '../../test/fixtures/rest/mainnet/markets-page1.json';
+import marketsPage2 from '../../test/fixtures/rest/mainnet/markets-page2.json';
 import metadataMain from '../../test/fixtures/rest/mainnet/denom-metadata.json';
 import metadataMissing from '../../test/fixtures/rest/mainnet/denom-metadata-missing.json';
 import feeParamsMain from '../../test/fixtures/rest/mainnet/fee-params.json';
@@ -450,6 +455,92 @@ describe('RestChainClient.waitForTx', () => {
   });
 });
 
+describe('RestChainClient.markets', () => {
+  it('derives each id as base/quote without splitting denoms', async () => {
+    const t = mainnet().replay(f(marketsMain));
+    const markets = await new RestChainClient(t, MAINNET).markets();
+    expect(markets).toHaveLength(marketsMain.body.market.length);
+    for (const [i, m] of markets.entries()) {
+      const wire = marketsMain.body.market[i];
+      expect(m).toEqual({
+        id: `${wire?.base ?? ''}/${wire?.quote ?? ''}`,
+        base: wire?.base,
+        quote: wire?.quote,
+      });
+    }
+    // Both sides carry slashes: the id is a plain concatenation.
+    expect(markets.some((m) => m.base.includes('/') && m.quote.includes('/'))).toBe(true);
+  });
+
+  it('follows pagination', async () => {
+    const lastKey = encodeURIComponent(marketsPage2.body.pagination.next_key);
+    const t = mainnet()
+      .replay(f(marketsPage1))
+      .replay(f(marketsPage2))
+      .on(
+        'GET',
+        `/bze/tradebin/all_markets?pagination.limit=1&pagination.key=${lastKey}`,
+        json(200, { market: [], pagination: { next_key: null } }),
+      );
+    const markets = await new RestChainClient(t, MAINNET, { pageLimit: 1 }).markets();
+    expect(markets.map((m) => m.base)).toEqual([
+      marketsPage1.body.market[0]?.base,
+      marketsPage2.body.market[0]?.base,
+    ]);
+  });
+
+  it('names the missing field', async () => {
+    const t = mainnet().on(
+      'GET',
+      '/bze/tradebin/all_markets',
+      json(200, { market: [{ base: 'a' }], pagination: { next_key: null } }),
+    );
+    await expect(new RestChainClient(t, MAINNET).markets()).rejects.toMatchObject({
+      path: 'market[0].quote',
+    });
+  });
+});
+
+describe('RestChainClient.marketOrder', () => {
+  const order = marketOrderMain.body.order;
+  const ask = (c: RestChainClient) =>
+    c.marketOrder(order.market_id, order.order_type as 'sell', order.id);
+
+  it('reads the order with a bigint amount and the price kept as text', async () => {
+    const t = mainnet().replay(f(marketOrderMain));
+    expect(await ask(new RestChainClient(t, MAINNET))).toEqual({
+      id: order.id,
+      marketId: order.market_id,
+      orderType: 'sell',
+      amount: BigInt(order.amount),
+      price: order.price,
+      owner: order.owner,
+    });
+  });
+
+  it('gives null for an order that does not exist', async () => {
+    const t = mainnet().replay(f(marketOrderMissing));
+    const missing = await new RestChainClient(t, MAINNET).marketOrder(order.market_id, 'sell', '0');
+    expect(missing).toBeNull();
+  });
+
+  it('rejects an order type outside buy and sell', async () => {
+    const body = { order: { ...order, order_type: 'swap' } };
+    const t = mainnet().on('GET', marketOrderMain.path, json(200, body));
+    await expect(ask(new RestChainClient(t, MAINNET))).rejects.toMatchObject({
+      path: 'order.order_type',
+    });
+  });
+
+  it('rejects an amount that is not an unsigned integer string', async () => {
+    const body = { order: { ...order, amount: '-5' } };
+    const t = mainnet().on('GET', marketOrderMain.path, json(200, body));
+    await expect(ask(new RestChainClient(t, MAINNET))).rejects.toMatchObject({
+      path: 'order.amount',
+    });
+  });
+});
+
 describe('amounts are never numbers', () => {
   it('types every on-chain amount as bigint or string', () => {
     type Result<K extends keyof ChainClient> = Awaited<ReturnType<ChainClient[K]>>;
@@ -469,6 +560,8 @@ describe('amounts are never numbers', () => {
     >().toEqualTypeOf<bigint>();
     expectTypeOf<Result<'liquidityPools'>[number]['reserveBase']>().toEqualTypeOf<bigint>();
     expectTypeOf<Result<'liquidityPools'>[number]['reserveQuote']>().toEqualTypeOf<bigint>();
+    expectTypeOf<NonNullable<Result<'marketOrder'>>['amount']>().toEqualTypeOf<bigint>();
+    expectTypeOf<NonNullable<Result<'marketOrder'>>['price']>().toEqualTypeOf<string>();
   });
 });
 
@@ -582,6 +675,12 @@ describe('RestChainClient hardening', () => {
       ['GET', '/bze/tradebin/params', (c) => c.tradebinParams()],
       ['GET', '/bze/tradebin/all_liquidity_pools', (c) => c.liquidityPools()],
       ['GET', '/bze/tradebin/halted_denoms', (c) => c.haltedDenoms()],
+      ['GET', '/bze/tradebin/all_markets', (c) => c.markets()],
+      [
+        'GET',
+        '/bze/tradebin/market_order?market=m&order_type=buy&order_id=1',
+        (c) => c.marketOrder('m', 'buy', '1'),
+      ],
       ['POST', '/cosmos/tx/v1beta1/simulate', (c) => c.simulate(tx)],
       ['POST', '/cosmos/tx/v1beta1/txs', (c) => c.broadcast(tx)],
       ['GET', '/cosmos/tx/v1beta1/txs/AB', (c) => c.waitForTx('AB', { clock: new FakeClock() })],
