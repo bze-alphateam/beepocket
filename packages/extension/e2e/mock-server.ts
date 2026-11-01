@@ -39,6 +39,7 @@ const FACTORY_BRANDING = {
 export function mockReply(pathAndQuery: string): MockReply {
   const url = new URL(pathAndQuery, 'http://mock.invalid');
   const denom = url.searchParams.get('denom');
+  if (/^\/api\/v1\/accounts\/[^/]+\/activity$/.test(url.pathname)) return activityReply(url);
   switch (url.pathname) {
     case '/health':
       return { status: 200, body: { status: 'ok' } };
@@ -54,6 +55,45 @@ export function mockReply(pathAndQuery: string): MockReply {
     default:
       return { status: 404, body: { code: 12, message: 'not implemented' } };
   }
+}
+
+/** How many recorded-style rows the mock Scan holds per address, for the base token only. */
+export const MOCK_ACTIVITY_ROWS = 25;
+
+/**
+ * `GET /api/v1/accounts/{address}/activity?denom=&limit=&cursor=` over generated rows: 25
+ * incoming sends an hour apart, newest first, for `ubze`; the cursor is the offset of the next row.
+ */
+function activityReply(url: URL): MockReply {
+  const limit = Number(url.searchParams.get('limit') ?? '10');
+  const from = Number(url.searchParams.get('cursor') ?? '0');
+  const rows =
+    url.searchParams.get('denom') === 'ubze'
+      ? Array.from({ length: MOCK_ACTIVITY_ROWS }, (_, i) => ({
+          time: new Date(Date.now() - (i + 1) * 3_600_000).toISOString(),
+          height: 1_000_000 - i,
+          tx_hash: `TX${String(i).padStart(3, '0')}`,
+          kind: 'send',
+          category: 'received',
+          is_signer: false,
+          success: true,
+          counterparty: {
+            address: 'bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77',
+            label: { name: 'Faucet', kind: 'service' },
+            moniker: null,
+          },
+          deltas: [{ denom: 'ubze', amount: '1000000', symbol: 'BZE', exponent: 6 }],
+          msg_types: ['/cosmos.bank.v1beta1.MsgSend'],
+          details: null,
+          fee: null,
+        }))
+      : [];
+  const items = rows.slice(from, from + limit);
+  const end = from + items.length;
+  return {
+    status: 200,
+    body: { items, next_cursor: end < rows.length ? String(end) : null },
+  };
 }
 
 export const mockFactoryDenom = FACTORY;

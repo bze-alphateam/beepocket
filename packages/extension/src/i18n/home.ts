@@ -14,7 +14,6 @@ export const home = {
   'home.tabs': 'Home sections',
   'home.tab.addresses': 'Addresses',
   'home.tab.activity': 'Activity',
-  'home.tab.activity.soon': 'Activity will show up here.',
   'home.empty.title': 'No {symbol} yet',
   'home.empty.body': 'Copy one of your addresses to receive {symbol}.',
   'home.address.copy': 'Copy address {label}',
