@@ -11,7 +11,7 @@ const MAIN = deriveAccount(PHRASE, 0).address;
 async function mockNetwork(context: BrowserContext): Promise<void> {
   await context.route('https://rest.getbze.com/**', (route) => {
     const url = new URL(route.request().url());
-    if (/\/cosmos\/bank\/v1beta1\/balances\//.test(url.pathname)) {
+    if (url.pathname.includes('/cosmos/bank/v1beta1/balances/')) {
       return route.fulfill({
         json: {
           balances: [{ denom: 'ubze', amount: '1500000' }],

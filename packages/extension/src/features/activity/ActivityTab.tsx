@@ -109,7 +109,10 @@ export function ActivityTab(props: ActivityTabProps) {
       {!first && (
         <ul class="bp-act-list" aria-label={t('activity.list')}>
           {feed.items.map((item, i) => (
-            <li key={`${item.addressIndex}-${item.txHash ?? 'block'}-${i}`} class="bp-act-row">
+            <li
+              key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}
+              class="bp-act-row"
+            >
               <span class="bp-act-what">
                 {item.feeOnly && item.kind === 'fee_only' ? t('activity.fee') : wordsFor(item)}
               </span>

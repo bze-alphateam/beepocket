@@ -3,28 +3,32 @@ import type { HandlerDeps } from '../../background/handlers';
 import type { HandlerRegistry } from '../../background/registry';
 import { ActivityService } from './service';
 
-type Req = { denom: string; addressIndex?: number; cursor?: string };
+interface Req {
+  denom: string;
+  addressIndex?: number;
+  cursor?: string;
+}
 
 function validate(payload: unknown): Result<Req> {
   const p = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<
     string,
     unknown
   >;
-  if (typeof p['denom'] !== 'string' || p['denom'] === '') {
+  if (typeof p.denom !== 'string' || p.denom === '') {
     return fail(ErrorCodes.badRequest, 'activity.page needs a denom.');
   }
-  const req: Req = { denom: p['denom'] };
-  if (p['addressIndex'] !== undefined) {
-    if (!Number.isInteger(p['addressIndex'])) {
+  const req: Req = { denom: p.denom };
+  if (p.addressIndex !== undefined) {
+    if (!Number.isInteger(p.addressIndex)) {
       return fail(ErrorCodes.badRequest, 'activity.page needs an integer addressIndex.');
     }
-    req.addressIndex = p['addressIndex'] as number;
+    req.addressIndex = p.addressIndex as number;
   }
-  if (p['cursor'] !== undefined) {
-    if (typeof p['cursor'] !== 'string') {
+  if (p.cursor !== undefined) {
+    if (typeof p.cursor !== 'string') {
       return fail(ErrorCodes.badRequest, 'activity.page needs a string cursor.');
     }
-    req.cursor = p['cursor'];
+    req.cursor = p.cursor;
   }
   return ok(req);
 }

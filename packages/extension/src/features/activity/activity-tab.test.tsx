@@ -96,11 +96,12 @@ function setup(
   };
 }
 
-const click = (host: HTMLElement, label: string) =>
+const click = (host: HTMLElement, label: string) => {
   fireEvent(
     [...host.querySelectorAll('button')].find((b) => b.textContent === label),
     'click',
   );
+};
 
 describe('ActivityTab', () => {
   it('shows rows with words, signed amounts, counterparty and the end state with the explorer link', async () => {

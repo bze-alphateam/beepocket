@@ -124,7 +124,7 @@ export class ActivityService {
     let state: CursorState;
     if (req.cursor !== undefined) {
       const parsed = parseCursor(req.cursor, req.denom);
-      if (!parsed || !parsed.lanes.every((l) => addresses.some((a) => a.index === l.index))) {
+      if (!parsed?.lanes.every((l) => addresses.some((a) => a.index === l.index))) {
         return fail(ActivityErrorCodes.badCursor, 'That activity cursor is not valid.');
       }
       state = parsed;
@@ -149,9 +149,7 @@ export class ActivityService {
     try {
       while (items.length < PAGE_SIZE) {
         const empty = state.lanes.filter((l) => l.buffer.length === 0 && !exhausted(l));
-        await Promise.all(
-          empty.map((l) => this.fill(l, state, byIndex.get(l.index) as WalletAddress)),
-        );
+        await Promise.all(empty.map((l) => this.fill(l, state, byIndex.get(l.index)!)));
         let best: Lane | null = null;
         for (const lane of state.lanes) {
           const head = lane.buffer[0];
