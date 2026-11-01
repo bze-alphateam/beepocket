@@ -368,4 +368,24 @@ describe('activity.page', () => {
       { denom: 'uthird', amount: '-2', symbol: 'T', exponent: 2 },
     ]);
   });
+
+  it('orders equal absolute amounts by denom, whatever order Scan lists them in', async () => {
+    const { page } = setup(
+      {
+        bze1addr0: [
+          row({
+            time: ago(1000),
+            deltas: [
+              { denom: 'ubbb', amount: 5n, symbol: null, exponent: null },
+              { denom: 'uccc', amount: -5n, symbol: null, exponent: null },
+              { denom: 'uaaa', amount: 5n, symbol: null, exponent: null },
+            ],
+          }),
+        ],
+      },
+      ADDRS.slice(0, 1),
+    );
+    const v = valueOf(await page({}));
+    expect(v.items[0]?.amounts.map((a) => a.denom)).toEqual(['uaaa', 'ubbb', 'uccc']);
+  });
 });

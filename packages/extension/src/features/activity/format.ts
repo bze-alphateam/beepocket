@@ -18,7 +18,7 @@ export function whenText(iso: string, locale?: string | string[]): string {
 }
 
 /** "factory/bze1abc…wxyz/token" → "factory/…/token"; short denoms stay as they are. */
-export function shortDenom(denom: string): string {
+function shortDenom(denom: string): string {
   const parts = denom.split('/');
   if (parts.length < 3) return denom.length > 16 ? `${denom.slice(0, 15)}…` : denom;
   return `${parts[0] ?? ''}/…/${parts.slice(2).join('/')}`;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityAmount } from '../../protocol';
-import { amountText, shortDenom } from './format';
+import { amountText } from './format';
 
 const amt = (amount: string, over: Partial<ActivityAmount> = {}): ActivityAmount => ({
   denom: 'ubze',
@@ -29,9 +29,15 @@ describe('amountText', () => {
   });
 });
 
-describe('shortDenom', () => {
-  it('keeps short denoms and trims long plain ones', () => {
-    expect(shortDenom('ubze')).toBe('ubze');
-    expect(shortDenom('ibc'.repeat(10))).toBe('ibcibcibcibcibc…');
+describe('amountText with long denoms', () => {
+  const bare = (denom: string) => amountText(amt('7', { denom, symbol: null, exponent: null }));
+
+  it('keeps short denoms and truncates long plain ones', () => {
+    expect(bare('ubze')).toBe('+7 ubze');
+    expect(bare('ibc'.repeat(10))).toBe('+7 ibcibcibcibcibc…');
+  });
+
+  it('shortens factory denoms to their last part', () => {
+    expect(bare('factory/bze1abcdef/zzz')).toBe('+7 factory/…/zzz');
   });
 });

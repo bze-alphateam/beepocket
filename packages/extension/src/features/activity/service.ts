@@ -77,7 +77,10 @@ function amountsOf(balances: ScanBalance[], sign: 1n | -1n): ActivityAmount[] {
   }
   return [...sums.entries()]
     .filter(([, v]) => v.n !== 0n)
-    .sort(([, x], [, y]) => (abs(x.n) === abs(y.n) ? 0 : abs(x.n) > abs(y.n) ? -1 : 1))
+    .sort(([dx, x], [dy, y]) => {
+      if (abs(x.n) !== abs(y.n)) return abs(x.n) > abs(y.n) ? -1 : 1;
+      return dx < dy ? -1 : dx > dy ? 1 : 0;
+    })
     .map(([denom, v]) => ({
       denom,
       amount: v.n.toString(),
