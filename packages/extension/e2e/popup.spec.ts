@@ -3,6 +3,14 @@ import { expect, test } from './fixtures';
 test('popup shows BeePocket in the BeePocket theme', async ({ context, extensionId }) => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  // A fresh profile has no wallet and opens onboarding; an unlocked wallet opens the home shell.
+  await page.evaluate((): Promise<unknown> =>
+    chrome.runtime.sendMessage({
+      method: 'wallet.createWallet',
+      payload: { password: 'correct horse', mnemonic: `${'abandon '.repeat(23)}art` },
+    }),
+  );
+  await page.reload();
   await expect(page.getByRole('heading', { name: 'BeePocket' })).toBeVisible();
   const primary = await page.evaluate(() =>
     document.documentElement.style.getPropertyValue('--bp-primary'),

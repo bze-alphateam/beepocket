@@ -320,4 +320,58 @@ button.bp-book-row {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+
+.bp-lock {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  text-align: center;
+}
+
+.bp-lock img {
+  align-self: center;
+}
+
+.bp-lock h1 {
+  font-size: 20px;
+}
+
+.bp-lock-sub {
+  color: var(--bp-muted);
+  font-size: 13px;
+}
+
+.bp-lock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.bp-lock-forgot {
+  align-self: center;
+  background: none;
+  border: 0;
+  color: var(--bp-muted);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bp-lock-warning {
+  color: var(--bp-muted);
+  font-size: 11px;
+}
+
+.bp-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
