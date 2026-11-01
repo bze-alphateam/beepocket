@@ -1,4 +1,5 @@
 import type { Cache } from './cache';
+import { stripUnsafeText } from './text';
 import { TOKEN_TTL_MS } from './cache';
 import type { ChainClient, DenomBranding, ScanClient } from './net';
 
@@ -30,9 +31,6 @@ const MAX_DENOM_LENGTH = 128;
 const DENOM_PATTERN = /^[A-Za-z][A-Za-z0-9/:._-]*$/;
 const MAX_SYMBOL_LENGTH = 32;
 const MAX_NAME_LENGTH = 64;
-// Control characters and bidi overrides: token creators choose these strings.
-// eslint-disable-next-line no-control-regex
-const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 function kindOf(denom: string): TokenKind {
   if (denom === NATIVE_DENOM) return 'native';
@@ -43,7 +41,7 @@ function kindOf(denom: string): TokenKind {
 
 /** Display text from an untrusted source: no control characters, bounded; null when nothing is left. */
 function cleanText(raw: string, max: number): string | null {
-  const text = raw.replace(UNSAFE_TEXT, '').trim().slice(0, max).trim();
+  const text = stripUnsafeText(raw).trim().slice(0, max).trim();
   return text === '' ? null : text;
 }
 

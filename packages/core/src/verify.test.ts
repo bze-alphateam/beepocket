@@ -76,8 +76,13 @@ describe('verifySignRequest', () => {
     expect(result.authInfo.signerInfos[0]?.sequence).toBe(5n);
   });
 
-  it('accepts a brand-new account (unknown to the chain)', () => {
-    expect(code(request({ chainAccount: null }))).toBe('ok');
+  it('accepts a brand-new account (unknown to the chain) at sequence 0', () => {
+    const fresh = request({ chainAccount: null });
+    const signDoc = {
+      ...fresh.signDoc,
+      authInfoBytes: buildAuthInfo({ pubKey: PUB, sequence: 0n, fee }),
+    };
+    expect(code({ ...fresh, signDoc })).toBe('ok');
   });
 
   it('accepts a request that carries no public key', () => {
@@ -192,7 +197,7 @@ describe('verifySignRequest', () => {
 
   it('lets a message type the wallet cannot decode through (the chain checks its signer)', () => {
     const unknown: AnyMsg = {
-      typeUrl: '/cosmos.staking.v1beta1.MsgDelegate',
+      typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
       value: new Uint8Array([1]),
     };
     expect(code(request({}, [unknown]))).toBe('ok');
@@ -260,6 +265,80 @@ describe('verifySignRequest', () => {
       },
     };
     expect(code(badAuth)).toBe('bad-body');
+  });
+});
+
+describe('verifySignRequest sequence and timeout', () => {
+  const at = (sequence: bigint, chainAccount: VerifyInput['chainAccount']) =>
+    request({
+      chainAccount,
+      signDoc: {
+        ...request().signDoc,
+        authInfoBytes: buildAuthInfo({ pubKey: PUB, sequence, fee }),
+      },
+    });
+
+  it('sequence: differs from the account, in either direction', () => {
+    const account = { accountNumber: 77n, sequence: 5n };
+    expect(code(at(5n, account))).toBe('ok');
+    expect(code(at(4n, account))).toBe('sequence');
+    expect(code(at(6n, account))).toBe('sequence');
+  });
+
+  it('sequence: an account the chain has not seen must be at 0', () => {
+    expect(code(at(0n, null))).toBe('ok');
+    expect(code(at(1n, null))).toBe('sequence');
+  });
+
+  it('allows a timeout height: it can only shorten the validity', () => {
+    const body = TxBody.encode(
+      TxBody.fromPartial({ messages: [Any.fromPartial(send())], timeoutHeight: 123_456n }),
+    ).finish();
+    const base = request();
+    expect(code({ ...base, signDoc: { ...base.signDoc, bodyBytes: body } })).toBe('ok');
+  });
+});
+
+/** A protobuf message whose only field `no` is the text. */
+function stringMsg(typeUrl: string, no: number, text: string): AnyMsg {
+  const bytes = new TextEncoder().encode(text);
+  return { typeUrl, value: new Uint8Array([(no << 3) | 2, bytes.length, ...bytes]) };
+}
+
+describe('verifySignRequest signers of types without a decoder', () => {
+  const cases: [string, number][] = [
+    ['/ibc.applications.transfer.v1.MsgTransfer', 4],
+    ['/cosmos.staking.v1beta1.MsgDelegate', 1],
+    ['/cosmos.staking.v1beta1.MsgUndelegate', 1],
+    ['/cosmos.staking.v1beta1.MsgBeginRedelegate', 1],
+    ['/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward', 1],
+  ];
+
+  it.each(cases)(
+    '%s: the signer field is the connected address or the request is refused',
+    (url, no) => {
+      expect(code(request({}, [stringMsg(url, no, ME)]))).toBe('ok');
+      expect(code(request({}, [stringMsg(url, no, OTHER)]))).toBe('multi-signer');
+      // The signer field is missing altogether.
+      expect(code(request({}, [stringMsg(url, no + 1, ME)]))).toBe('multi-signer');
+    },
+  );
+
+  it('bad-body: the signer field cannot be read', () => {
+    const broken: AnyMsg = {
+      typeUrl: '/cosmos.staking.v1beta1.MsgDelegate',
+      value: new Uint8Array([10, 99]),
+    };
+    expect(code(request({}, [broken]))).toBe('bad-body');
+  });
+
+  it('finds the field after other fields', () => {
+    const value = new Uint8Array([
+      ...stringMsg('x', 1, 'a').value,
+      ...stringMsg('x', 4, OTHER).value,
+    ]);
+    const msg: AnyMsg = { typeUrl: '/ibc.applications.transfer.v1.MsgTransfer', value };
+    expect(code(request({}, [msg]))).toBe('multi-signer');
   });
 });
 

@@ -166,6 +166,21 @@ describe('TokenResolver.resolve', () => {
     expect(info.name).toHaveLength(64);
   });
 
+  it.each(['\u200b', '\u200d', '\u2060', '\u00ad', '\ufeff', '\u{e0041}', '\ue000', '\u2028'])(
+    'removes the invisible character %j from token text',
+    async (char) => {
+      const chain = stubChain({
+        denomMetadata: vi
+          .fn()
+          .mockResolvedValue({ ...vdlMeta, symbol: `A${char}B`, name: `N${char}M` }),
+        denomBranding: vi.fn().mockResolvedValue(null),
+      });
+      const info = await new TokenResolver(chain, stubScan()).resolve(VDL);
+      expect(info.symbol).toBe('AB');
+      expect(info.name).toBe('NM');
+    },
+  );
+
   it('keeps the chain exponent but guesses the symbol when it is empty after cleaning', async () => {
     const chain = stubChain({
       denomMetadata: vi.fn().mockResolvedValue({ ...vdlMeta, symbol: ' \u202e ' }),

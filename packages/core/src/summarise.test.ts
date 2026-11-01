@@ -91,8 +91,8 @@ function context(overrides: Partial<SummaryContext> = {}): SummaryContext {
   };
 }
 
-const run = (messages: AnyMsg[], overrides: Partial<SummaryContext> = {}) =>
-  summarise(messages, context(overrides));
+const run = (messages: AnyMsg[], overrides: Partial<SummaryContext> = {}, memo?: string) =>
+  summarise(messages, context(overrides), memo === undefined ? {} : { memo });
 const headline = (s: TxSummary) => `${s.title} · ${s.hero} · ${s.sub}`;
 
 const send = (to = ALEX, amount = [{ denom: 'ubze', amount: '1000000000' }]) =>
@@ -565,13 +565,6 @@ describe('unknown messages', () => {
     expect(s.level).toBe('unknown');
     expect(s.sub).toContain('unreadable');
   });
-
-  it('makes invisible characters visible', async () => {
-    const sneaky: AnyMsg = { typeUrl: '/x.v1.Msg‮Evil', value: new Uint8Array() };
-    const s = await run([sneaky]);
-    expect(s.title).not.toMatch(/‮/);
-    expect(s.title).toContain('�');
-  });
 });
 
 describe('several messages', () => {
@@ -679,5 +672,109 @@ describe('rawJson', () => {
     expect(JSON.parse(rawJson([broken]))).toEqual([
       { typeUrl: MsgSend.typeUrl, unknown: true, value: 'CmM=' },
     ]);
+  });
+});
+
+/** Every string inside a value, concatenated: JSON escapes would hide control characters. */
+function allStrings(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(allStrings).join('\n');
+  if (typeof value === 'object' && value !== null)
+    return Object.entries(value)
+      .map(([k, v]) => k + '\n' + allStrings(v))
+      .join('\n');
+  return '';
+}
+
+const INVISIBLE: [string, string][] = [
+  ['bidi override', '\u202e'],
+  ['bidi isolate', '\u2066'],
+  ['zero-width space', '\u200b'],
+  ['zero-width joiner', '\u200d'],
+  ['word joiner', '\u2060'],
+  ['soft hyphen', '\u00ad'],
+  ['byte order mark', '\ufeff'],
+  ['tag character', '\u{e0041}'],
+  ['private use', '\ue000'],
+  ['line separator', '\u2028'],
+  ['null', '\u0000'],
+  ['escape', '\u001b'],
+];
+
+describe('invisible characters', () => {
+  it.each(INVISIBLE)('%s is never passed through to the user', async (_name, char) => {
+    const text = `a${char}b`;
+    const unknownType: AnyMsg = { typeUrl: `/x.v1.Msg${char}Evil`, value: new Uint8Array() };
+    const s = await run([
+      unknownType,
+      send(`bze1${char}x`, [{ denom: `ub${char}ze`, amount: '1' }]),
+    ]);
+    const shown = allStrings(s);
+    expect(shown).not.toContain(char);
+    expect(shown).toContain('\uFFFD');
+
+    const memo = (await run([send()], {}, text)).memo;
+    expect(memo).toBe('a\uFFFDb');
+  });
+
+  it('is also stripped from token symbols', async () => {
+    const tokens = {
+      resolve: () =>
+        Promise.resolve({
+          denom: 'ubze',
+          symbol: 'U\u200bSDC',
+          name: 'x',
+          decimals: 6,
+          kind: 'native' as const,
+          source: 'chain' as const,
+          branding: null,
+        }),
+    };
+    const s = await run([send()], { tokens });
+    expect(s.hero).toBe('1,000.00 U\uFFFDSDC');
+  });
+
+  it.each(INVISIBLE)('%s is neutralised in the raw JSON too', (_name, char) => {
+    const unknownType: AnyMsg = { typeUrl: `/x.v1.Msg${char}Evil`, value: new Uint8Array([1]) };
+    const memoMsg = pack(MsgSend, {
+      fromAddress: ME,
+      toAddress: `bze1${char}x`,
+      amount: [{ denom: `ub${char}ze`, amount: '1' }],
+    });
+    const shown = allStrings(JSON.parse(rawJson([unknownType, memoMsg])));
+    expect(shown).not.toContain(char);
+    expect(shown).toContain('\uFFFD');
+  });
+});
+
+describe('memo', () => {
+  const memoOf = async (memo?: string) =>
+    (await summarise([send()], context(), memo === undefined ? {} : { memo })).memo;
+
+  it('is null when there is none or it is blank', async () => {
+    expect(await memoOf()).toBeNull();
+    expect(await memoOf('')).toBeNull();
+    expect(await memoOf('  \n\t ')).toBeNull();
+  });
+
+  it('is shown as one trimmed line', async () => {
+    expect(await memoOf('  thanks\nfor   lunch ')).toBe('thanks for lunch');
+  });
+
+  it('is cut with a visible marker when long, and not when it fits', async () => {
+    const fits = 'x'.repeat(200);
+    expect(await memoOf(fits)).toBe(fits);
+    const long = await memoOf('x'.repeat(201));
+    expect(long).toBe(`${'x'.repeat(200)}… (truncated)`);
+    expect(await memoOf('😀'.repeat(300))).toBe(`${'😀'.repeat(200)}… (truncated)`);
+  });
+
+  it('is untrusted text: invisible characters are replaced', async () => {
+    expect(await memoOf('pay\u202e now')).toBe('pay\uFFFD now');
+  });
+
+  it('is part of a multi-message summary too', async () => {
+    const s = await summarise([send(), send()], context(), { memo: 'both' });
+    expect(s.memo).toBe('both');
   });
 });

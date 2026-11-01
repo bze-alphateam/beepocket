@@ -26,6 +26,7 @@ import {
   MsgMultiSwap,
   MsgRemoveLiquidity,
 } from './proto/bze/tradebin/tx';
+import { sanitiseText } from './text';
 import type { TokenInfo } from './tokens';
 import type { AnyMsg } from './tx';
 import { shortAddress } from './vault';
@@ -73,6 +74,8 @@ export interface TxSummary {
   messages: MsgSummary[];
   /** Red-box texts of every dangerous message. */
   dangers: DangerNotice[];
+  /** The transaction memo as untrusted text: sanitised, bounded, `null` when empty. */
+  memo: string | null;
 }
 
 export interface SummaryContext {
@@ -84,6 +87,11 @@ export interface SummaryContext {
   orders: Pick<ChainClient, 'marketOrder'>;
   /** A saved contact's name for an address, or null. */
   addressBook: (address: string) => string | null;
+}
+
+export interface SummaryOptions {
+  /** The transaction's memo, as the dapp wrote it. */
+  memo?: string;
 }
 
 /** What one message says, before it is merged into a transaction summary. */
@@ -104,17 +112,11 @@ const MAX_TEXT = 128;
 const MAX_UINT_DIGITS = 78;
 const LP_DECIMALS = 6;
 const MAX_ROUTE_HOPS = 32;
-// Control characters and bidi overrides are shown as U+FFFD instead of vanishing, so a dapp
-// cannot hide text in what the user reads.
-// eslint-disable-next-line no-control-regex
-const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+const MAX_MEMO = 200;
 const RISK_ORDER: Record<RiskLevel, number> = { normal: 0, unknown: 1, dangerous: 2 };
 
-/** Text from an untrusted source, bounded and without invisible characters. */
-function safeText(raw: string, max = MAX_TEXT): string {
-  const clean = raw.replace(UNSAFE_TEXT, '�');
-  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
-}
+/** Untrusted text for display: no unsafe characters, bounded. */
+const safeText = (raw: string, max = MAX_TEXT): string => sanitiseText(raw, max);
 
 /** An unsigned integer string, or null for anything else. */
 function toUint(raw: string): bigint | null {
@@ -166,7 +168,11 @@ class Lookups {
     let cached = this.tokenCache.get(denom);
     if (!cached) {
       cached = this.ctx.tokens.resolve(denom).then(
-        (t) => ({ symbol: t.symbol, decimals: t.decimals, exact: t.source !== 'fallback' }),
+        (t) => ({
+          symbol: sanitiseText(t.symbol, 64),
+          decimals: t.decimals,
+          exact: t.source !== 'fallback',
+        }),
         () => ({ symbol: safeText(denom, 40), decimals: 0, exact: false }),
       );
       this.tokenCache.set(denom, cached);
@@ -739,6 +745,15 @@ async function partsOf(l: Lookups, msg: AnyMsg): Promise<Parts> {
   }
 }
 
+/** A memo is whatever the dapp put there: one line, no invisible characters, cut when long. */
+function memoText(raw: string): string | null {
+  const oneLine = raw.replace(/[\r\n\t ]+/g, ' ').trim();
+  if (oneLine === '') return null;
+  const chars = Array.from(oneLine);
+  const text = sanitiseText(chars.slice(0, MAX_MEMO).join(''));
+  return chars.length > MAX_MEMO ? `${text}… (truncated)` : text;
+}
+
 const riskiest = (levels: RiskLevel[]): RiskLevel =>
   levels.reduce<RiskLevel>((a, b) => (RISK_ORDER[b] > RISK_ORDER[a] ? b : a), 'normal');
 
@@ -748,11 +763,15 @@ const riskiest = (levels: RiskLevel[]): RiskLevel =>
  * Messages of a type the wallet does not know are `unknown`; authz and fee grants are
  * `dangerous`.
  */
-export async function summarise(messages: AnyMsg[], ctx: SummaryContext): Promise<TxSummary> {
+export async function summarise(
+  messages: AnyMsg[],
+  ctx: SummaryContext,
+  options: SummaryOptions = {},
+): Promise<TxSummary> {
   const lookups = new Lookups(ctx);
   const parts = await Promise.all(messages.map((m) => partsOf(lookups, m)));
   const msgSummaries: MsgSummary[] = parts.map((p, i) => ({
-    typeUrl: messages[i]?.typeUrl ?? '',
+    typeUrl: sanitiseText(messages[i]?.typeUrl ?? '', 256),
     level: p.level,
     icon: p.icon,
     title: p.title,
@@ -760,6 +779,7 @@ export async function summarise(messages: AnyMsg[], ctx: SummaryContext): Promis
     danger: p.danger ?? null,
   }));
   const level = riskiest(parts.map((p) => p.level));
+  const memo = memoText(options.memo ?? '');
   const dangers = parts.flatMap((p) => (p.danger ? [p.danger] : []));
 
   const [only] = parts;
@@ -772,6 +792,7 @@ export async function summarise(messages: AnyMsg[], ctx: SummaryContext): Promis
       rows: only.rows,
       messages: msgSummaries,
       dangers,
+      memo,
     };
   }
 
@@ -789,7 +810,19 @@ export async function summarise(messages: AnyMsg[], ctx: SummaryContext): Promis
     rows: [],
     messages: msgSummaries,
     dangers,
+    memo,
   };
+}
+
+/** Every string of a JSON value made safe to show. */
+function sanitiseJson(value: unknown): unknown {
+  if (typeof value === 'string') return sanitiseText(value);
+  if (Array.isArray(value)) return value.map(sanitiseJson);
+  if (typeof value === 'object' && value !== null)
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [sanitiseText(k), sanitiseJson(v)]),
+    );
+  return value;
 }
 
 /** Pretty JSON of the decoded messages, for the "Message details" sheet. */
@@ -798,11 +831,11 @@ export function rawJson(messages: AnyMsg[]): string {
     messages.map((m) => {
       try {
         const decoded = decodeAny(m);
-        if (!('unknown' in decoded)) return decoded;
+        if (!('unknown' in decoded)) return sanitiseJson(decoded);
       } catch {
         // Bytes that do not decode as their type are shown as they are.
       }
-      return { typeUrl: m.typeUrl, unknown: true, value: base64.encode(m.value) };
+      return sanitiseJson({ typeUrl: m.typeUrl, unknown: true, value: base64.encode(m.value) });
     }),
     null,
     2,

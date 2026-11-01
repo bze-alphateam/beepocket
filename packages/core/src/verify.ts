@@ -1,5 +1,6 @@
 import { decodeAny } from './decode';
 import type { Network } from './net';
+import { BinaryReader, WireType } from './proto/binary';
 import { PubKey } from './proto/cosmos/crypto/secp256k1/keys';
 import { SignMode } from './proto/cosmos/tx/signing/v1beta1/signing';
 import { AuthInfo, Fee, TxBody } from './proto/cosmos/tx/v1beta1/tx';
@@ -15,6 +16,7 @@ export type VerifyErrorCode =
   | 'pubkey-mismatch'
   | 'sign-mode'
   | 'account-number'
+  | 'sequence'
   | 'fee-granter';
 
 export interface VerifyInput {
@@ -53,7 +55,22 @@ const SIGNER_FIELDS = [
   'authority',
   'proposer',
   'depositor',
+  'sender',
+  'delegatorAddress',
 ] as const;
+/**
+ * Types the wallet has no decoder for but whose signer is a plain string field at a fixed
+ * number (IBC transfer `sender`, staking and distribution `delegator_address`).
+ */
+const RAW_SIGNER_FIELD: Record<string, number> = {
+  '/ibc.applications.transfer.v1.MsgTransfer': 4,
+  '/cosmos.staking.v1beta1.MsgDelegate': 1,
+  '/cosmos.staking.v1beta1.MsgUndelegate': 1,
+  '/cosmos.staking.v1beta1.MsgBeginRedelegate': 1,
+  '/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation': 1,
+  '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward': 1,
+  '/cosmos.distribution.v1beta1.MsgSetWithdrawAddress': 1,
+};
 const MSG_EXEC = '/cosmos.authz.v1beta1.MsgExec';
 const MSG_MULTI_SEND = '/cosmos.bank.v1beta1.MsgMultiSend';
 
@@ -67,6 +84,17 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, i) => byte === b[i]);
 }
 
+/** The first length-delimited field `fieldNo` read as text; `''` when it is absent. Throws on bad bytes. */
+function readStringField(bytes: Uint8Array, fieldNo: number): string {
+  const reader = new BinaryReader(bytes);
+  while (reader.pos < reader.len) {
+    const [no, wireType] = reader.tag();
+    if (no === fieldNo && wireType === WireType.Bytes) return reader.string();
+    reader.skipType(wireType);
+  }
+  return '';
+}
+
 /**
  * The accounts a message needs signatures from, or `null` for a type the wallet has no decoder
  * for. A known type whose signer cannot be found yields an empty list and is refused by the
@@ -74,7 +102,10 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
  */
 function signersOf(msg: AnyMsg): string[] | null {
   const decoded = decodeAny(msg);
-  if ('unknown' in decoded) return null;
+  if ('unknown' in decoded) {
+    const field = RAW_SIGNER_FIELD[msg.typeUrl];
+    return field === undefined ? null : [readStringField(msg.value, field)];
+  }
   const { value } = decoded;
   const found: string[] = [];
   for (const field of SIGNER_FIELDS) {
@@ -102,11 +133,12 @@ function signersOf(msg: AnyMsg): string[] | null {
 
 /**
  * Checks a sign request before anything is shown to the user: right network, right address,
- * one signer, our key, plain `SIGN_MODE_DIRECT`, the chain's account number and no fee payer
- * or granter. A failure is never approvable. The dapp's fee is only a hint; the wallet
+ * one signer, our key, plain `SIGN_MODE_DIRECT`, the chain's account number and sequence (0
+ * for an account the chain has not seen) and no fee payer or granter. A `timeoutHeight` is
+ * allowed: it can only shorten how long the transaction stays valid. A failure is never approvable. The dapp's fee is only a hint; the wallet
  * re-estimates it and rebuilds the auth info with `withWalletFee`.
  *
- * Messages of a type the wallet cannot decode have no checkable signer field; they are let
+ * Messages of a type the wallet cannot decode (and that are not in `RAW_SIGNER_FIELD`) have no checkable signer field; they are let
  * through (the chain refuses a transaction that lacks a signature) and summarised as unknown.
  */
 export function verifySignRequest(input: VerifyInput): VerifyResult {
@@ -181,6 +213,9 @@ export function verifySignRequest(input: VerifyInput): VerifyResult {
 
   if (input.chainAccount !== null && input.chainAccount.accountNumber !== signDoc.accountNumber)
     return fail('account-number', "The account number does not match the chain's");
+
+  if (signerInfo.sequence !== (input.chainAccount?.sequence ?? 0n))
+    return fail('sequence', "The sequence does not match the account's current sequence");
 
   if (authInfo.fee && (authInfo.fee.granter !== '' || authInfo.fee.payer !== ''))
     return fail('fee-granter', 'Fee payers and fee granters are not supported');
