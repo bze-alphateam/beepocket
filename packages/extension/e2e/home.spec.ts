@@ -75,6 +75,8 @@ async function call(page: Page, method: string, payload: unknown): Promise<void>
   await page.evaluate((m): Promise<unknown> => chrome.runtime.sendMessage(m), { method, payload });
 }
 
+test.use({ actionTimeout: 10_000 });
+
 test('home shows balances, derives, renames and re-themes per token', async ({
   context,
   extensionId,
