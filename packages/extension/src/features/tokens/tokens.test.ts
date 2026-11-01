@@ -292,6 +292,7 @@ describe('tokens.balances', () => {
           { index: 1, address: 'bze1b', amount: '2' },
         ],
         total: '7',
+        partial: false,
       },
     });
   });
@@ -303,7 +304,10 @@ describe('tokens.balances', () => {
 
   it('answers an empty list before any address exists', async () => {
     const r = await setup().call('tokens.balances', { denom: 'ubze' });
-    expect(r).toEqual({ ok: true, value: { denom: 'ubze', addresses: [], total: '0' } });
+    expect(r).toEqual({
+      ok: true,
+      value: { denom: 'ubze', addresses: [], total: '0', partial: false },
+    });
   });
 
   it('reuses a read for 10 s, refreshes after, and on demand', async () => {
