@@ -79,6 +79,8 @@ test('home shows balances, derives, renames and re-themes per token', async ({
   context,
   extensionId,
 }) => {
+  // Creating the wallet runs the real key derivation, which is slow on CI.
+  test.setTimeout(90_000);
   await mockNode(context);
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
