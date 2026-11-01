@@ -149,7 +149,12 @@ export class ActivityService {
     try {
       while (items.length < PAGE_SIZE) {
         const empty = state.lanes.filter((l) => l.buffer.length === 0 && !exhausted(l));
-        await Promise.all(empty.map((l) => this.fill(l, state, byIndex.get(l.index)!)));
+        await Promise.all(
+          empty.map(async (l) => {
+            const address = byIndex.get(l.index);
+            if (address) await this.fill(l, state, address);
+          }),
+        );
         let best: Lane | null = null;
         for (const lane of state.lanes) {
           const head = lane.buffer[0];

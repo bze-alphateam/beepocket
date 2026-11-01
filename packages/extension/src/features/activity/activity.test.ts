@@ -212,7 +212,8 @@ describe('activity.page', () => {
     };
     const { page, activity } = setup(feeds, ADDRS.slice(0, 2));
     const first = valueOf(await page({ denom: DENOM }));
-    const working = activity.getMockImplementation()!;
+    const working = activity.getMockImplementation();
+    if (!working) throw new Error('no scan implementation');
     activity.mockImplementation(() => Promise.reject(new Error('scan down')));
     const failed = await page({ denom: DENOM, cursor: first.cursor ?? '' });
     expect(failed).toMatchObject({ ok: false, error: { code: ActivityErrorCodes.unavailable } });
