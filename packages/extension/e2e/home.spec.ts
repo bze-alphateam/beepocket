@@ -83,6 +83,7 @@ test('home shows balances, derives, renames and re-themes per token', async ({
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
   await call(page, 'wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE });
+  await call(page, 'tokens.add', { denom: 'ubze' });
   await call(page, 'tokens.add', { denom: GOLD });
   await page.reload();
 
