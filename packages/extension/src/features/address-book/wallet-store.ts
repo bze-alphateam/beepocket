@@ -1,4 +1,4 @@
-import { fail, type Contact, type Result } from '../../protocol';
+import { fail, type Result } from '../../protocol';
 import type { Profile, WalletService } from '../wallet';
 import { validContact } from './contact';
 import type { BookState, BookStore } from './ports';

@@ -5,7 +5,7 @@ export const MAX_NAME_LENGTH = 32;
 /** Trimmed, format characters removed; null unless 1–32 code points with a visible one. */
 export function normalizeName(name: string): string | null {
   const clean = name.replace(/\p{Cf}/gu, '').trim();
-  const length = [...clean].length;
+  const length = clean.match(/./gsu)?.length ?? 0;
   return length >= 1 && length <= MAX_NAME_LENGTH ? clean : null;
 }
 
