@@ -320,6 +320,7 @@ button.bp-book-row {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
 
 .bp-lock {
   display: flex;
