@@ -6,10 +6,18 @@ export interface Random {
   bytes(n: number): Uint8Array;
 }
 
-/** AES-256-GCM. `decrypt` throws {@link DecryptError} when authentication fails. */
+/**
+ * AES-256-GCM with additional authenticated data (`aad`): decryption fails unless the same
+ * `aad` is supplied. `decrypt` throws {@link DecryptError} when authentication fails.
+ */
 export interface Cipher {
-  encrypt(key: Uint8Array, nonce: Uint8Array, plain: Uint8Array): Promise<Uint8Array>;
-  decrypt(key: Uint8Array, nonce: Uint8Array, ct: Uint8Array): Promise<Uint8Array>;
+  encrypt(
+    key: Uint8Array,
+    nonce: Uint8Array,
+    plain: Uint8Array,
+    aad: Uint8Array,
+  ): Promise<Uint8Array>;
+  decrypt(key: Uint8Array, nonce: Uint8Array, ct: Uint8Array, aad: Uint8Array): Promise<Uint8Array>;
 }
 
 /** Argon2id parameters: `m` in KiB, `t` iterations, `p` lanes. */
@@ -35,21 +43,31 @@ export const KEY_BYTES = 32;
 export class WebCryptoCipher implements Cipher {
   constructor(private readonly subtle: SubtleCrypto) {}
 
-  async encrypt(key: Uint8Array, nonce: Uint8Array, plain: Uint8Array): Promise<Uint8Array> {
+  async encrypt(
+    key: Uint8Array,
+    nonce: Uint8Array,
+    plain: Uint8Array,
+    aad: Uint8Array,
+  ): Promise<Uint8Array> {
     const k = await this.importKey(key, 'encrypt');
     const ct = await this.subtle.encrypt(
-      { name: 'AES-GCM', iv: nonce as BufferSource },
+      { name: 'AES-GCM', iv: nonce as BufferSource, additionalData: aad as BufferSource },
       k,
       plain as BufferSource,
     );
     return new Uint8Array(ct);
   }
 
-  async decrypt(key: Uint8Array, nonce: Uint8Array, ct: Uint8Array): Promise<Uint8Array> {
+  async decrypt(
+    key: Uint8Array,
+    nonce: Uint8Array,
+    ct: Uint8Array,
+    aad: Uint8Array,
+  ): Promise<Uint8Array> {
     const k = await this.importKey(key, 'decrypt');
     try {
       const plain = await this.subtle.decrypt(
-        { name: 'AES-GCM', iv: nonce as BufferSource },
+        { name: 'AES-GCM', iv: nonce as BufferSource, additionalData: aad as BufferSource },
         k,
         ct as BufferSource,
       );
