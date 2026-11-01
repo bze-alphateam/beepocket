@@ -3,11 +3,12 @@ import { t } from '../../i18n';
 import type { ActivityItem, ListedToken, TokenBalances, WalletAddress } from '../../protocol';
 import { useClient } from '../../popup/client-context';
 import { Banner, Button, Spinner } from '../../ui';
-import { amountText, whenText } from './format';
+import { amountParts, whenText } from './format';
 import { wordsFor } from './words';
 
 export interface ActivityTabProps {
-  token: ListedToken;
+  /** The wallet's tokens: a row's token Scan has no symbol for still reads as the wallet knows it. */
+  tokens: ListedToken[];
   addresses: WalletAddress[];
   /** A change of the total means a transaction landed: the feed starts over. */
   balances: TokenBalances | null;
@@ -32,10 +33,139 @@ const FRESH: Feed = {
   busy: true,
 };
 
+const ICONS = {
+  out: 'M7 17L17 7M9 7h8v8',
+  in: 'M17 7L7 17M15 17H7V9',
+  swap: 'M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7',
+  other: 'M12 8v8M8 12h8',
+} as const;
+
+type Direction = 'out' | 'in' | 'both';
+
+/** Which way value moved for this address: from the sign of its changes. */
+function directionOf(item: ActivityItem): Direction {
+  const signs = new Set(item.amounts.map((a) => (a.amount.startsWith('-') ? 'out' : 'in')));
+  if (signs.size === 1) return signs.has('out') ? 'out' : 'in';
+  return 'both';
+}
+
+const ARROW: Record<Direction, string> = { out: '→', in: '←', both: '·' };
+
+/** The explorer page of a transaction, next to the account page the service points at. */
+function txUrl(explorer: string, hash: string | null): string {
+  const base = explorer.replace(/\/accounts\/[^/]*$/, '');
+  return hash === null ? explorer : `${base}/txs/${hash}`;
+}
+
+interface CardProps {
+  item: ActivityItem;
+  explorer: string;
+  known: readonly ListedToken[];
+}
+
+/** One transaction: summary, address, then one row per asset; the whole card opens the Explorer. */
+function ActivityCard({ item, explorer, known }: CardProps) {
+  const title = item.feeOnly ? t('activity.fee') : wordsFor({ ...item, success: true });
+  const dir = directionOf(item);
+  const when = whenText(item.time);
+  const failed = !item.success;
+  const parts = item.amounts.map((a) => amountParts(a, known));
+  const mono = item.counterparty !== null && /^bze1[0-9a-z…]+$/.test(item.counterparty);
+  const label = [
+    title,
+    parts
+      .map((p) => `${p.value} ${p.unknown ? `${t('activity.unknown')} ` : ''}${p.symbol}`)
+      .join(', '),
+    `${item.addressLabel}${item.counterparty === null ? '' : ` ${item.counterparty}`}`,
+    when,
+    failed ? t('activity.tag.failed') : '',
+  ]
+    .filter((x) => x !== '')
+    .join(', ');
+  return (
+    <a
+      class="bp-act-card"
+      data-failed={failed ? '' : null}
+      href={txUrl(explorer, item.txHash)}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`${label}. ${t('activity.opens')}`}
+    >
+      <span class="bp-act-top">
+        <span class="bp-act-icon" aria-hidden="true" data-failed={failed ? '' : null}>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d={
+                item.amounts.length > 1 && dir === 'both'
+                  ? ICONS.swap
+                  : dir === 'both'
+                    ? ICONS.other
+                    : ICONS[dir]
+              }
+            />
+          </svg>
+        </span>
+        <span class="bp-act-head">
+          <span class="bp-act-summary">
+            <span class="bp-act-what">
+              {title}
+              {failed && <span class="bp-act-tag">{t('activity.tag.failed')}</span>}
+            </span>
+            <span class="bp-act-when">{when}</span>
+          </span>
+          <span class="bp-act-address">
+            <span class="bp-act-addr-label">{item.addressLabel}</span>
+            {item.feeOnly && item.kind !== 'fee_only' && (
+              <span class="bp-act-arrow">· {wordsFor({ ...item, success: true })}</span>
+            )}
+            {item.counterparty !== null && (
+              <>
+                <span class="bp-act-arrow" aria-hidden="true">
+                  {ARROW[dir]}
+                </span>
+                <span class="bp-act-cp" data-mono={mono ? '' : null}>
+                  {item.counterparty}
+                </span>
+              </>
+            )}
+          </span>
+        </span>
+      </span>
+      {parts.length > 0 && (
+        <span class="bp-act-assets">
+          {parts.map((p, n) => (
+            <span class="bp-act-asset" key={`${p.denom}-${String(n)}`}>
+              <span
+                class="bp-act-symbol"
+                data-unknown={p.unknown ? '' : null}
+                title={p.unknown ? p.denom : undefined}
+              >
+                {p.symbol}
+              </span>
+              <span class="bp-act-amount" data-negative={p.value.startsWith('−') ? '' : null}>
+                {p.value}
+              </span>
+            </span>
+          ))}
+        </span>
+      )}
+    </a>
+  );
+}
+
 /** The wallet's whole activity, whatever token it involved, newest first, 10 rows at a time. */
 export function ActivityTab(props: ActivityTabProps) {
   const client = useClient();
-  const { token, addresses } = props;
+  const { tokens, addresses } = props;
   const [filter, setFilter] = useState<number | null>(null);
   const [feed, setFeed] = useState<Feed>(FRESH);
   const latest = useRef(0);
@@ -82,7 +212,6 @@ export function ActivityTab(props: ActivityTabProps) {
     seen.current = total;
   }, [total, read]);
 
-  const labelled = addresses.length > 1 && filter === null;
   const first = feed.items.length === 0;
 
   return (
@@ -108,42 +237,8 @@ export function ActivityTab(props: ActivityTabProps) {
       {!first && (
         <ul class="bp-act-list" aria-label={t('activity.list')}>
           {feed.items.map((item, i) => (
-            <li
-              key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}
-              class="bp-act-row"
-            >
-              <span class="bp-act-what">{item.feeOnly ? t('activity.fee') : wordsFor(item)}</span>
-              <span
-                class="bp-act-amount"
-                data-negative={item.amounts[0]?.amount.startsWith('-') ? '' : null}
-              >
-                {item.amounts[0] ? amountText(item.amounts[0], [token]) : ''}
-              </span>
-              {item.amounts.length > 1 && (
-                <span class="bp-act-extra">
-                  {item.amounts.slice(1).map((a) => (
-                    <span
-                      key={a.denom}
-                      class="bp-act-amount"
-                      data-negative={a.amount.startsWith('-') ? '' : null}
-                    >
-                      {amountText(a, [token])}
-                    </span>
-                  ))}
-                </span>
-              )}
-              <span class="bp-act-meta">
-                {[
-                  item.feeOnly && item.kind !== 'fee_only' ? wordsFor(item) : null,
-                  item.counterparty === null
-                    ? null
-                    : t('activity.counterparty', { name: item.counterparty }),
-                  labelled ? item.addressLabel : null,
-                  whenText(item.time),
-                ]
-                  .filter((x) => x !== null && x !== '')
-                  .join(' · ')}
-              </span>
+            <li key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}>
+              <ActivityCard item={item} explorer={feed.explorer} known={tokens} />
             </li>
           ))}
         </ul>

@@ -73,6 +73,7 @@ function setup(
   pages: (req: RequestOf<'activity.page'>) => Result<ActivityPageResult>,
   addresses = [addr(0, 'Main')],
   balances: TokenBalances | null = null,
+  tokens: ListedToken[] = [PAGE],
 ) {
   const calls: RequestOf<'activity.page'>[] = [];
   const client: Client = {
@@ -83,7 +84,7 @@ function setup(
   };
   const view = (b: TokenBalances | null) => (
     <ClientProvider client={client}>
-      <ActivityTab token={PAGE} addresses={addresses} balances={b} />
+      <ActivityTab tokens={tokens} addresses={addresses} balances={b} />
     </ClientProvider>
   );
   const { host } = render(view(balances));
@@ -113,6 +114,130 @@ const click = (host: HTMLElement, label: string) => {
   );
 };
 
+const IBC = 'ibc/6490A7EA3C2D8B1F4E5A9C0D7B3F2E1A6C8D4B5E9F0A1C2D3E4F5A6B7C8D9E0F';
+const RAW = '1250000000000000000000000';
+
+describe('ActivityTab card', () => {
+  const cards = async (items: ActivityItem[]) => {
+    const { host, tick } = setup(() => reply({ items }));
+    await tick();
+    return host;
+  };
+  const rowsOf = (card: Element) => card.querySelectorAll('.bp-act-asset');
+
+  it.each([1, 2, 3])('has a summary, an address row and %i asset row(s)', async (n) => {
+    const amounts = [
+      amt('-2000'),
+      amt('500', { denom: 'ubze', symbol: 'BZE', exponent: 6 }),
+      amt('7'),
+    ]
+      .slice(0, n)
+      .map((a, i) => ({ ...a, denom: `${a.denom}${String(i)}` }));
+    const host = await cards([item(1, { kind: 'dex_swap', counterparty: 'BZE/PAGE', amounts })]);
+    const card = host.querySelector('a.bp-act-card');
+    expect(card?.querySelector('.bp-act-summary')?.textContent).toContain('Swapped');
+    expect(card?.querySelector('.bp-act-address')?.textContent).toContain('Main');
+    expect(card?.querySelector('.bp-act-address')?.textContent).toContain('BZE/PAGE');
+    expect(host.querySelectorAll('a.bp-act-card .bp-act-asset')).toHaveLength(n);
+    expect(card?.getAttribute('href')).toBe('https://explorer.example/txs/TX1');
+  });
+
+  it('renders a 25-digit raw amount of an unknown token in full, with a short muted symbol', async () => {
+    const host = await cards([
+      item(1, {
+        category: 'received',
+        amounts: [amt(RAW, { denom: IBC, symbol: null, exponent: null })],
+      }),
+    ]);
+    const amount = host.querySelector('.bp-act-amount');
+    expect(amount?.textContent).toBe('+1,250,000,000,000,000,000,000,000');
+    const symbol = host.querySelector('.bp-act-symbol');
+    expect(symbol?.textContent).toBe('ibc/6490…9E0F');
+    expect(symbol?.getAttribute('title')).toBe(IBC);
+    expect(symbol?.hasAttribute('data-unknown')).toBe(true);
+    expect(host.querySelector('a.bp-act-card')?.getAttribute('aria-label')).toContain(
+      'unknown token ibc/6490…9E0F',
+    );
+  });
+
+  it('keeps a registered symbol plain, next to an unknown one in the same swap', async () => {
+    const host = await cards([
+      item(1, {
+        kind: 'dex_swap',
+        amounts: [
+          amt('-4000', { denom: 'ubze', symbol: 'BZE', exponent: 2 }),
+          amt('31', { denom: 'factory/bze1x/uguildcoinxyz', symbol: null, exponent: null }),
+        ],
+      }),
+    ]);
+    const [reg, unk] = [...host.querySelectorAll('.bp-act-symbol')];
+    expect(reg?.hasAttribute('data-unknown')).toBe(false);
+    expect(reg?.getAttribute('title')).toBeNull();
+    expect(unk?.textContent).toBe('factory/…/uguildcoi…');
+    expect(unk?.hasAttribute('data-unknown')).toBe(true);
+    const label = host.querySelector('a')?.getAttribute('aria-label') ?? '';
+    expect(label).not.toContain('unknown token BZE');
+    expect(label).toContain('unknown token factory/…/uguildcoi…');
+  });
+
+  it('reads another registered token the way the wallet knows it, never as unknown', async () => {
+    const OTHER: ListedToken = {
+      ...PAGE,
+      denom: 'factory/bze1x/other',
+      symbol: 'OTHER',
+      decimals: 3,
+    };
+    const { host, tick } = setup(
+      () =>
+        reply({
+          items: [
+            item(1, {
+              kind: 'dex_swap',
+              amounts: [
+                amt('-4000', { denom: 'ubze', symbol: 'BZE', exponent: 2 }),
+                amt('2500', { denom: OTHER.denom, symbol: null, exponent: null }),
+              ],
+            }),
+          ],
+        }),
+      undefined,
+      null,
+      [PAGE, OTHER],
+    );
+    await tick();
+    const text = host.querySelector('a.bp-act-card')?.textContent ?? '';
+    expect(text).toContain('OTHER');
+    expect(text).toContain('+2.50');
+    expect(text).not.toContain('factory/…');
+    expect(host.querySelector('a.bp-act-card')?.getAttribute('aria-label')).not.toContain(
+      'unknown token',
+    );
+    expect(host.querySelectorAll('[data-unknown]')).toHaveLength(0);
+  });
+
+  it('tags a failed card, strikes its amounts and says so to screen readers', async () => {
+    const host = await cards([
+      item(1, { success: false, kind: 'send', category: 'sent', amounts: [amt('-100')] }),
+    ]);
+    const card = host.querySelector('a.bp-act-card');
+    expect(card?.hasAttribute('data-failed')).toBe(true);
+    expect(card?.querySelector('.bp-act-tag')?.textContent).toBe('Failed');
+    expect(card?.querySelector('.bp-act-what')?.textContent).toContain('Sent');
+    expect(card?.getAttribute('aria-label')).toContain('Failed');
+    expect(card?.getAttribute('aria-label')).toContain('Opens on Explorer');
+  });
+
+  it('shows a fee-only row as one negative amount titled Network fee', async () => {
+    const host = await cards([item(1, { kind: 'fee_only', feeOnly: true, amounts: [amt('-7')] })]);
+    const card = host.querySelector('a.bp-act-card');
+    if (!card) throw new Error('no card');
+    expect(card.querySelector('.bp-act-what')?.textContent).toBe('Network fee');
+    expect(rowsOf(card)).toHaveLength(1);
+    expect(card.querySelector('.bp-act-amount')?.textContent).toBe('−0.07');
+    expect(card.querySelector('.bp-act-amount')?.hasAttribute('data-negative')).toBe(true);
+  });
+});
+
 describe('ActivityTab', () => {
   it('shows rows with words, signed amounts, counterparty and the end state with the explorer link', async () => {
     const { host, tick, calls } = setup(() =>
@@ -129,9 +254,11 @@ describe('ActivityTab', () => {
     expect(calls[0]).toEqual({});
     const rows = [...host.querySelectorAll('li')].map((li) => li.textContent);
     expect(rows[0]).toContain('Received');
-    expect(rows[0]).toContain('+1.50 PAGE');
-    expect(rows[0]).toContain('with Exchange');
-    expect(rows[1]).toContain('Failed: Swapped');
+    expect(rows[0]).toContain('+1.50');
+    expect(rows[0]).toContain('PAGE');
+    expect(rows[0]).toContain('Exchange');
+    expect(rows[1]).toContain('Swapped');
+    expect(rows[1]).toContain('Failed');
     expect(rows[1]).toContain('−25');
     expect(rows[2]).toContain('Network fee');
     expect(rows[2]).toContain('−0.07');
@@ -139,7 +266,7 @@ describe('ActivityTab', () => {
     expect(rows[3]).toContain('Staked');
     expect(rows[3]).toContain('−0.03');
     expect(host.textContent).toContain("That's everything from the last 30 days");
-    expect(host.querySelector('a')?.getAttribute('href')).toBe(
+    expect(host.querySelector('.bp-act-end a')?.getAttribute('href')).toBe(
       'https://explorer.example/accounts/bze1a',
     );
     expect(host.textContent).toContain('Older activity on Explorer');
@@ -164,10 +291,12 @@ describe('ActivityTab', () => {
     await tick();
     const rows = [...host.querySelectorAll('li')];
     const first = rows[0]?.textContent ?? '';
-    expect(first).toContain('−2.00 BZE');
-    expect(first).toContain('+5.00 PAGE');
-    expect(first).toContain('+42 factory/…/zzz');
-    expect(first.indexOf('−2.00 BZE')).toBeLessThan(first.indexOf('+5.00 PAGE'));
+    expect(first).toContain('−2.00');
+    expect(first).toContain('BZE');
+    expect(first).toContain('+5.00');
+    expect(first).toContain('+42');
+    expect(first).toContain('factory/…/zzz');
+    expect(first.indexOf('−2.00')).toBeLessThan(first.indexOf('+5.00'));
     expect(rows[1]?.textContent).toContain('Swapped');
     expect(rows[1]?.textContent).not.toMatch(/\b0\b/);
   });
@@ -249,8 +378,8 @@ describe('ActivityTab', () => {
     fireEvent(select, 'change');
     await tick();
     expect(calls.at(-1)).toEqual({ addressIndex: 0 });
-    // One address selected: the label would only repeat the filter.
-    expect(host.querySelector('li')?.textContent).not.toContain('Savings');
+    // The card names its address whatever the filter says (the stub answers with Savings).
+    expect(host.querySelector('.bp-act-addr-label')?.textContent).toBe('Savings');
   });
 
   it('starts over when the balance total changes', async () => {
@@ -311,6 +440,6 @@ describe('ActivityTab', () => {
     expect(dataset.scheme).toBe(scheme);
     // The tab draws only with those variables: no scheme-specific markup to differ.
     expect(host.querySelectorAll('li')).toHaveLength(2);
-    expect(host.querySelector('.bp-act-row')).not.toBeNull();
+    expect(host.querySelectorAll('.bp-act-card')).toHaveLength(2);
   });
 });

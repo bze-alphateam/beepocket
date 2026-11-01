@@ -57,8 +57,18 @@ test('the activity tab pages through 25 rows in three loads and reaches the end 
   await expect(rows.first()).toContainText('Faucet');
 
   // The fourth row moved two tokens: both amounts show.
-  await expect(rows.nth(3)).toContainText('−2.50 BZE');
-  await expect(rows.nth(3)).toContainText('+42.00 OTH');
+  await expect(rows.nth(3).locator('.bp-act-asset')).toHaveCount(2);
+  await expect(rows.nth(3)).toContainText('−2.50');
+  await expect(rows.nth(3)).toContainText('BZE');
+  await expect(rows.nth(3)).toContainText('+42.00');
+  await expect(rows.nth(3)).toContainText('OTH');
+
+  // The second row holds a token Scan knows nothing about: one asset row, short muted symbol, full raw amount.
+  const unknown = rows.nth(1);
+  await expect(unknown.locator('.bp-act-asset')).toHaveCount(1);
+  await expect(unknown.locator('.bp-act-symbol')).toHaveText('ibc/6490…9E0F');
+  await expect(unknown.locator('.bp-act-symbol')).toHaveAttribute('data-unknown', '');
+  await expect(unknown.locator('.bp-act-amount')).toHaveText('+1,250,000,000,000,000,000,000,000');
 
   await page.getByRole('button', { name: 'Load more' }).click();
   await expect(rows).toHaveCount(20);

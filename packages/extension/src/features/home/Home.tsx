@@ -290,7 +290,13 @@ export function Home() {
           ))}
         </div>
         {active ? (
-          active.render({ token, balances, addresses: loaded.addresses, refresh })
+          active.render({
+            token,
+            tokens: loaded.tokens,
+            balances,
+            addresses: loaded.addresses,
+            refresh,
+          })
         ) : (
           <>
             {none && (

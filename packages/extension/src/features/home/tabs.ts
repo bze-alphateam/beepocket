@@ -4,6 +4,8 @@ import type { ListedToken, TokenBalances, WalletAddress } from '../../protocol';
 /** What a tab below the balance gets to render. */
 export interface HomeTabContext {
   token: ListedToken;
+  /** Every token in the wallet's list, for tabs that show more than the selected one. */
+  tokens: ListedToken[];
   /** Null until the first read finished. */
   balances: TokenBalances | null;
   addresses: WalletAddress[];

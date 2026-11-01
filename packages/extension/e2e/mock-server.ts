@@ -57,6 +57,9 @@ export function mockReply(pathAndQuery: string): MockReply {
   }
 }
 
+/** A token Scan has no data for: shown raw, with a short muted symbol. */
+const MOCK_IBC = 'ibc/6490A7EA3C2D8B1F4E5A9C0D7B3F2E1A6C8D4B5E9F0A1C2D3E4F5A6B7C8D9E0F';
+
 /** How many recorded-style rows the mock Scan holds per address. */
 const MOCK_ACTIVITY_ROWS = 25;
 
@@ -86,7 +89,16 @@ function activityReply(url: URL): MockReply {
             { denom: 'ubze', amount: '-2500000', symbol: 'BZE', exponent: 6 },
             { denom: 'uother', amount: '42000000', symbol: 'OTH', exponent: 6 },
           ]
-        : [{ denom: 'ubze', amount: '1000000', symbol: 'BZE', exponent: 6 }],
+        : i === 1
+          ? [
+              {
+                denom: MOCK_IBC,
+                amount: '1250000000000000000000000',
+                symbol: null,
+                exponent: null,
+              },
+            ]
+          : [{ denom: 'ubze', amount: '1000000', symbol: 'BZE', exponent: 6 }],
     msg_types: ['/cosmos.bank.v1beta1.MsgSend'],
     details: null,
     fee: null,
