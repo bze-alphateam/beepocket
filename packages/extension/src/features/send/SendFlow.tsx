@@ -209,20 +209,22 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       return;
     }
     setStep({ kind: 'pending' });
-    const status = await client.call('send.status', { txHash: sent.value.txHash });
+    const txHash = sent.value.txHash;
+    const lost = sent.value.unconfirmed === true;
+    const status = await client.call('send.status', { txHash });
     busyRef.current = false;
+    // Once a hash exists the send may still land: never report "failed" without the chain saying so.
     if (!status.ok) {
-      finish({ kind: 'failed', message: errorText(status.error, quote.token.symbol) });
+      finish({ kind: 'unconfirmed', txHash, explorerUrl: null, lost });
       return;
     }
-    const txHash = sent.value.txHash;
     const explorerUrl = status.value.explorerUrl;
     if (status.value.status === 'confirmed') {
       // Home reads balances with a short freshness window: make its next read a fresh one.
       void client.call('tokens.balances', { denom: token.denom, refresh: true });
       finish({ kind: 'success', txHash, explorerUrl });
     } else if (status.value.status === 'pending') {
-      finish({ kind: 'unconfirmed', txHash, explorerUrl });
+      finish({ kind: 'unconfirmed', txHash, explorerUrl, lost });
     } else {
       finish({ kind: 'failed', message: status.value.message });
     }

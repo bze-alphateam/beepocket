@@ -42,6 +42,8 @@ export const send = {
   'send.unconfirmed.title': 'Still pending',
   'send.unconfirmed.body':
     'The network has not confirmed it yet. It may still go through: check the Explorer before you try again.',
+  'send.unconfirmed.lost':
+    'We could not confirm this send. It may still go through: check Activity or the Explorer before you try again.',
   'send.success.title': 'Sent',
   'send.success.body': '{amount} {symbol} is on its way to {to}.',
   'send.done': 'Done',
@@ -63,5 +65,7 @@ export const send = {
   'send.error.fundFirst': 'Fund this address first.',
   'send.error.token': "This token's details could not be read.",
   'send.error.network': 'The network did not answer. Try again in a moment.',
+  'send.error.keyMismatch':
+    "This address's key on the network is not the wallet's. Nothing was sent.",
   'send.error.locked': 'The wallet is locked.',
 } as const;

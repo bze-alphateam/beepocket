@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   BroadcastError,
+  HttpStatusError,
+  TransportError,
+  txHash,
   NETWORKS,
   SimulationError,
   TxTimeoutError,
@@ -65,6 +68,7 @@ interface Options {
 function setup(opts: Options = {}) {
   const calls = { account: 0, balances: 0, simulate: 0, broadcast: 0, sign: 0, rearm: 0 };
   const signed: Uint8Array[] = [];
+  const signedFor: string[] = [];
   const sent: Uint8Array[] = [];
   const waits: { txHash: string; options: unknown }[] = [];
   const control = {
@@ -74,6 +78,7 @@ function setup(opts: Options = {}) {
     simulateError: null as Error | null,
     tx: { height: 10n, code: 0, rawLog: '', gasUsed: 150_000n } as TxResult | Error,
     state: opts.state ?? 'unlocked',
+    accountPubKey: null as Uint8Array | null,
     signature: bytes(golden('send-ubze').signature),
   };
   const pools = opts.pools ?? [[FACTORY, 21_000_000_000n, 50_000_000_000n]];
@@ -82,7 +87,7 @@ function setup(opts: Options = {}) {
       calls.account++;
       const account =
         opts.account === undefined ? { accountNumber: 7n, sequence: 3n } : opts.account;
-      return Promise.resolve(account && { ...account, pubKey: null });
+      return Promise.resolve(account && { ...account, pubKey: control.accountPubKey });
     },
     balances: () => {
       calls.balances++;
@@ -154,7 +159,9 @@ function setup(opts: Options = {}) {
     pubKey: () =>
       Promise.resolve(control.state === 'unlocked' ? ok(PUBKEY) : fail('needs-password', 'locked')),
     signDirect: (address: string, doc: Uint8Array): Promise<Result<Uint8Array>> => {
+      if (address !== SIGNER) return Promise.resolve(fail('unknown_address', 'No such address.'));
       calls.sign++;
+      signedFor.push(address);
       signed.push(doc);
       return Promise.resolve(ok(control.signature));
     },
@@ -170,7 +177,7 @@ function setup(opts: Options = {}) {
     registry.dispatch({ method, payload }) as Promise<
       { ok: true; value: unknown } | { ok: false; error: { code: string; message: string } }
     >;
-  return { call, calls, signed, sent, waits, control };
+  return { call, calls, signed, signedFor, sent, waits, control };
 }
 
 const prepareReq = (over: Record<string, unknown> = {}) => ({
@@ -392,6 +399,60 @@ describe('send.submit', () => {
       error: { code: 'tx-rejected', message: 'insufficient fee; got: 1ubze required: 2ubze' },
     });
     expect(s.calls.rearm).toBe(0);
+  });
+
+  it('reports an unknown outcome with the hash when the broadcast gets no answer', async () => {
+    const g = golden('send-ubze');
+    for (const error of [new TransportError('offline'), new HttpStatusError(504, 'https://node')]) {
+      const s = setup();
+      s.control.signature = bytes(g.signature);
+      const quote = await quoteOf(s);
+      s.control.broadcastError = error;
+      expect(await s.call('send.submit', submitFrom(quote))).toEqual({
+        ok: true,
+        value: { txHash: txHash(bytes(g.txRaw)), unconfirmed: true },
+      });
+      expect(s.calls.broadcast).toBe(1);
+    }
+  });
+
+  it('signs the canonical fee even when the request spells numbers with leading zeros', async () => {
+    const plain = setup();
+    await plain.call('send.submit', submitFrom(await quoteOf(plain)));
+    const padded = setup();
+    const quote = await quoteOf(padded);
+    const res = await padded.call('send.submit', {
+      ...submitFrom(quote),
+      feeAmount: `000${quote.fee.amount}`,
+      gasLimit: `0${quote.gasLimit}`,
+    });
+    expect(res.ok).toBe(true);
+    expect(padded.signed).toEqual(plain.signed);
+  });
+
+  it("refuses to sign when the address's on-chain key is not the wallet's", async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.accountPubKey = Uint8Array.from([2, ...new Array<number>(32).fill(9)]);
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
+      ok: false,
+      error: { code: 'key-mismatch' },
+    });
+    expect(s.calls.sign).toBe(0);
+    s.control.accountPubKey = PUBKEY;
+    expect((await s.call('send.submit', submitFrom(quote))).ok).toBe(true);
+  });
+
+  it('signs with the reviewed sender and refuses another one', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    await s.call('send.submit', submitFrom(quote));
+    expect(s.signedFor).toEqual([SIGNER]);
+    expect(await s.call('send.submit', { ...submitFrom(quote), fromIndex: 1 })).toMatchObject({
+      ok: false,
+      error: { code: 'unknown_address' },
+    });
+    expect(s.signedFor).toEqual([SIGNER]);
   });
 
   it('refuses an amount the address no longer holds, and malformed quotes', async () => {

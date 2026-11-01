@@ -104,7 +104,8 @@ export function PendingScreen({ amount, symbol }: { amount: string; symbol: stri
 
 export type Outcome =
   | { kind: 'success'; txHash: string; explorerUrl: string }
-  | { kind: 'unconfirmed'; txHash: string; explorerUrl: string }
+  /** `lost`: the broadcast got no answer, so it may never have reached the network. */
+  | { kind: 'unconfirmed'; txHash: string; explorerUrl: string | null; lost: boolean }
   | { kind: 'failed'; message: string | null };
 
 /** `W-Success`, `W-Failed` and the "still pending" case. */
@@ -129,7 +130,7 @@ export function ResultScreen(props: {
     outcome.kind === 'success'
       ? t('send.success.body', { amount, symbol, to: props.toText })
       : outcome.kind === 'unconfirmed'
-        ? t('send.unconfirmed.body')
+        ? t(outcome.lost ? 'send.unconfirmed.lost' : 'send.unconfirmed.body')
         : t('send.failed.body', { amount, symbol });
   return (
     <main class={`bp-send bp-send-result bp-send-${outcome.kind}`}>
@@ -171,7 +172,7 @@ export function ResultScreen(props: {
           </>
         )}
       </dl>
-      {outcome.kind !== 'failed' && (
+      {outcome.kind !== 'failed' && outcome.explorerUrl !== null && (
         <a class="bp-send-link" href={outcome.explorerUrl} target="_blank" rel="noopener">
           {t('send.result.explorer')}
         </a>

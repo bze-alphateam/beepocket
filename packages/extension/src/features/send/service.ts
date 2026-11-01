@@ -12,6 +12,7 @@ import {
   isBzeAddress,
   parseAmount,
   signDocBytes,
+  txHash,
   txRawBytes,
   type ChainClient,
   type Clock,
@@ -86,10 +87,24 @@ function nodeProblem(e: unknown): Result<never> | null {
 }
 
 /** Runs a node call; node failures become typed errors, anything else is a bug and propagates. */
-async function guarded<T>(run: () => Promise<T>): Promise<Result<T>> {
+async function guarded<T>(run: () => Promise<T>): Promise<Result<T>>;
+/** With `unknownOutcome`, an answer that never arrived gives `null` (the request may have landed). */
+async function guarded<T>(run: () => Promise<T>, unknownOutcome: true): Promise<Result<T | null>>;
+async function guarded<T>(
+  run: () => Promise<T>,
+  unknownOutcome = false,
+): Promise<Result<T | null>> {
   try {
     return ok(await run());
   } catch (e) {
+    if (
+      unknownOutcome &&
+      (e instanceof TransportError ||
+        e instanceof HttpStatusError ||
+        e instanceof UnexpectedResponseError)
+    ) {
+      return ok(null);
+    }
     const problem = nodeProblem(e);
     if (problem) return problem;
     throw e;
@@ -189,6 +204,18 @@ export class SendService {
 
     const key = await this.deps.wallet.pubKey(ctx.from.address);
     if (!key.ok) return key;
+    if (
+      ctx.accountPubKey !== null &&
+      !(
+        ctx.accountPubKey.length === key.value.length &&
+        ctx.accountPubKey.every((b, i) => b === key.value[i])
+      )
+    ) {
+      return fail(
+        SendErrorCodes.keyMismatch,
+        "This address's key on the network is not the wallet's key. Nothing was signed.",
+      );
+    }
 
     // Simulate again right before signing, with the sequence just read.
     const bodyBytes = this.body(ctx, req.to, req.denom, amount);
@@ -206,7 +233,7 @@ export class SendService {
     if (!current)
       return fail(SendErrorCodes.cannotPayFee, "This address can't pay the network fee.");
     // What was reviewed is what gets signed: any other fee goes back to the review screen.
-    if (current.amount !== reviewedFee || estimate.value.gasLimit.toString() !== req.gasLimit) {
+    if (current.amount !== reviewedFee || estimate.value.gasLimit !== BigInt(req.gasLimit)) {
       return fail(SendErrorCodes.reviewChanged, 'The network fee changed. Review it again.');
     }
 
@@ -214,7 +241,7 @@ export class SendService {
       pubKey: key.value,
       sequence: ctx.sequence,
       fee: {
-        amount: [{ denom: req.feeDenom, amount: req.feeAmount }],
+        amount: [{ denom: req.feeDenom, amount: reviewedFee.toString() }],
         gasLimit: estimate.value.gasLimit,
       },
     });
@@ -229,13 +256,13 @@ export class SendService {
     );
     if (!signature.ok) return signature;
 
-    const sent = await guarded(() =>
-      this.deps.chain.broadcast(
-        txRawBytes({ bodyBytes, authInfoBytes, signatures: [signature.value] }),
-      ),
-    );
+    const txRaw = txRawBytes({ bodyBytes, authInfoBytes, signatures: [signature.value] });
+    // The hash is known before the node answers, so a lost answer can still be followed up.
+    const hash = txHash(txRaw);
+    const sent = await guarded(() => this.deps.chain.broadcast(txRaw), true);
     if (!sent.ok) return sent;
     await this.deps.wallet.rearm();
+    if (sent.value === null) return ok({ txHash: hash, unconfirmed: true });
     return ok({ txHash: sent.value.txHash });
   }
 

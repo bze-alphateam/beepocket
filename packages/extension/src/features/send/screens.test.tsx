@@ -288,6 +288,18 @@ describe('result', () => {
     expect(host.textContent).toContain('out of gas');
   });
 
+  it('never calls a send failed when the chain could not be asked', async () => {
+    const { host } = setup({
+      'send.submit': () => ok({ txHash: HASH, unconfirmed: true }),
+      'send.status': () => fail('network-error', 'down'),
+    });
+    await toReview(host);
+    await press(host, 'Confirm and send');
+    expect(host.textContent).toContain('Still pending');
+    expect(host.textContent).toContain('We could not confirm this send');
+    expect(host.textContent).not.toContain('Send failed');
+  });
+
   it('says still pending when the chain has not confirmed in time', async () => {
     const { host } = setup({
       'send.status': () => ok({ status: 'pending', explorerUrl: 'https://scan/txs/x' }),

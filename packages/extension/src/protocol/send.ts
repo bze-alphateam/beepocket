@@ -23,6 +23,8 @@ export const SendErrorCodes = {
   rejected: 'tx-rejected',
   /** The node could not be reached or answered something unusable. */
   network: 'network-error',
+  /** The address's on-chain key is not the wallet's key for it: nothing is signed. */
+  keyMismatch: 'key-mismatch',
 } as const;
 
 export interface SendDraft {
@@ -82,8 +84,11 @@ export type TxStatus =
 /** Send methods. Bigints cross the boundary as decimal strings. */
 export interface SendProtocol {
   'send.prepare': { req: SendPrepareRequest; res: SendQuote };
-  /** Re-simulates, signs and broadcasts exactly the reviewed quote. */
-  'send.submit': { req: SendSubmitRequest; res: { txHash: string } };
+  /**
+   * Re-simulates, signs and broadcasts exactly the reviewed quote. `unconfirmed` means the
+   * broadcast got no usable answer: the transaction may still land, so the hash is polled.
+   */
+  'send.submit': { req: SendSubmitRequest; res: { txHash: string; unconfirmed?: true } };
   /** Waits for inclusion for up to 60 s. */
   'send.status': { req: { txHash: string }; res: TxStatus & { explorerUrl: string } };
 }
