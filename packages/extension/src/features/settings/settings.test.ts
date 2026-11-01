@@ -6,7 +6,6 @@ import { FakeArea } from '../../platform/test-support';
 import {
   WalletErrorCodes,
   type Method,
-  type RequestOf,
   type ResponseOf,
   type Result,
 } from '../../protocol';
