@@ -7,6 +7,7 @@ import { registerTokenHandlers } from '../../features/tokens/handlers';
 import { walletTokenSeams } from '../../features/tokens/wallet-seams';
 import type { WalletService } from '../../features/wallet';
 import { registerWalletHandlers } from '../../features/wallet/handlers';
+import { registerHomeHandlers } from '../../features/home/handlers';
 import { registerAppHandlers } from './app';
 
 /** What handlers may use. Handlers hold no state of their own: the worker can restart. */
@@ -22,4 +23,5 @@ export function registerHandlers(registry: HandlerRegistry, deps: HandlerDeps): 
   registerWalletHandlers(registry, deps.wallet);
   registerTokenHandlers(registry, deps, walletTokenSeams(deps.wallet));
   registerBookHandlers(registry, walletBookStore(deps.wallet));
+  registerHomeHandlers(registry, deps);
 }
