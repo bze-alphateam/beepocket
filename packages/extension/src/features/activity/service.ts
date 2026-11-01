@@ -1,8 +1,15 @@
-import { shortAddress, type ActivityRow, type Clock, type ScanClient } from '@beepocket/core';
+import {
+  shortAddress,
+  type ActivityRow,
+  type Clock,
+  type ScanBalance,
+  type ScanClient,
+} from '@beepocket/core';
 import {
   ActivityErrorCodes,
   fail,
   ok,
+  type ActivityAmount,
   type ActivityItem,
   type ActivityPageResult,
   type Result,
@@ -38,8 +45,7 @@ interface Lane {
 
 /** What the opaque cursor carries between calls. */
 interface CursorState {
-  v: 1;
-  denom: string;
+  v: 2;
   /** Epoch ms of the first load minus 30 days; every later page uses the same one. */
   cutoff: number;
   lanes: Lane[];
@@ -56,15 +62,37 @@ function newer(a: ActivityItem, b: ActivityItem): boolean {
   return (a.txHash ?? '') < (b.txHash ?? '');
 }
 
-function sumIn(denom: string, balances: { denom: string; amount: bigint }[] | null): bigint | null {
-  const hits = (balances ?? []).filter((b) => b.denom === denom);
-  return hits.length === 0 ? null : hits.reduce((n, b) => n + b.amount, 0n);
+const abs = (n: bigint) => (n < 0n ? -n : n);
+
+/** Non-zero changes only, one entry per denom, largest absolute value first. */
+function amountsOf(balances: ScanBalance[], sign: 1n | -1n): ActivityAmount[] {
+  const sums = new Map<string, { n: bigint; symbol: string | null; exponent: number | null }>();
+  for (const b of balances) {
+    const seen = sums.get(b.denom);
+    sums.set(b.denom, {
+      n: (seen?.n ?? 0n) + sign * b.amount,
+      symbol: seen?.symbol ?? b.symbol,
+      exponent: seen?.exponent ?? b.exponent,
+    });
+  }
+  return [...sums.entries()]
+    .filter(([, v]) => v.n !== 0n)
+    .sort(([dx, x], [dy, y]) => {
+      if (abs(x.n) !== abs(y.n)) return abs(x.n) > abs(y.n) ? -1 : 1;
+      return dx < dy ? -1 : dx > dy ? 1 : 0;
+    })
+    .map(([denom, v]) => ({
+      denom,
+      amount: v.n.toString(),
+      symbol: v.symbol,
+      exponent: v.exponent,
+    }));
 }
 
-function toItem(row: ActivityRow, denom: string, address: WalletAddress): ActivityItem {
-  const delta = sumIn(denom, row.deltas);
-  const fee = sumIn(denom, row.fee);
-  const feeOnly = delta === null && fee !== null;
+function toItem(row: ActivityRow, address: WalletAddress): ActivityItem {
+  const deltas = amountsOf(row.deltas, 1n);
+  const fees = amountsOf(row.fee ?? [], -1n);
+  const feeOnly = deltas.length === 0 && fees.length > 0;
   const cp = row.counterparty;
   return {
     addressIndex: address.index,
@@ -76,17 +104,16 @@ function toItem(row: ActivityRow, denom: string, address: WalletAddress): Activi
     isSigner: row.isSigner,
     success: row.success,
     counterparty: cp === null ? null : (cp.label?.name ?? cp.moniker ?? shortAddress(cp.address)),
-    amount: delta === null ? (fee === null ? null : (-fee).toString()) : delta.toString(),
+    amounts: feeOnly ? fees : deltas,
     feeOnly,
   };
 }
 
-function parseCursor(raw: string, denom: string): CursorState | null {
+function parseCursor(raw: string): CursorState | null {
   try {
     const s = JSON.parse(raw) as Partial<CursorState> | null;
     if (
-      s?.v !== 1 ||
-      s.denom !== denom ||
+      s?.v !== 2 ||
       typeof s.cutoff !== 'number' ||
       !Array.isArray(s.lanes) ||
       s.lanes.length === 0 ||
@@ -107,25 +134,21 @@ function parseCursor(raw: string, denom: string): CursorState | null {
 }
 
 /**
- * One token's activity across the wallet's addresses: a k-way merge over Scan's per-address
+ * The wallet's whole activity across the wallet's addresses: a k-way merge over Scan's per-address
  * feeds. A call works on a copy of the cursor state and only hands the advanced state back on
  * success, so a failed call can simply be repeated with the same cursor.
  */
 export class ActivityService {
   constructor(private readonly deps: ActivityServiceDeps) {}
 
-  async page(req: {
-    denom: string;
-    addressIndex?: number;
-    cursor?: string;
-  }): Promise<Result<ActivityPageResult>> {
+  async page(req: { addressIndex?: number; cursor?: string }): Promise<Result<ActivityPageResult>> {
     const listed = await this.deps.addresses.list();
     if (!listed.ok) return listed;
     const addresses = listed.value;
 
     let state: CursorState;
     if (req.cursor !== undefined) {
-      const parsed = parseCursor(req.cursor, req.denom);
+      const parsed = parseCursor(req.cursor);
       if (!parsed?.lanes.every((l) => addresses.some((a) => a.index === l.index))) {
         return fail(ActivityErrorCodes.badCursor, 'That activity cursor is not valid.');
       }
@@ -139,8 +162,7 @@ export class ActivityService {
         return fail(ActivityErrorCodes.unknownAddress, 'No such address in this wallet.');
       }
       state = {
-        v: 1,
-        denom: req.denom,
+        v: 2,
         cutoff: this.deps.clock.now() - WINDOW_MS,
         lanes: chosen.map((a) => ({ index: a.index, fetched: false, next: null, buffer: [] })),
       };
@@ -184,7 +206,6 @@ export class ActivityService {
   private async fill(lane: Lane, state: CursorState, address: WalletAddress): Promise<void> {
     const page = await Promise.race([
       this.deps.scan.activity(address.address, {
-        denom: state.denom,
         limit: PAGE_SIZE,
         ...(lane.next === null ? {} : { cursor: lane.next }),
       }),
@@ -194,7 +215,7 @@ export class ActivityService {
     ]);
     const kept = page.items.filter((row) => !(Date.parse(row.time) < state.cutoff));
     lane.fetched = true;
-    lane.buffer.push(...kept.map((row) => toItem(row, state.denom, address)));
+    lane.buffer.push(...kept.map((row) => toItem(row, address)));
     // Rows come newest first: a dropped row means everything after it is older still.
     const pastCutoff = kept.length < page.items.length;
     lane.next = pastCutoff || page.items.length === 0 ? null : page.nextCursor;

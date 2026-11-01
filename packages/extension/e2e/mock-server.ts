@@ -57,37 +57,40 @@ export function mockReply(pathAndQuery: string): MockReply {
   }
 }
 
-/** How many recorded-style rows the mock Scan holds per address, for the base token only. */
+/** How many recorded-style rows the mock Scan holds per address. */
 const MOCK_ACTIVITY_ROWS = 25;
 
 /**
- * `GET /api/v1/accounts/{address}/activity?denom=&limit=&cursor=` over generated rows: 25
- * incoming sends an hour apart, newest first, for `ubze`; the cursor is the offset of the next row.
+ * `GET /api/v1/accounts/{address}/activity?limit=&cursor=` over generated rows: 25
+ * sends an hour apart, newest first (the fourth one a swap with two amounts); the cursor is the offset of the next row.
  */
 function activityReply(url: URL): MockReply {
   const limit = Number(url.searchParams.get('limit') ?? '10');
   const from = Number(url.searchParams.get('cursor') ?? '0');
-  const rows =
-    url.searchParams.get('denom') === 'ubze'
-      ? Array.from({ length: MOCK_ACTIVITY_ROWS }, (_, i) => ({
-          time: new Date(Date.now() - (i + 1) * 3_600_000).toISOString(),
-          height: 1_000_000 - i,
-          tx_hash: `TX${String(i).padStart(3, '0')}`,
-          kind: 'send',
-          category: 'received',
-          is_signer: false,
-          success: true,
-          counterparty: {
-            address: 'bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77',
-            label: { name: 'Faucet', kind: 'service' },
-            moniker: null,
-          },
-          deltas: [{ denom: 'ubze', amount: '1000000', symbol: 'BZE', exponent: 6 }],
-          msg_types: ['/cosmos.bank.v1beta1.MsgSend'],
-          details: null,
-          fee: null,
-        }))
-      : [];
+  const rows = Array.from({ length: MOCK_ACTIVITY_ROWS }, (_, i) => ({
+    time: new Date(Date.now() - (i + 1) * 3_600_000).toISOString(),
+    height: 1_000_000 - i,
+    tx_hash: `TX${String(i).padStart(3, '0')}`,
+    kind: 'send',
+    category: 'received',
+    is_signer: false,
+    success: true,
+    counterparty: {
+      address: 'bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77',
+      label: { name: 'Faucet', kind: 'service' },
+      moniker: null,
+    },
+    deltas:
+      i === 3
+        ? [
+            { denom: 'ubze', amount: '-2500000', symbol: 'BZE', exponent: 6 },
+            { denom: 'uother', amount: '42000000', symbol: 'OTH', exponent: 6 },
+          ]
+        : [{ denom: 'ubze', amount: '1000000', symbol: 'BZE', exponent: 6 }],
+    msg_types: ['/cosmos.bank.v1beta1.MsgSend'],
+    details: null,
+    fee: null,
+  }));
   const items = rows.slice(from, from + limit);
   const end = from + items.length;
   return {

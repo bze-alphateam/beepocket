@@ -88,7 +88,7 @@ describe('activity.page', () => {
     let cursor: string | undefined;
     let pages = 0;
     for (;;) {
-      const v = valueOf(await page({ denom: DENOM, ...(cursor ? { cursor } : {}) }));
+      const v = valueOf(await page({ ...(cursor ? { cursor } : {}) }));
       pages++;
       expect(v.items.length).toBeLessThanOrEqual(10);
       seen.push(...v.items.map((i) => i.txHash ?? ''));
@@ -117,7 +117,7 @@ describe('activity.page', () => {
       },
       ADDRS.slice(0, 3),
     );
-    const v = valueOf(await page({ denom: DENOM }));
+    const v = valueOf(await page({}));
     expect(v.items.map((i) => `${String(i.addressIndex)}:${i.txHash ?? ''}`)).toEqual([
       '0:B1',
       '0:B2',
@@ -126,13 +126,13 @@ describe('activity.page', () => {
     ]);
   });
 
-  it('asks Scan for the denom, 10 rows and the address cursor', async () => {
+  it('asks Scan for 10 rows and the address cursor, never for a denom', async () => {
     const { page, activity } = setup({ bze1addr0: feedOf(12, 1000, 1000, 'A') }, ADDRS.slice(0, 1));
-    await page({ denom: 'factory/x/p' });
-    expect(activity).toHaveBeenCalledWith('bze1addr0', { denom: 'factory/x/p', limit: 10 });
-    const second = valueOf(await page({ denom: 'factory/x/p' }));
-    await page({ denom: 'factory/x/p', cursor: second.cursor ?? '' });
+    const first = valueOf(await page({}));
+    expect(activity).toHaveBeenCalledWith('bze1addr0', { limit: 10 });
+    await page({ cursor: first.cursor ?? '' });
     expect(activity.mock.calls.at(-1)?.[1]).toMatchObject({ cursor: '10' });
+    for (const [, query] of activity.mock.calls) expect(query).not.toHaveProperty('denom');
   });
 
   it('pages one address only in single-address mode', async () => {
@@ -140,7 +140,7 @@ describe('activity.page', () => {
       bze1addr0: feedOf(3, 1000, 1000, 'A'),
       bze1addr1: feedOf(3, 500, 1000, 'B'),
     });
-    const v = valueOf(await page({ denom: DENOM, addressIndex: 1 }));
+    const v = valueOf(await page({ addressIndex: 1 }));
     expect(v.items.map((i) => i.txHash)).toEqual(['B0', 'B1', 'B2']);
     expect(v.explorer).toBe('https://explorer.example/accounts/bze1addr1');
     expect(activity.mock.calls.map((c) => c[0])).toEqual(['bze1addr1']);
@@ -148,7 +148,7 @@ describe('activity.page', () => {
 
   it('refuses an address the wallet does not have', async () => {
     const { page } = setup({});
-    const r = await page({ denom: DENOM, addressIndex: 9 });
+    const r = await page({ addressIndex: 9 });
     expect(r).toMatchObject({ ok: false, error: { code: ActivityErrorCodes.unknownAddress } });
   });
 
@@ -161,7 +161,7 @@ describe('activity.page', () => {
     ];
     const { page, clock } = setup({ bze1addr0: feed }, ADDRS.slice(0, 1));
     clock.t = NOW;
-    const v = valueOf(await page({ denom: DENOM }));
+    const v = valueOf(await page({}));
     expect(v.items.map((i) => i.txHash)).toEqual(['N1', 'N2']);
     expect(v.done).toBe(true);
     expect(v.cursor).toBeNull();
@@ -173,9 +173,9 @@ describe('activity.page', () => {
       row({ time: ago((14 + i) * DAY), txHash: `D${String(i)}` }),
     );
     const { page, clock } = setup({ bze1addr0: feed }, ADDRS.slice(0, 1));
-    const first = valueOf(await page({ denom: DENOM }));
+    const first = valueOf(await page({}));
     clock.t = NOW + 20 * DAY;
-    const next = valueOf(await page({ denom: DENOM, cursor: first.cursor ?? '' }));
+    const next = valueOf(await page({ cursor: first.cursor ?? '' }));
     expect(next.items).toHaveLength(5);
     expect(next.done).toBe(true);
   });
@@ -185,14 +185,14 @@ describe('activity.page', () => {
       { bze1addr0: feedOf(2, 1000, 1000, 'A'), bze1addr2: [] },
       ADDRS.slice(0, 3),
     );
-    const v = valueOf(await page({ denom: DENOM }));
+    const v = valueOf(await page({}));
     expect(v.items).toHaveLength(2);
     expect(v.done).toBe(true);
   });
 
   it('answers an empty, done feed for an address with no activity', async () => {
     const { page } = setup({}, ADDRS.slice(0, 1));
-    expect(valueOf(await page({ denom: DENOM }))).toMatchObject({ items: [], done: true });
+    expect(valueOf(await page({}))).toMatchObject({ items: [], done: true });
   });
 
   it('shows one row per address for the same transaction, labelled', async () => {
@@ -204,7 +204,7 @@ describe('activity.page', () => {
       },
       ADDRS.slice(0, 2),
     );
-    const v = valueOf(await page({ denom: DENOM }));
+    const v = valueOf(await page({}));
     expect(v.items.map((i) => [i.addressIndex, i.addressLabel])).toEqual([
       [0, 'Addr 0'],
       [1, 'Addr 1'],
@@ -217,14 +217,14 @@ describe('activity.page', () => {
       bze1addr1: feedOf(15, 1500, 1000, 'B'),
     };
     const { page, activity } = setup(feeds, ADDRS.slice(0, 2));
-    const first = valueOf(await page({ denom: DENOM }));
+    const first = valueOf(await page({}));
     const working = activity.getMockImplementation();
     if (!working) throw new Error('no scan implementation');
     activity.mockImplementation(() => Promise.reject(new Error('scan down')));
-    const failed = await page({ denom: DENOM, cursor: first.cursor ?? '' });
+    const failed = await page({ cursor: first.cursor ?? '' });
     expect(failed).toMatchObject({ ok: false, error: { code: ActivityErrorCodes.unavailable } });
     activity.mockImplementation(working);
-    const retried = valueOf(await page({ denom: DENOM, cursor: first.cursor ?? '' }));
+    const retried = valueOf(await page({ cursor: first.cursor ?? '' }));
     const all = [...first.items, ...retried.items].map((i) => i.txHash);
     expect(new Set(all).size).toBe(all.length);
     const expected = Object.values(feeds)
@@ -235,7 +235,7 @@ describe('activity.page', () => {
     expect(all).toEqual(expected);
   });
 
-  it('turns fee-only rows into a negative fee and plain rows into the signed delta', async () => {
+  it('turns fee-only rows into a negative fee and plain rows into their signed deltas', async () => {
     const { page } = setup(
       {
         bze1addr0: [
@@ -254,15 +254,21 @@ describe('activity.page', () => {
             deltas: [{ denom: DENOM, amount: -40n, symbol: 'BZE', exponent: 6 }],
           }),
           row({ time: ago(3000), txHash: 'NONE', deltas: [], fee: null }),
+          row({
+            time: ago(4000),
+            txHash: 'ZERO',
+            deltas: [{ denom: DENOM, amount: 0n, symbol: 'BZE', exponent: 6 }],
+          }),
         ],
       },
       ADDRS.slice(0, 1),
     );
-    const v = valueOf(await page({ denom: DENOM }));
-    expect(v.items.map((i) => [i.txHash, i.amount, i.feeOnly])).toEqual([
-      ['FEE', '-7', true],
-      ['OUT', '-40', false],
-      ['NONE', null, false],
+    const v = valueOf(await page({}));
+    expect(v.items.map((i) => [i.txHash, i.amounts.map((a) => a.amount), i.feeOnly])).toEqual([
+      ['FEE', ['-7'], true],
+      ['OUT', ['-40'], false],
+      ['NONE', [], false],
+      ['ZERO', [], false],
     ]);
   });
 
@@ -283,7 +289,7 @@ describe('activity.page', () => {
       },
       ADDRS.slice(0, 1),
     );
-    const v = valueOf(await page({ denom: DENOM }));
+    const v = valueOf(await page({}));
     expect(v.items.map((i) => i.counterparty)).toEqual([
       'Exchange',
       'val',
@@ -292,16 +298,14 @@ describe('activity.page', () => {
     ]);
   });
 
-  it('rejects a cursor that is not its own, one for another token and a bad payload', async () => {
+  it('rejects a cursor that is not its own and a bad payload', async () => {
     const { page } = setup({ bze1addr0: feedOf(15, 1000, 1000, 'A') }, ADDRS.slice(0, 1));
-    const first = valueOf(await page({ denom: DENOM }));
-    for (const cursor of ['nope', '{"v":2}', first.cursor ?? '']) {
-      const r = await page({ denom: 'other', cursor });
+    for (const cursor of ['nope', '{"v":1}', '{"v":2}']) {
+      const r = await page({ cursor });
       expect(r).toMatchObject({ ok: false, error: { code: ActivityErrorCodes.badCursor } });
     }
-    expect(await page({ denom: '' })).toMatchObject({ ok: false });
-    expect(await page({ denom: DENOM, addressIndex: 'x' })).toMatchObject({ ok: false });
-    expect(await page({ denom: DENOM, cursor: 5 })).toMatchObject({ ok: false });
+    expect(await page({ addressIndex: 'x' })).toMatchObject({ ok: false });
+    expect(await page({ cursor: 5 })).toMatchObject({ ok: false });
   });
 
   it('passes a locked wallet through', async () => {
@@ -314,55 +318,74 @@ describe('activity.page', () => {
           Promise.resolve({ ok: false, error: { code: 'wallet_locked', message: 'locked' } }),
       },
     } as never);
-    const r = await registry.dispatch({ method: 'activity.page', payload: { denom: DENOM } });
+    const r = await registry.dispatch({ method: 'activity.page', payload: {} });
     expect(r).toMatchObject({ ok: false, error: { code: 'wallet_locked' } });
   });
 
   it('times out a Scan that never answers, and the same cursor works once Scan is back', async () => {
     const feeds = { bze1addr0: feedOf(15, 1000, 1000, 'A') };
     const { page, activity, clock } = setup(feeds, ADDRS.slice(0, 1));
-    const first = valueOf(await page({ denom: DENOM }));
+    const first = valueOf(await page({}));
     const working = activity.getMockImplementation();
     if (!working) throw new Error('no scan implementation');
     activity.mockImplementation(() => new Promise<ActivityPage>(() => undefined));
     clock.hang = true;
-    const failed = await page({ denom: DENOM, cursor: first.cursor ?? '' });
+    const failed = await page({ cursor: first.cursor ?? '' });
     expect(failed).toMatchObject({ ok: false, error: { code: ActivityErrorCodes.unavailable } });
     activity.mockImplementation(working);
     clock.hang = false;
-    const retried = valueOf(await page({ denom: DENOM, cursor: first.cursor ?? '' }));
+    const retried = valueOf(await page({ cursor: first.cursor ?? '' }));
     expect(retried.items.map((i) => i.txHash)).toEqual(['A10', 'A11', 'A12', 'A13', 'A14']);
   });
 
-  it('marks a row of another token whose fee was paid in the token as a fee, whatever its kind', async () => {
+  it('lists every non-zero delta, largest first, merging a denom that appears twice', async () => {
     const { page } = setup(
       {
         bze1addr0: [
           row({
             time: ago(1000),
-            txHash: 'STAKE',
-            kind: 'delegate',
-            category: 'staking',
+            txHash: 'SWAP',
+            kind: 'dex_swap',
+            category: 'other',
             isSigner: true,
-            deltas: [{ denom: 'uother', amount: -9n, symbol: 'O', exponent: 6 }],
-            fee: [{ denom: DENOM, amount: 3n, symbol: 'BZE', exponent: 6 }],
-          }),
-          row({
-            time: ago(2000),
-            txHash: 'SEND',
-            category: 'sent',
-            isSigner: true,
-            deltas: [{ denom: DENOM, amount: -10n, symbol: 'BZE', exponent: 6 }],
+            deltas: [
+              { denom: DENOM, amount: -9n, symbol: 'BZE', exponent: 6 },
+              { denom: 'uother', amount: 40n, symbol: null, exponent: null },
+              { denom: 'uthird', amount: -2n, symbol: 'T', exponent: 2 },
+              { denom: DENOM, amount: -1n, symbol: 'BZE', exponent: 6 },
+            ],
             fee: [{ denom: DENOM, amount: 3n, symbol: 'BZE', exponent: 6 }],
           }),
         ],
       },
       ADDRS.slice(0, 1),
     );
-    const v = valueOf(await page({ denom: DENOM }));
-    expect(v.items.map((i) => [i.kind, i.amount, i.feeOnly])).toEqual([
-      ['delegate', '-3', true],
-      ['send', '-10', false],
+    const v = valueOf(await page({}));
+    expect(v.items[0]).toMatchObject({ feeOnly: false });
+    expect(v.items[0]?.amounts).toEqual([
+      { denom: 'uother', amount: '40', symbol: null, exponent: null },
+      { denom: DENOM, amount: '-10', symbol: 'BZE', exponent: 6 },
+      { denom: 'uthird', amount: '-2', symbol: 'T', exponent: 2 },
     ]);
+  });
+
+  it('orders equal absolute amounts by denom, whatever order Scan lists them in', async () => {
+    const { page } = setup(
+      {
+        bze1addr0: [
+          row({
+            time: ago(1000),
+            deltas: [
+              { denom: 'ubbb', amount: 5n, symbol: null, exponent: null },
+              { denom: 'uccc', amount: -5n, symbol: null, exponent: null },
+              { denom: 'uaaa', amount: 5n, symbol: null, exponent: null },
+            ],
+          }),
+        ],
+      },
+      ADDRS.slice(0, 1),
+    );
+    const v = valueOf(await page({}));
+    expect(v.items[0]?.amounts.map((a) => a.denom)).toEqual(['uaaa', 'ubbb', 'uccc']);
   });
 });

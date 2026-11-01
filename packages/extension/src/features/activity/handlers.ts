@@ -4,7 +4,6 @@ import type { HandlerRegistry } from '../../background/registry';
 import { ActivityService } from './service';
 
 interface Req {
-  denom: string;
   addressIndex?: number;
   cursor?: string;
 }
@@ -14,10 +13,7 @@ function validate(payload: unknown): Result<Req> {
     string,
     unknown
   >;
-  if (typeof p.denom !== 'string' || p.denom === '') {
-    return fail(ErrorCodes.badRequest, 'activity.page needs a denom.');
-  }
-  const req: Req = { denom: p.denom };
+  const req: Req = {};
   if (p.addressIndex !== undefined) {
     if (!Number.isInteger(p.addressIndex)) {
       return fail(ErrorCodes.badRequest, 'activity.page needs an integer addressIndex.');

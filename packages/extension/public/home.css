@@ -207,6 +207,15 @@
   color: var(--bp-muted);
 }
 
+.bp-act-extra {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 8px;
+  font-size: 12px;
+}
+
 .bp-act-meta {
   grid-column: 1 / -1;
   color: var(--bp-muted);

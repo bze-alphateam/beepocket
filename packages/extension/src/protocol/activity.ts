@@ -21,10 +21,19 @@ export interface ActivityItem {
   success: boolean;
   /** Label, else moniker, else the short address; null when Scan names no single other party. */
   counterparty: string | null;
-  /** Signed change of the token on this address, or minus the fee on a fee-only row; null if neither. */
-  amount: string | null;
-  /** The row's only effect on the token is a fee paid in it. */
+  /** Every non-zero change of this address in the transaction, largest absolute value first; minus the fee on a fee-only row. */
+  amounts: ActivityAmount[];
+  /** The row's only effect is a fee paid by this address. */
   feeOnly: boolean;
+}
+
+/** One signed change of one token. `amount` is base units, as a string. */
+export interface ActivityAmount {
+  denom: string;
+  amount: string;
+  /** Scan's display data for the denom; null when it knows none. */
+  symbol: string | null;
+  exponent: number | null;
 }
 
 export interface ActivityPageResult {
@@ -39,9 +48,9 @@ export interface ActivityPageResult {
 }
 
 export interface ActivityProtocol {
-  /** One token's activity merged across the wallet's addresses (or one address), 10 rows a call. */
+  /** The wallet's whole activity merged across its addresses (or one address), 10 rows a call. */
   'activity.page': {
-    req: { denom: string; addressIndex?: number; cursor?: string };
+    req: { addressIndex?: number; cursor?: string };
     res: ActivityPageResult;
   };
 }

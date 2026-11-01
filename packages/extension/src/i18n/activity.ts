@@ -1,4 +1,4 @@
-/** Strings of the Activity tab of the token home. */
+/** Strings of the Activity tab of the home. */
 export const activity = {
   'activity.address': 'Address',
   'activity.address.all': 'All addresses',
@@ -12,7 +12,7 @@ export const activity = {
   'activity.retry': 'Retry',
   'activity.end': "That's everything from the last 30 days",
   'activity.older': 'Older activity on Explorer',
-  'activity.empty': 'No {symbol} activity in the last 30 days',
+  'activity.empty': 'No activity in the last 30 days',
   'activity.word.fallback': 'Transaction',
   'activity.word.sent': 'Sent',
   'activity.word.received': 'Received',
