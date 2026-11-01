@@ -1,0 +1,7 @@
+packages:
+  - packages/core
+  - packages/extension
+  - packages/connector
+onlyBuiltDependencies: []
+allowBuilds:
+  esbuild: false

@@ -1,0 +1,33 @@
+{
+  "name": "beepocket",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r run typecheck",
+    "check-deps": "node scripts/check-deps.mjs",
+    "build": "pnpm -r run build",
+    "unit": "pnpm -r --if-present run test && vitest run --dir scripts",
+    "unit:coverage": "pnpm -r --if-present run test:coverage && vitest run --dir scripts --coverage",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check-deps && pnpm build && pnpm unit",
+    "e2e": "pnpm build && pnpm --filter @beepocket/extension run e2e"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@vitest/coverage-v8": "5.0.5",
+    "eslint": "10.14.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

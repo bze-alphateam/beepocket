@@ -1,0 +1,25 @@
+body {
+  margin: 0;
+  width: 320px;
+  min-height: 200px;
+  font-family: system-ui, sans-serif;
+  background: #0b0f0d;
+  color: #e8f5ec;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px;
+}
+
+.app h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.app small {
+  color: #3dd07a;
+}
