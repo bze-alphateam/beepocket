@@ -14,7 +14,7 @@ async function mockNodes(context: BrowserContext): Promise<void> {
   await context.route(/^https:\/\/(rest|testnet)\.getbze\.com\//, (route) => {
     const url = new URL(route.request().url());
     const amount = amounts[url.host];
-    if (/\/cosmos\/bank\/v1beta1\/balances\//.test(url.pathname) && amount !== undefined) {
+    if (url.pathname.includes('/cosmos/bank/v1beta1/balances/') && amount !== undefined) {
       return route.fulfill({
         json: {
           balances: [{ denom: 'ubze', amount }],

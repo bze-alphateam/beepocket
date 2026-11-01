@@ -61,6 +61,11 @@ const table = {
   book: Marker,
 } as RouteTable<TestRoute>;
 
+function must<T>(x: T | null | undefined): T {
+  if (x === null || x === undefined) throw new Error('element not found');
+  return x;
+}
+
 const flush = () => act(() => new Promise<void>((r) => setTimeout(r, 0)));
 
 async function open(client: FakeClient) {
@@ -90,11 +95,12 @@ describe('SettingsScreen', () => {
     const client = new FakeClient();
     const host = await open(client);
     const sw = host.querySelectorAll<HTMLInputElement>('input[role="switch"]')[0];
-    sw!.checked = false;
+    const sw = must(host.querySelector<HTMLInputElement>('input[role="switch"]'));
+    sw.checked = false;
     fireEvent(sw, 'change');
     await flush();
     expect(client.settings.brandThemes).toBe(false);
-    const select = host.querySelectorAll('select')[0]!;
+    const select = must(host.querySelectorAll('select')[0]);
     select.value = '5';
     fireEvent(select, 'change');
     await flush();
@@ -103,7 +109,7 @@ describe('SettingsScreen', () => {
 
   it('shows the wallet service error inline for an invalid combination', async () => {
     const host = await open(new FakeClient());
-    const select = host.querySelectorAll('select')[1]!;
+    const select = must(host.querySelectorAll('select')[1]);
     select.value = '5';
     fireEvent(select, 'change');
     await flush();
@@ -122,7 +128,7 @@ describe('SettingsScreen', () => {
     client.preferred = [];
     const host = await open(client);
     expect(host.querySelector('.bp-pill')).toBeNull();
-    const sw = host.querySelectorAll<HTMLInputElement>('input[role="switch"]')[1]!;
+    const sw = must(host.querySelectorAll<HTMLInputElement>('input[role="switch"]')[1]);
     sw.checked = true;
     fireEvent(sw, 'change');
     await flush();
@@ -135,7 +141,7 @@ describe('SettingsScreen', () => {
   it('stays on settings when the new network already has tokens, pill shown', async () => {
     const client = new FakeClient();
     const host = await open(client);
-    const sw = host.querySelectorAll<HTMLInputElement>('input[role="switch"]')[1]!;
+    const sw = must(host.querySelectorAll<HTMLInputElement>('input[role="switch"]')[1]);
     sw.checked = true;
     fireEvent(sw, 'change');
     await flush();
@@ -154,7 +160,7 @@ describe('reveal recovery phrase', () => {
     return host;
   };
   const submit = async (host: HTMLElement, password: string) => {
-    const input = host.querySelector<HTMLInputElement>('input[type="password"]')!;
+    const input = must(host.querySelector<HTMLInputElement>('input[type="password"]'));
     input.value = password;
     fireEvent(input, 'input');
     fireEvent(host.querySelector('form'), 'submit');
