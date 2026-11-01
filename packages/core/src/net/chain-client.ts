@@ -4,6 +4,7 @@ import {
   BroadcastError,
   HttpStatusError,
   SimulationError,
+  TransportError,
   TxTimeoutError,
   UnexpectedResponseError,
 } from './errors';
@@ -115,6 +116,7 @@ export interface ChainClient {
 const BASE_ACCOUNT = '/cosmos.auth.v1beta1.BaseAccount';
 const SECP256K1_PUBKEY = '/cosmos.crypto.secp256k1.PubKey';
 const MAX_PAGES = 1000;
+const GRPC_NOT_FOUND = 5;
 
 export class RestChainClient implements ChainClient {
   constructor(
@@ -192,7 +194,7 @@ export class RestChainClient implements ChainClient {
         const unit = v.object(raw, path);
         return {
           denom: v.string(v.field(unit, 'denom', path), `${path}.denom`),
-          exponent: v.safeInteger(v.field(unit, 'exponent', path), `${path}.exponent`),
+          exponent: v.exponent(v.field(unit, 'exponent', path), `${path}.exponent`),
         };
       },
     );
@@ -236,7 +238,7 @@ export class RestChainClient implements ChainClient {
       };
     };
     return {
-      font: v.string(v.field(branding, 'font', 'branding'), 'branding.font'),
+      font: font(v.field(branding, 'font', 'branding')),
       light: palette('light'),
       dark: palette('dark'),
     };
@@ -303,7 +305,10 @@ export class RestChainClient implements ChainClient {
       body: JSON.stringify({ tx_bytes: bytesToBase64(txBytes) }),
     });
     if (res.status !== 200)
-      throw new SimulationError(nodeMessage(res.body) ?? `HTTP ${String(res.status)}`, res.status);
+      throw new SimulationError(
+        v.nodeError(res.body)?.message ?? `HTTP ${String(res.status)}`,
+        res.status,
+      );
     const body = v.object(v.parseJson(res.body), '$');
     const info = v.object(v.field(body, 'gas_info', '$'), 'gas_info');
     return { gasUsed: v.uintString(v.field(info, 'gas_used', 'gas_info'), 'gas_info.gas_used') };
@@ -316,12 +321,12 @@ export class RestChainClient implements ChainClient {
       body: JSON.stringify({ tx_bytes: bytesToBase64(txBytes), mode: 'BROADCAST_MODE_SYNC' }),
     });
     if (res.status !== 200) {
-      // The gateway rejected the request before the node ran CheckTx.
-      throw new BroadcastError(
-        nodeCode(res.body) ?? res.status,
-        'rest',
-        nodeMessage(res.body) ?? `HTTP ${String(res.status)}`,
-      );
+      // A 4xx gateway error means the request was refused before the node saw
+      // the tx. Anything else (502/504, an HTML page) leaves the outcome unknown.
+      const refusal = res.status >= 400 && res.status < 500 ? v.nodeError(res.body) : null;
+      if (refusal === null)
+        throw new HttpStatusError(res.status, this.url('/cosmos/tx/v1beta1/txs'));
+      throw new BroadcastError(refusal.code, 'grpc-gateway', refusal.message);
     }
     const body = v.object(v.parseJson(res.body), '$');
     const tx = v.object(v.field(body, 'tx_response', '$'), 'tx_response');
@@ -340,7 +345,16 @@ export class RestChainClient implements ChainClient {
     const { clock, intervalMs = 1000, timeoutMs = 60_000 } = options;
     const deadline = clock.now() + timeoutMs;
     for (;;) {
-      const body = await this.getJson(`/cosmos/tx/v1beta1/txs/${encodeURIComponent(txHash)}`, true);
+      let body: unknown;
+      try {
+        body = await this.getJson(`/cosmos/tx/v1beta1/txs/${encodeURIComponent(txHash)}`, true);
+      } catch (e) {
+        // A flaky node does not mean the tx is lost: keep polling until the deadline.
+        const transient =
+          e instanceof TransportError || (e instanceof HttpStatusError && e.status >= 500);
+        if (!transient) throw e;
+        body = null;
+      }
       if (body !== null) {
         const tx = v.object(v.field(v.object(body, '$'), 'tx_response', '$'), 'tx_response');
         return {
@@ -363,7 +377,8 @@ export class RestChainClient implements ChainClient {
   private async getJson(path: string, allowNotFound = false): Promise<unknown> {
     const url = this.url(path);
     const res = await this.transport.request({ method: 'GET', url });
-    if (res.status === 404 && allowNotFound) return null;
+    if (allowNotFound && res.status === 404 && v.nodeError(res.body)?.code === GRPC_NOT_FOUND)
+      return null;
     if (res.status !== 200) throw new HttpStatusError(res.status, url);
     return v.parseJson(res.body);
   }
@@ -406,36 +421,10 @@ export class RestChainClient implements ChainClient {
   }
 }
 
-function nodeMessage(body: string): string | null {
-  try {
-    const parsed = JSON.parse(body) as unknown;
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'message' in parsed &&
-      typeof parsed.message === 'string'
-    ) {
-      return parsed.message;
-    }
-  } catch {
-    // not JSON
-  }
-  return null;
-}
-
-function nodeCode(body: string): number | null {
-  try {
-    const parsed = JSON.parse(body) as unknown;
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'code' in parsed &&
-      typeof parsed.code === 'number'
-    ) {
-      return parsed.code;
-    }
-  } catch {
-    // not JSON
-  }
-  return null;
+/** The chain only accepts font slugs of this shape; anything else is not a font id. */
+function font(raw: unknown): string {
+  const value = v.string(raw, 'branding.font');
+  if (!/^[a-z0-9-]{1,32}$/.test(value))
+    throw new UnexpectedResponseError('branding.font', 'expected a font slug');
+  return value;
 }

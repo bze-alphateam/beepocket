@@ -53,7 +53,7 @@ export interface ActivityRow {
 }
 
 export interface ActivityQuery {
-  /** Only rows touching this denom (needs Scan with BFE-324; ignored by older versions). */
+  /** Only rows touching this denom (Scan versions without this filter ignore it). */
   denom?: string;
   limit: number;
   cursor?: string;
@@ -86,7 +86,7 @@ export class HttpScanClient implements ScanClient {
       denom: v.string(v.field(t, 'denom', '$'), 'denom'),
       symbol: v.nullable(v.field(t, 'symbol', '$'), 'symbol', v.string),
       name: v.nullable(v.field(t, 'name', '$'), 'name', v.string),
-      exponent: v.safeInteger(v.field(t, 'exponent', '$'), 'exponent'),
+      exponent: v.exponent(v.field(t, 'exponent', '$'), 'exponent'),
       kind: v.string(v.field(t, 'kind', '$'), 'kind'),
       halted: v.boolean(v.field(t, 'halted', '$'), 'halted'),
     };
@@ -112,7 +112,7 @@ export class HttpScanClient implements ScanClient {
   private async getJson(path: string, allowNotFound = false): Promise<unknown> {
     const url = this.network.scan + path;
     const res = await this.transport.request({ method: 'GET', url });
-    if (res.status === 404 && allowNotFound) return null;
+    if (allowNotFound && res.status === 404 && isScanNotFound(res.body)) return null;
     if (res.status !== 200) throw new HttpStatusError(res.status, url);
     return v.parseJson(res.body);
   }
@@ -124,7 +124,7 @@ function readBalance(raw: unknown, path: string): ScanBalance {
     denom: v.string(v.field(b, 'denom', path), `${path}.denom`),
     amount: v.intString(v.field(b, 'amount', path), `${path}.amount`),
     symbol: v.nullable(v.field(b, 'symbol', path), `${path}.symbol`, v.string),
-    exponent: v.nullable(v.field(b, 'exponent', path), `${path}.exponent`, v.safeInteger),
+    exponent: v.nullable(v.field(b, 'exponent', path), `${path}.exponent`, v.exponent),
   };
 }
 
@@ -162,4 +162,14 @@ function readActivityRow(raw: unknown, path: string): ActivityRow {
     msgTypes: v.arrayOf(v.field(r, 'msg_types', path), `${path}.msg_types`, v.string),
     fee: v.nullable(v.field(r, 'fee', path), `${path}.fee`, (f, p) => v.arrayOf(f, p, readBalance)),
   };
+}
+
+/** Scan's own 404 envelope: `{ "error": { "code": "not_found" } }`; a proxy or route 404 is not an answer. */
+function isScanNotFound(body: string): boolean {
+  try {
+    const parsed = JSON.parse(body) as { error?: { code?: unknown } } | null;
+    return parsed?.error?.code === 'not_found';
+  } catch {
+    return false;
+  }
 }

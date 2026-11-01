@@ -4,7 +4,13 @@ import tokenMain from '../../test/fixtures/scan/mainnet/token.json';
 import tokenFactory from '../../test/fixtures/scan/mainnet/token-factory.json';
 import tokenMissing from '../../test/fixtures/scan/mainnet/token-missing.json';
 import { json, MockTransport, type Fixture } from '../../test/support';
-import { HttpScanClient, HttpStatusError, MAINNET, type ScanClient } from '../index';
+import {
+  HttpScanClient,
+  HttpStatusError,
+  MAINNET,
+  UnexpectedResponseError,
+  type ScanClient,
+} from '../index';
 
 const f = (x: unknown) => x as Fixture;
 const address = activityMain.path.split('/')[4] ?? '';
@@ -184,5 +190,33 @@ describe('amounts are never numbers', () => {
     expectTypeOf<
       NonNullable<Page['items'][number]['fee']>[number]['amount']
     >().toEqualTypeOf<bigint>();
+  });
+});
+
+describe('HttpScanClient hardening', () => {
+  it("treats a 404 that is not Scan's not_found as an error", async () => {
+    const t = mainnet().on('GET', tokenMain.path, { status: 404, body: '<html>nginx</html>' });
+    await expect(new HttpScanClient(t, MAINNET).token('ubze')).rejects.toBeInstanceOf(
+      HttpStatusError,
+    );
+  });
+
+  it('rejects an exponent outside 0..18', async () => {
+    const t = mainnet().on('GET', tokenMain.path, json(200, { ...tokenMain.body, exponent: 99 }));
+    await expect(new HttpScanClient(t, MAINNET).token('ubze')).rejects.toMatchObject({
+      path: 'exponent',
+    });
+  });
+
+  it('rejects a body that is not JSON', async () => {
+    const bad = { status: 200, body: 'not json' };
+    const t = mainnet()
+      .on('GET', tokenMain.path, bad)
+      .on('GET', `/api/v1/accounts/${address}/activity?limit=1`, bad);
+    const client = new HttpScanClient(t, MAINNET);
+    await expect(client.token('ubze')).rejects.toBeInstanceOf(UnexpectedResponseError);
+    await expect(client.activity(address, { limit: 1 })).rejects.toBeInstanceOf(
+      UnexpectedResponseError,
+    );
   });
 });

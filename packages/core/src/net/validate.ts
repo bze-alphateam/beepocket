@@ -90,3 +90,24 @@ export function arrayOf<T>(
 ): T[] {
   return array(v, path).map((item, i) => read(item, join(path, i)));
 }
+
+/** Decimals of a token; bounded because token creators control the value. */
+export function exponent(v: unknown, path: string): number {
+  const n = safeInteger(v, path);
+  if (n < 0 || n > 18)
+    throw new UnexpectedResponseError(path, 'expected an exponent between 0 and 18');
+  return n;
+}
+
+/** A gRPC-gateway error body (`{ code, message }`), or null when the text is not one. */
+export function nodeError(text: string): { code: number; message: string } | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { code, message } = parsed as { code?: unknown; message?: unknown };
+    if (typeof code !== 'number' || typeof message !== 'string') return null;
+    return { code, message };
+  } catch {
+    return null;
+  }
+}

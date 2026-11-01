@@ -27,6 +27,7 @@ import {
   RestChainClient,
   SimulationError,
   TESTNET,
+  TransportError,
   TxTimeoutError,
   UnexpectedResponseError,
   type ChainClient,
@@ -468,5 +469,128 @@ describe('amounts are never numbers', () => {
     >().toEqualTypeOf<bigint>();
     expectTypeOf<Result<'liquidityPools'>[number]['reserveBase']>().toEqualTypeOf<bigint>();
     expectTypeOf<Result<'liquidityPools'>[number]['reserveQuote']>().toEqualTypeOf<bigint>();
+  });
+});
+
+describe('RestChainClient hardening', () => {
+  const tx = new Uint8Array([1, 2, 3]);
+  const html = '<html>502 Bad Gateway</html>';
+
+  it('treats a 404 that is not a gRPC not-found as an error, not as "none"', async () => {
+    const t = mainnet().on('GET', '/cosmos/auth/v1beta1/accounts/bze1x', {
+      status: 404,
+      body: '<html>nginx</html>',
+    });
+    await expect(new RestChainClient(t, MAINNET).account('bze1x')).rejects.toBeInstanceOf(
+      HttpStatusError,
+    );
+    const gateway = mainnet().on(
+      'GET',
+      '/bze/tokenfactory/denom_branding?denom=ubze',
+      json(404, { code: 12, message: 'Not Implemented' }),
+    );
+    await expect(
+      new RestChainClient(gateway, MAINNET).denomBranding('ubze'),
+    ).rejects.toBeInstanceOf(HttpStatusError);
+  });
+
+  it('does not report a broadcast as rejected when the gateway fails (outcome unknown)', async () => {
+    for (const reply of [
+      { status: 502, body: html },
+      json(500, { code: 2, message: 'internal' }),
+    ]) {
+      const t = mainnet().on('POST', '/cosmos/tx/v1beta1/txs', reply);
+      const err = await new RestChainClient(t, MAINNET).broadcast(tx).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HttpStatusError);
+      expect(err).not.toBeInstanceOf(BroadcastError);
+    }
+  });
+
+  it('keeps polling through 5xx and transport failures until the tx shows up', async () => {
+    const hash = txMain.body.tx_response.txhash;
+    const t = mainnet().on(
+      'GET',
+      `/cosmos/tx/v1beta1/txs/${hash}`,
+      { status: 502, body: html },
+      () => {
+        throw new TransportError('timed out');
+      },
+      reply(f(txMissing)),
+      reply(f(txMain)),
+    );
+    const clock = new FakeClock();
+    const result = await new RestChainClient(t, MAINNET).waitForTx(hash, { clock });
+    expect(result.code).toBe(0);
+    expect(t.requests).toHaveLength(4);
+  });
+
+  it('still times out when the node keeps failing', async () => {
+    const t = mainnet().on('GET', '/cosmos/tx/v1beta1/txs/AB', { status: 503, body: '' });
+    await expect(
+      new RestChainClient(t, MAINNET).waitForTx('AB', { clock: new FakeClock(), timeoutMs: 3000 }),
+    ).rejects.toBeInstanceOf(TxTimeoutError);
+  });
+
+  it('does not poll through a client error', async () => {
+    const t = mainnet().on(
+      'GET',
+      '/cosmos/tx/v1beta1/txs/AB',
+      json(400, { code: 3, message: 'bad hash' }),
+    );
+    await expect(
+      new RestChainClient(t, MAINNET).waitForTx('AB', { clock: new FakeClock() }),
+    ).rejects.toBeInstanceOf(HttpStatusError);
+    expect(t.requests).toHaveLength(1);
+  });
+
+  it('rejects an exponent outside 0..18 in token metadata', async () => {
+    const body = structuredClone(metadataMain.body);
+    body.metadata.denom_units[1] = { denom: 'VDL', exponent: 255, aliases: [] };
+    const t = mainnet().on('GET', metadataMain.path, json(200, body));
+    await expect(
+      new RestChainClient(t, MAINNET).denomMetadata(
+        'factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl',
+      ),
+    ).rejects.toMatchObject({ path: 'metadata.denom_units[1].exponent' });
+  });
+
+  it('rejects a font that is not a slug', async () => {
+    for (const font of ['Inter', 'a'.repeat(33), '<script>', '']) {
+      const body = structuredClone(brandingTest.body);
+      body.branding.font = font;
+      const t = new MockTransport(TESTNET.rest).on('GET', brandingTest.path, json(200, body));
+      await expect(
+        new RestChainClient(t, TESTNET).denomBranding(
+          'factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum',
+        ),
+      ).rejects.toMatchObject({ path: 'branding.font' });
+    }
+  });
+
+  it('rejects a body that is not JSON on every call', async () => {
+    const bad = { status: 200, body: 'not json' };
+    const calls: [string, string, (c: RestChainClient) => Promise<unknown>][] = [
+      ['GET', '/cosmos/bank/v1beta1/balances/bze1x', (c) => c.balances('bze1x')],
+      ['GET', '/cosmos/bank/v1beta1/supply/by_denom?denom=ubze', (c) => c.supply('ubze')],
+      [
+        'GET',
+        '/cosmos/bank/v1beta1/denoms_metadata_by_query_string?denom=ubze',
+        (c) => c.denomMetadata('ubze'),
+      ],
+      ['GET', '/bze/tokenfactory/denom_branding?denom=ubze', (c) => c.denomBranding('ubze')],
+      ['GET', '/bze/txfeecollector/params', (c) => c.feeParams()],
+      ['GET', '/bze/tradebin/params', (c) => c.tradebinParams()],
+      ['GET', '/bze/tradebin/all_liquidity_pools', (c) => c.liquidityPools()],
+      ['GET', '/bze/tradebin/halted_denoms', (c) => c.haltedDenoms()],
+      ['POST', '/cosmos/tx/v1beta1/simulate', (c) => c.simulate(tx)],
+      ['POST', '/cosmos/tx/v1beta1/txs', (c) => c.broadcast(tx)],
+      ['GET', '/cosmos/tx/v1beta1/txs/AB', (c) => c.waitForTx('AB', { clock: new FakeClock() })],
+    ];
+    for (const [method, path, call] of calls) {
+      const t = mainnet().on(method as 'GET' | 'POST', path, bad);
+      await expect(call(new RestChainClient(t, MAINNET))).rejects.toBeInstanceOf(
+        UnexpectedResponseError,
+      );
+    }
   });
 });
