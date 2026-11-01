@@ -1,0 +1,17 @@
+{
+  "method": "GET",
+  "path": "/cosmos/bank/v1beta1/balances/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l?pagination.limit=1&pagination.key=ZmFjdG9yeS9iemUxejNta2NyMmp6NDI0dzZtNDlmcmdqbXk5dWhscng2OXBocXdnM2wvdGVzdHVzZA%3D%3D",
+  "status": 200,
+  "body": {
+    "balances": [
+      {
+        "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+        "amount": "790161115557"
+      }
+    ],
+    "pagination": {
+      "next_key": "ZmFjdG9yeS9iemUxejNta2NyMmp6NDI0dzZtNDlmcmdqbXk5dWhscng2OXBocXdnM2wvdWN0cg==",
+      "total": "0"
+    }
+  }
+}

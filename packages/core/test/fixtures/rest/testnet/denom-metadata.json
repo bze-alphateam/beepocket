@@ -1,0 +1,28 @@
+{
+  "method": "GET",
+  "path": "/cosmos/bank/v1beta1/denoms_metadata_by_query_string?denom=factory%2Fbze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l%2Fvidulum",
+  "status": 200,
+  "body": {
+    "metadata": {
+      "description": "Vidulum app token",
+      "denom_units": [
+        {
+          "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum",
+          "exponent": 0,
+          "aliases": []
+        },
+        {
+          "denom": "VDL",
+          "exponent": 6,
+          "aliases": []
+        }
+      ],
+      "base": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum",
+      "display": "VDL",
+      "name": "Vidulum",
+      "symbol": "VDL",
+      "uri": "",
+      "uri_hash": ""
+    }
+  }
+}

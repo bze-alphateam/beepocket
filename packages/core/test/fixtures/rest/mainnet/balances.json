@@ -1,0 +1,21 @@
+{
+  "method": "GET",
+  "path": "/cosmos/bank/v1beta1/balances/bze1d276kzrkyfcwmqv7fqqsp0vx8q63fywdzvykz6",
+  "status": 200,
+  "body": {
+    "balances": [
+      {
+        "denom": "factory/bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77/CTL",
+        "amount": "1100000000"
+      },
+      {
+        "denom": "ubze",
+        "amount": "5700000000000"
+      }
+    ],
+    "pagination": {
+      "next_key": null,
+      "total": "2"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "method": "POST",
+  "path": "/cosmos/tx/v1beta1/txs",
+  "status": 200,
+  "body": {
+    "tx_response": {
+      "height": "0",
+      "txhash": "039058C6F2C0CB492C533B0A4D14EF77CC0F78ABCCCED5287D84A1A2011CFB81",
+      "codespace": "sdk",
+      "code": 2,
+      "data": "",
+      "raw_log": "invalid length; proto: invalid field number: tx parse error",
+      "logs": [],
+      "info": "",
+      "gas_wanted": "0",
+      "gas_used": "0",
+      "tx": null,
+      "timestamp": "",
+      "events": []
+    }
+  }
+}

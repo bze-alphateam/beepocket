@@ -1,0 +1,110 @@
+{
+  "method": "GET",
+  "path": "/api/v1/accounts/bze1d276kzrkyfcwmqv7fqqsp0vx8q63fywdzvykz6/activity?limit=10",
+  "status": 200,
+  "body": {
+    "items": [
+      {
+        "time": "2026-10-31T13:39:14.982055Z",
+        "height": 25333363,
+        "tx_hash": "218D275435ECFFFA62995AF9B249FB54B82B20A08CA6BF7E15DAE5DBA6A096B5",
+        "kind": "send",
+        "category": "received",
+        "is_signer": false,
+        "success": true,
+        "counterparty": {
+          "address": "bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77",
+          "label": null,
+          "moniker": null
+        },
+        "deltas": [
+          {
+            "denom": "factory/bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77/CTL",
+            "amount": "100000000",
+            "symbol": "CTL",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/cosmos.bank.v1beta1.MsgMultiSend"],
+        "details": null,
+        "fee": null
+      },
+      {
+        "time": "2026-10-29T14:59:04.837129Z",
+        "height": 25304818,
+        "tx_hash": "6447F6A790735FAE7B48626B2AB42DE1FF2CE82B8ECDAAF68B7CD5D39548CD53",
+        "kind": "send",
+        "category": "received",
+        "is_signer": false,
+        "success": true,
+        "counterparty": {
+          "address": "bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77",
+          "label": null,
+          "moniker": null
+        },
+        "deltas": [
+          {
+            "denom": "factory/bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77/CTL",
+            "amount": "1000000000",
+            "symbol": "CTL",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/cosmos.bank.v1beta1.MsgMultiSend"],
+        "details": null,
+        "fee": null
+      },
+      {
+        "time": "2024-10-15T21:46:44.723615Z",
+        "height": 14066978,
+        "tx_hash": "DDF20815AF10A5ED4F97DAB2FA8D976E61A3D58276C81EB0CFE3A6144CDD4B21",
+        "kind": "send",
+        "category": "received",
+        "is_signer": false,
+        "success": true,
+        "counterparty": {
+          "address": "bze1dte8cgjyxnsg4zmrlhfv4h4hnxv5vy8khzfx4f",
+          "label": null,
+          "moniker": null
+        },
+        "deltas": [
+          {
+            "denom": "ubze",
+            "amount": "500000000000",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/cosmos.bank.v1beta1.MsgSend"],
+        "details": null,
+        "fee": null
+      },
+      {
+        "time": "2024-10-15T21:39:45.463095Z",
+        "height": 14066904,
+        "tx_hash": "F164750794410ED53B373C7A41E05420751B2A672C14DC211ECDF34758E13DF0",
+        "kind": "send",
+        "category": "received",
+        "is_signer": false,
+        "success": true,
+        "counterparty": {
+          "address": "bze1ucx0c63jut4x9ekstszed64hmcumaa62k84xex",
+          "label": null,
+          "moniker": null
+        },
+        "deltas": [
+          {
+            "denom": "ubze",
+            "amount": "5200000000000",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/cosmos.bank.v1beta1.MsgSend"],
+        "details": null,
+        "fee": null
+      }
+    ],
+    "next_cursor": null
+  }
+}

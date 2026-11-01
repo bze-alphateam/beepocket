@@ -1,0 +1,11 @@
+{
+  "method": "GET",
+  "path": "/api/v1/tokens/factory%2Fbze1nobody%2Funone",
+  "status": 404,
+  "body": {
+    "error": {
+      "code": "not_found",
+      "message": "denom factory/bze1nobody/unone is not known"
+    }
+  }
+}

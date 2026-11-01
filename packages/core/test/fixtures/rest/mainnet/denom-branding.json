@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/bze/tokenfactory/denom_branding?denom=factory%2Fbze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk%2Fuvdl",
+  "status": 404,
+  "body": {
+    "code": 5,
+    "message": "not found",
+    "details": []
+  }
+}

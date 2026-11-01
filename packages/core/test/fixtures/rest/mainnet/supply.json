@@ -1,0 +1,11 @@
+{
+  "method": "GET",
+  "path": "/cosmos/bank/v1beta1/supply/by_denom?denom=ubze",
+  "status": 200,
+  "body": {
+    "amount": {
+      "denom": "ubze",
+      "amount": "282672473439523"
+    }
+  }
+}

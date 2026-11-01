@@ -1,0 +1,91 @@
+{
+  "method": "GET",
+  "path": "/api/v1/tokens/factory%2Fbze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l%2Fvidulum",
+  "status": 200,
+  "body": {
+    "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum",
+    "symbol": "VDL",
+    "name": "Vidulum",
+    "kind": "factory",
+    "exponent": 6,
+    "supply": "20997876000000",
+    "holders_count": 5,
+    "price_usd": "0.077731770131",
+    "price_change_24h_pct": null,
+    "price_source": "dex",
+    "halted": false,
+    "logo_url": null,
+    "origin_chain": null,
+    "ibc_hops": null,
+    "via_chain": null,
+    "lp_pair": null,
+    "created_time": null,
+    "ibc_channel": null,
+    "stranded": false,
+    "description": "Vidulum app token",
+    "origin_chain_id": null,
+    "ibc_base_denom": null,
+    "ibc_path": null,
+    "creator": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+    "creator_label": null,
+    "admin": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+    "admin_label": null,
+    "created_height": null,
+    "created_tx_hash": null,
+    "website": null,
+    "markets": [],
+    "price_updated_at": "2026-11-01T11:30:40.065639Z",
+    "metadata": {
+      "base": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum",
+      "name": "Vidulum",
+      "symbol": "VDL",
+      "display": "VDL",
+      "denom_units": [
+        {
+          "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum"
+        },
+        {
+          "denom": "VDL",
+          "exponent": 6
+        }
+      ],
+      "description": "Vidulum app token"
+    },
+    "updated_at": "2026-11-01T11:18:39.66436Z",
+    "events": [
+      {
+        "height": 3929054,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "93ECA5B05C3225E303F466ECC87AFDCECDF76A6F13EDA8DA31B4506CF377CB10",
+        "kind": "pool_created",
+        "actor": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+        "actor_label": null,
+        "amount": null,
+        "details": {
+          "base": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum",
+          "quote": "ubze",
+          "lp_denom": "ulp/FD2C3506F9D9312ABF5A1BB82AF7CE272A2ED0243D15AB3ADB348C97620FBC10"
+        },
+        "time": "2026-10-26T09:08:06.658861Z"
+      },
+      {
+        "height": 3928989,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "93044476E6EC821FE6820C90D42234E149F3812233516F6F362648E82F3EAE4D",
+        "kind": "branding_changed",
+        "actor": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+        "actor_label": null,
+        "amount": null,
+        "details": null,
+        "time": "2026-10-26T09:02:21.609198Z"
+      }
+    ],
+    "events_next_cursor": null,
+    "transfers_24h": {
+      "count": 0,
+      "amount": "0"
+    }
+  }
+}
