@@ -59,7 +59,7 @@ async function rig() {
   registerSettingsHandlers(registry, new SettingsService({ wallet, storage }));
   const call = async <M extends Method>(
     method: M,
-    payload: RequestOf<M> | unknown,
+    payload: unknown,
   ): Promise<Result<ResponseOf<M>>> =>
     (await registry.dispatch({ method, payload })) as Result<ResponseOf<M>>;
   return { call, wallet, alarms, storage };

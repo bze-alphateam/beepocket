@@ -72,7 +72,11 @@ function must<T>(x: T | null | undefined): T {
   return x;
 }
 
-const flush = () => act(() => new Promise<void>((r) => setTimeout(r, 0)));
+/** Lets the fake client's resolved promises settle; works with real and fake timers. */
+const flush = () =>
+  act(async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  });
 
 async function open(client: FakeClient) {
   const { host } = render(
@@ -212,9 +216,9 @@ describe('reveal recovery phrase', () => {
       vi.useRealTimers();
     });
     const shown = async (client: FakeClient) => {
+      vi.useFakeTimers();
       const host = await openSheet(client);
       await submit(host, 'pw');
-      vi.useFakeTimers();
       expect(host.querySelector('.bp-phrase')).not.toBeNull();
       return host;
     };

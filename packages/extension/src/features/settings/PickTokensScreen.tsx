@@ -7,6 +7,11 @@ import { useRoute, type RouteBase } from '../../popup/router';
 import { Banner, Button } from '../../ui';
 import { NetworkPill } from './NetworkPill';
 
+const networkName: Record<NetworkId, string> = {
+  mainnet: t('settings.network.mainnet'),
+  testnet: t('settings.network.testnet'),
+};
+
 /**
  * Where a network switch lands when that network has no preferred token yet. Minimal on
  * purpose: add BZE or switch to the other network (the onboarding token step is not shared yet).
@@ -52,7 +57,7 @@ export function PickTokensScreen() {
     <Layout header={<NetworkPill network={network} />}>
       <main class="bp-settings">
         <h1>{t('settings.network.pick.title')}</h1>
-        <p>{t('settings.network.pick.body', { network: t(`settings.network.${network}`) })}</p>
+        <p>{t('settings.network.pick.body', { network: networkName[network] })}</p>
         {failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}
         <Button
           onClick={() => {
