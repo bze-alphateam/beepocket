@@ -1,0 +1,109 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/all_liquidity_pools",
+  "status": 200,
+  "body": {
+    "list": [
+      {
+        "id": "factory/bze142cru2h3xa6p4kajyg7wzcuweq0p72puyar263/utms_ubze",
+        "base": "factory/bze142cru2h3xa6p4kajyg7wzcuweq0p72puyar263/utms",
+        "quote": "ubze",
+        "lp_denom": "ulp/5DC2A45770C7337C59938CD2F28906B1AD8637DDFB6B8994A9990BADAC063A4D",
+        "creator": "bze142cru2h3xa6p4kajyg7wzcuweq0p72puyar263",
+        "fee": "0.001000000000000000",
+        "fee_dest": {
+          "treasury": "0.500000000000000000",
+          "burner": "0.000000000000000000",
+          "providers": "0.500000000000000000"
+        },
+        "reserve_base": "400000000000",
+        "reserve_quote": "20000000000",
+        "stable": false
+      },
+      {
+        "id": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/noadmin_factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+        "base": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/noadmin",
+        "quote": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+        "lp_denom": "ulp/5A5BDA370AB071543FC6FFCD0F1EA65A92F591CBEA0A29B7E5AB85B7253DB1CE",
+        "creator": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+        "fee": "0.002000000000000000",
+        "fee_dest": {
+          "treasury": "0.000000000000000000",
+          "burner": "0.000000000000000000",
+          "providers": "1.000000000000000000"
+        },
+        "reserve_base": "702617511",
+        "reserve_quote": "146523657",
+        "stable": false
+      },
+      {
+        "id": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd_ubze",
+        "base": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+        "quote": "ubze",
+        "lp_denom": "ulp_factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd_ubze",
+        "creator": "bze138xqs3nhepmjs3pk6d9eprkvp78ye9el2a2v7t",
+        "fee": "0.002000000000000000",
+        "fee_dest": {
+          "treasury": "0.000000000000000000",
+          "burner": "0.500000000000000000",
+          "providers": "0.500000000000000000"
+        },
+        "reserve_base": "178358721592",
+        "reserve_quote": "233677011224",
+        "stable": false
+      },
+      {
+        "id": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/uctr_ubze",
+        "base": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/uctr",
+        "quote": "ubze",
+        "lp_denom": "ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212",
+        "creator": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+        "fee": "0.005000000000000000",
+        "fee_dest": {
+          "treasury": "0.250000000000000000",
+          "burner": "0.250000000000000000",
+          "providers": "0.500000000000000000"
+        },
+        "reserve_base": "3000000000",
+        "reserve_quote": "3000000000",
+        "stable": false
+      },
+      {
+        "id": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum_ubze",
+        "base": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum",
+        "quote": "ubze",
+        "lp_denom": "ulp/FD2C3506F9D9312ABF5A1BB82AF7CE272A2ED0243D15AB3ADB348C97620FBC10",
+        "creator": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+        "fee": "0.003000000000000000",
+        "fee_dest": {
+          "treasury": "0.250000000000000000",
+          "burner": "0.250000000000000000",
+          "providers": "0.500000000000000000"
+        },
+        "reserve_base": "1090022722356",
+        "reserve_quote": "111008375544",
+        "stable": false
+      },
+      {
+        "id": "ibc/9DA252F9F9C86132CC282EA431DFB7DE7729501F6DC9A3E0F50EC8C6EE380CC7_ubze",
+        "base": "ibc/9DA252F9F9C86132CC282EA431DFB7DE7729501F6DC9A3E0F50EC8C6EE380CC7",
+        "quote": "ubze",
+        "lp_denom": "ulp_ibc/9DA252F9F9C86132CC282EA431DFB7DE7729501F6DC9A3E0F50EC8C6EE380CC7_ubze",
+        "creator": "bze138xqs3nhepmjs3pk6d9eprkvp78ye9el2a2v7t",
+        "fee": "0.001000000000000000",
+        "fee_dest": {
+          "treasury": "0.000000000000000000",
+          "burner": "0.500000000000000000",
+          "providers": "0.500000000000000000"
+        },
+        "reserve_base": "333872490",
+        "reserve_quote": "24838849767",
+        "stable": false
+      }
+    ],
+    "pagination": {
+      "next_key": null,
+      "total": "6"
+    }
+  }
+}

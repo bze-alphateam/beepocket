@@ -1,0 +1,358 @@
+{
+  "method": "GET",
+  "path": "/api/v1/accounts/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/activity?limit=10",
+  "status": 200,
+  "body": {
+    "items": [
+      {
+        "time": "2026-11-01T10:58:33.800214Z",
+        "height": 4027742,
+        "tx_hash": "3D61C323C1D1EC77EB3E69EB12D727BB693C96804D579119F171E8072E797E7F",
+        "kind": "burner_fund",
+        "category": "burner",
+        "is_signer": true,
+        "success": true,
+        "counterparty": null,
+        "deltas": [
+          {
+            "denom": "ubze",
+            "amount": "-1128",
+            "symbol": "BZE",
+            "exponent": 6
+          },
+          {
+            "denom": "ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212",
+            "amount": "-2000000000000000",
+            "symbol": "CTR/BZE LP",
+            "exponent": 12
+          }
+        ],
+        "msg_types": ["/bze.burner.MsgFundBurner"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "1128",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-11-01T10:58:12.480021Z",
+        "height": 4027738,
+        "tx_hash": "7A64BFDD49F7A6D3ABB93CFD07A516E5BA744FA5ABE1B8EBB60D6DFCD3231663",
+        "kind": "liquidity",
+        "category": "dex",
+        "is_signer": true,
+        "success": true,
+        "counterparty": null,
+        "deltas": [
+          {
+            "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/uctr",
+            "amount": "-2000000000",
+            "symbol": "CTR",
+            "exponent": 6
+          },
+          {
+            "denom": "ubze",
+            "amount": "-2000002184",
+            "symbol": "BZE",
+            "exponent": 6
+          },
+          {
+            "denom": "ulp/85EE30D0C02571007FE1BB562D685D19ECA1A55E5B07135148B3DA5F52E54212",
+            "amount": "2000000000000000",
+            "symbol": "CTR/BZE LP",
+            "exponent": 12
+          }
+        ],
+        "msg_types": ["/bze.tradebin.MsgAddLiquidity"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "2184",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-11-01T10:57:13.53767Z",
+        "height": 4027727,
+        "tx_hash": "E36EBA382BD660AB4BB78DF579281DC9494B65DF3E084B9B9EC6869C3926C74E",
+        "kind": "dex_pool",
+        "category": "dex",
+        "is_signer": true,
+        "success": true,
+        "counterparty": null,
+        "deltas": [
+          {
+            "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/uctr",
+            "amount": "-1000000000",
+            "symbol": "CTR",
+            "exponent": 6
+          },
+          {
+            "denom": "ubze",
+            "amount": "-26000002975",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/bze.tradebin.MsgCreateLiquidityPool"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "2975",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-11-01T10:56:04.042272Z",
+        "height": 4027714,
+        "tx_hash": "F0BA3C57846D7F4930E886DD9DD211736D1641738C35D57E16C17DDC801BF454",
+        "kind": "token_create",
+        "category": "tokens",
+        "is_signer": true,
+        "success": true,
+        "counterparty": null,
+        "deltas": [
+          {
+            "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/uctr",
+            "amount": "21000000000000",
+            "symbol": "CTR",
+            "exponent": 6
+          },
+          {
+            "denom": "ubze",
+            "amount": "-25000002417",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": [
+          "/bze.tokenfactory.MsgCreateDenom",
+          "/bze.tokenfactory.MsgMint",
+          "/bze.tokenfactory.MsgSetDenomMetadata"
+        ],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "2417",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-10-31T10:38:20.434008Z",
+        "height": 4011382,
+        "tx_hash": "227DBBA08C02321B80715C18D7FB9CBB0E8F33B3D7FFFA2A77464460A2DB6233",
+        "kind": "dex_market",
+        "category": "dex",
+        "is_signer": true,
+        "success": true,
+        "counterparty": null,
+        "deltas": [
+          {
+            "denom": "ubze",
+            "amount": "-25000001678",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/bze.tradebin.MsgCreateMarket"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "1678",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-10-30T22:44:21.800622Z",
+        "height": 4003380,
+        "tx_hash": "D6B76F0929B3E2A123752BC677804F4CCBA77D598CD735070E791F48B6444CE7",
+        "kind": "send",
+        "category": "sent",
+        "is_signer": true,
+        "success": true,
+        "counterparty": {
+          "address": "bze1v8ejl7ewu5fctlljcqcren372ce3swaz9n9ywh",
+          "label": null,
+          "moniker": null
+        },
+        "deltas": [
+          {
+            "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+            "amount": "-5000000000",
+            "symbol": "TUSDC",
+            "exponent": 6
+          },
+          {
+            "denom": "ubze",
+            "amount": "-1164",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/cosmos.bank.v1beta1.MsgSend"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "1164",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-10-30T22:44:05.668566Z",
+        "height": 4003377,
+        "tx_hash": "473A3617A1B5A9403424B5A5FD657B1BA72E8052DC8051365F6EDFB4C1CBE802",
+        "kind": "send",
+        "category": "sent",
+        "is_signer": true,
+        "success": true,
+        "counterparty": {
+          "address": "bze1v8ejl7ewu5fctlljcqcren372ce3swaz9n9ywh",
+          "label": null,
+          "moniker": null
+        },
+        "deltas": [
+          {
+            "denom": "ubze",
+            "amount": "-15000001056",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/cosmos.bank.v1beta1.MsgSend"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "1056",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-10-30T22:43:49.668687Z",
+        "height": 4003374,
+        "tx_hash": "6066348BA57C8C6176844C9B84F076777EE9B743B8D4F6CB3ACD20C553BFCE21",
+        "kind": "send",
+        "category": "sent",
+        "is_signer": true,
+        "success": true,
+        "counterparty": {
+          "address": "bze1v5ragdqeywf3ewcv4yjhkc2xhamwdhzdewlvmq",
+          "label": null,
+          "moniker": null
+        },
+        "deltas": [
+          {
+            "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+            "amount": "-5000000000",
+            "symbol": "TUSDC",
+            "exponent": 6
+          },
+          {
+            "denom": "ubze",
+            "amount": "-1164",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/cosmos.bank.v1beta1.MsgSend"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "1164",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-10-30T22:43:28.218739Z",
+        "height": 4003370,
+        "tx_hash": "436D00AACEBB9F784DA7693E7E41D4BF3337C141E74E921BD4A724D47723DE9B",
+        "kind": "send",
+        "category": "sent",
+        "is_signer": true,
+        "success": true,
+        "counterparty": {
+          "address": "bze1v5ragdqeywf3ewcv4yjhkc2xhamwdhzdewlvmq",
+          "label": null,
+          "moniker": null
+        },
+        "deltas": [
+          {
+            "denom": "ubze",
+            "amount": "-15000001055",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/cosmos.bank.v1beta1.MsgSend"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "1055",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      },
+      {
+        "time": "2026-10-30T17:11:24.636473Z",
+        "height": 3999648,
+        "tx_hash": "0E544693A6D68F2A32D2B4C10237B63FF16BDB4C49774EC69C9DF3B2634FF245",
+        "kind": "dex_order",
+        "category": "dex",
+        "is_signer": true,
+        "success": true,
+        "counterparty": null,
+        "deltas": [
+          {
+            "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+            "amount": "-41232669",
+            "symbol": "TUSDC",
+            "exponent": 6
+          },
+          {
+            "denom": "ubze",
+            "amount": "-102235",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ],
+        "msg_types": ["/bze.tradebin.MsgCreateOrder"],
+        "details": null,
+        "fee": [
+          {
+            "denom": "ubze",
+            "amount": "2235",
+            "symbol": "BZE",
+            "exponent": 6
+          }
+        ]
+      }
+    ],
+    "next_cursor": "Mzk5OTY0ODox"
+  }
+}

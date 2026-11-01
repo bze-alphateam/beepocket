@@ -1,0 +1,29 @@
+{
+  "method": "GET",
+  "path": "/bze/tradebin/all_liquidity_pools?pagination.limit=1&pagination.key=ZmFjdG9yeS9iemUxM2d6cTQwY2hlOTN0Z2ZtOWt6bWtwamFtYWg1bmowajczcHlocWsvdXZkbF91Ynpl",
+  "status": 200,
+  "body": {
+    "list": [
+      {
+        "id": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl_ubze",
+        "base": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+        "quote": "ubze",
+        "lp_denom": "ulp_factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl_ubze",
+        "creator": "bze1dte8cgjyxnsg4zmrlhfv4h4hnxv5vy8khzfx4f",
+        "fee": "0.002000000000000000",
+        "fee_dest": {
+          "treasury": "0.000000000000000000",
+          "burner": "0.500000000000000000",
+          "providers": "0.500000000000000000"
+        },
+        "reserve_base": "1640680462626",
+        "reserve_quote": "2056163880475",
+        "stable": false
+      }
+    ],
+    "pagination": {
+      "next_key": "ZmFjdG9yeS9iemUxOTcyYXFmemRnMjl1Z2psbjc0ZWR4MHh2Y2c0ZWh2eXNqcHRrNzcvQ1RMX2liYy9FRDA3QTMzOTFBMTEyQjE3NTkxNUNEOEZBRjQzQTJEQThFNDc5MEVERTEyNTY2NjQ5RDBDMkY5NzcxNkI4NTE4",
+      "total": "0"
+    }
+  }
+}

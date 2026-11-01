@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/bze/tokenfactory/denom_branding?denom=ubze",
+  "status": 404,
+  "body": {
+    "code": 5,
+    "message": "not found",
+    "details": []
+  }
+}

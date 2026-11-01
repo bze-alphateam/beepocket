@@ -1,0 +1,235 @@
+{
+  "method": "GET",
+  "path": "/api/v1/tokens/factory%2Fbze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk%2Fuvdl",
+  "status": 200,
+  "body": {
+    "denom": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+    "symbol": "VDL",
+    "name": "Vidulum",
+    "kind": "factory",
+    "exponent": 6,
+    "supply": "20983185271838",
+    "holders_count": 266,
+    "price_usd": "0.000536616504",
+    "price_change_24h_pct": null,
+    "price_source": "dex",
+    "halted": false,
+    "logo_url": "https://raw.githubusercontent.com/cosmos/chain-registry/master/beezee/images/vdl.png",
+    "origin_chain": null,
+    "ibc_hops": null,
+    "via_chain": null,
+    "lp_pair": null,
+    "created_time": "2024-07-20T13:02:32.119461Z",
+    "ibc_channel": null,
+    "stranded": false,
+    "description": "Vidulum App Token",
+    "origin_chain_id": null,
+    "ibc_base_denom": null,
+    "ibc_path": null,
+    "creator": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+    "creator_label": null,
+    "admin": null,
+    "admin_label": null,
+    "created_height": 12741217,
+    "created_tx_hash": "AA30698AAAC00A9456E1A33F2485EFB085D71106BBF53AF24E47D60D8DB908D2",
+    "website": null,
+    "markets": [
+      "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl/ubze",
+      "factory/bze1f0qgels0eu96ev6a67znu70q7rquy9eragn8nw/ucorey/factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl"
+    ],
+    "price_updated_at": "2026-11-01T11:31:22.692706Z",
+    "metadata": {
+      "base": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+      "name": "Vidulum",
+      "symbol": "VDL",
+      "display": "VDL",
+      "denom_units": [
+        {
+          "denom": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl"
+        },
+        {
+          "denom": "VDL",
+          "exponent": 6
+        }
+      ],
+      "description": "Vidulum App Token"
+    },
+    "updated_at": "2026-11-01T10:33:30.127853Z",
+    "events": [
+      {
+        "height": 25275793,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "D7809A0BF9FCEFBB5906C7970C1BA20C34F32D2427EB1EEAC356B1F17729E156",
+        "kind": "pool_created",
+        "actor": "bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77",
+        "actor_label": null,
+        "amount": null,
+        "details": {
+          "base": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+          "quote": "factory/bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77/CTL",
+          "lp_denom": "ulp/DD05723298B4D20BEB042D01D2497915BC4B15446AB59DA4CD26BFCD77C78DD2"
+        },
+        "time": "2026-10-27T16:07:14.799384Z"
+      },
+      {
+        "height": 20466163,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "6B3703FC2CF1E8D27A37269175A94F0B8639E1C1DCA3E6652ED16A20679290FA",
+        "kind": "pool_created",
+        "actor": "bze1dte8cgjyxnsg4zmrlhfv4h4hnxv5vy8khzfx4f",
+        "actor_label": null,
+        "amount": null,
+        "details": {
+          "base": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+          "quote": "ubze"
+        },
+        "time": "2025-12-12T16:33:16.796714Z"
+      },
+      {
+        "height": 19226870,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "BEEEFB79D444204A8ABDDF3E784218A41AE503E9E9FE7CAFD59DD9821B85E5C3",
+        "kind": "admin_changed",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": null,
+        "details": {
+          "to": ""
+        },
+        "time": "2025-09-21T23:12:38.026555Z"
+      },
+      {
+        "height": 19226861,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "878809F994AAD4D1E9110CDFD1383075E48A8B67576FF8F55CD47F616CA7FA8B",
+        "kind": "burned",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": "4000000000000",
+        "details": null,
+        "time": "2025-09-21T23:11:45.507321Z"
+      },
+      {
+        "height": 19226796,
+        "tx_index": 1,
+        "seq": 0,
+        "tx_hash": "97DFC2D98F1DB12B9771F8F905531171F84EA9BCBA4F4B31D27420B17FB0D500",
+        "kind": "burned",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": "5000000000000",
+        "details": null,
+        "time": "2025-09-21T23:05:34.704039Z"
+      },
+      {
+        "height": 17207822,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "B69F808795BE03FA1577D28F520BB0632FF9608790C3D78B7BC8F4F2F40EAB08",
+        "kind": "burned",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": "10000000000000",
+        "details": null,
+        "time": "2025-05-11T16:50:10.505391Z"
+      },
+      {
+        "height": 16587242,
+        "tx_index": 1,
+        "seq": 0,
+        "tx_hash": "A8AE884B7E9445B443916FDB1E1B6CDEC266A554B43A8E8D51C3D428CDE6C043",
+        "kind": "burned",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": "10000000000000",
+        "details": null,
+        "time": "2025-03-31T13:34:54.507267Z"
+      },
+      {
+        "height": 14461415,
+        "tx_index": 1,
+        "seq": 1,
+        "tx_hash": "53BF2248A64D0E12F5329F71309749487F19E22D32463399D9AC386F72F6E34A",
+        "kind": "market_created",
+        "actor": "bze1f0qgels0eu96ev6a67znu70q7rquy9eragn8nw",
+        "actor_label": null,
+        "amount": null,
+        "details": {
+          "base": "factory/bze1f0qgels0eu96ev6a67znu70q7rquy9eragn8nw/ucorey",
+          "quote": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+          "market_id": "factory/bze1f0qgels0eu96ev6a67znu70q7rquy9eragn8nw/ucorey/factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl"
+        },
+        "time": "2024-11-10T21:13:05.103924Z"
+      },
+      {
+        "height": 13898571,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "834A1D3585E948C63BD70FCD49A0BE02CBE3DBFC4F8812880B70456A1FD155D7",
+        "kind": "market_created",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": null,
+        "details": {
+          "base": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+          "quote": "ubze",
+          "market_id": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl/ubze"
+        },
+        "time": "2024-10-04T20:54:04.595307Z"
+      },
+      {
+        "height": 12741273,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "F4A8481B5EE321E290B2983C5B314ED98A2AF4C7E9B6593B8F4E417E5DB972BB",
+        "kind": "minted",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": "50000000000000",
+        "details": {
+          "recipient": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk"
+        },
+        "time": "2024-07-20T13:07:53.617652Z"
+      },
+      {
+        "height": 12741239,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "70AD29EF291A6911F273F7CFFA5B14F0AE361BE19E0022C6E604A8573ED89A28",
+        "kind": "metadata_changed",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": null,
+        "details": {
+          "name": "Vidulum",
+          "symbol": "VDL",
+          "display": "VDL"
+        },
+        "time": "2024-07-20T13:04:38.638713Z"
+      },
+      {
+        "height": 12741217,
+        "tx_index": 0,
+        "seq": 0,
+        "tx_hash": "AA30698AAAC00A9456E1A33F2485EFB085D71106BBF53AF24E47D60D8DB908D2",
+        "kind": "created",
+        "actor": "bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk",
+        "actor_label": null,
+        "amount": null,
+        "details": {
+          "subdenom": "uvdl"
+        },
+        "time": "2024-07-20T13:02:32.119461Z"
+      }
+    ],
+    "events_next_cursor": null,
+    "transfers_24h": {
+      "count": 254,
+      "amount": "52498829929"
+    }
+  }
+}

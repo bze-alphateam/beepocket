@@ -1,0 +1,14 @@
+{
+  "method": "GET",
+  "path": "/cosmos/auth/v1beta1/accounts/bze1d276kzrkyfcwmqv7fqqsp0vx8q63fywdzvykz6",
+  "status": 200,
+  "body": {
+    "account": {
+      "@type": "/cosmos.auth.v1beta1.BaseAccount",
+      "address": "bze1d276kzrkyfcwmqv7fqqsp0vx8q63fywdzvykz6",
+      "pub_key": null,
+      "account_number": "11706",
+      "sequence": "0"
+    }
+  }
+}

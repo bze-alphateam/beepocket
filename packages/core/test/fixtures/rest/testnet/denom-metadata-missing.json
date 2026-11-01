@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/cosmos/bank/v1beta1/denoms_metadata_by_query_string?denom=ubze",
+  "status": 404,
+  "body": {
+    "code": 5,
+    "message": "client metadata for denom ubze",
+    "details": []
+  }
+}

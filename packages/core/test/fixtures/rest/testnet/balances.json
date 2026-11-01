@@ -1,0 +1,57 @@
+{
+  "method": "GET",
+  "path": "/cosmos/bank/v1beta1/balances/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+  "status": 200,
+  "body": {
+    "balances": [
+      {
+        "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/noadmin",
+        "amount": "969649382489"
+      },
+      {
+        "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd",
+        "amount": "790161115557"
+      },
+      {
+        "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/uctr",
+        "amount": "20997000000000"
+      },
+      {
+        "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/utvo",
+        "amount": "1000000000000"
+      },
+      {
+        "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/uxfct",
+        "amount": "7654321000000"
+      },
+      {
+        "denom": "factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/vidulum",
+        "amount": "19896049594122"
+      },
+      {
+        "denom": "ibc/9DA252F9F9C86132CC282EA431DFB7DE7729501F6DC9A3E0F50EC8C6EE380CC7",
+        "amount": "554703015"
+      },
+      {
+        "denom": "ubze",
+        "amount": "795582837825"
+      },
+      {
+        "denom": "ulp/5A5BDA370AB071543FC6FFCD0F1EA65A92F591CBEA0A29B7E5AB85B7253DB1CE",
+        "amount": "317597326305030"
+      },
+      {
+        "denom": "ulp/FD2C3506F9D9312ABF5A1BB82AF7CE272A2ED0243D15AB3ADB348C97620FBC10",
+        "amount": "31622776601683793"
+      },
+      {
+        "denom": "ulp_factory/bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l/testusd_ubze",
+        "amount": "191431970360906428"
+      }
+    ],
+    "pagination": {
+      "next_key": null,
+      "total": "11"
+    }
+  }
+}
