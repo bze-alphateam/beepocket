@@ -16,8 +16,6 @@ export interface HomeEnv {
   themeTarget: ThemeTarget;
   scheme: { current(): Scheme; subscribe(listener: () => void): () => void };
   clipboard: { writeText(text: string): Promise<void> };
-  /** The wallet was locked from the header; the shell shows the unlock screen. */
-  onLocked(): void;
 }
 
 export function browserHomeEnv(): HomeEnv {
@@ -48,9 +46,6 @@ export function browserHomeEnv(): HomeEnv {
       },
     },
     clipboard: { writeText: (text) => navigator.clipboard.writeText(text) },
-    onLocked: () => {
-      window.location.reload();
-    },
   };
 }
 

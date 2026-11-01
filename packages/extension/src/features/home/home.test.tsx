@@ -149,7 +149,6 @@ function setup(over: Partial<World> = {}) {
   const style = new Map<string, string>();
   const dataset: { scheme?: string | undefined } = {};
   const written: string[] = [];
-  const onLocked = vi.fn();
   const env: HomeEnv = {
     scheduler: {
       every: (ms, fn) => {
@@ -182,7 +181,6 @@ function setup(over: Partial<World> = {}) {
         return Promise.resolve();
       },
     },
-    onLocked,
   };
   const table: RouteTable<HomeRoute> = { 'home.main': Home };
   const { host } = render(
@@ -208,7 +206,7 @@ function setup(over: Partial<World> = {}) {
       }
     });
   };
-  return { host, hold, w, calls, style, written, onLocked, timers, tick, fire };
+  return { host, hold, w, calls, style, written, timers, tick, fire };
 }
 
 const byLabel = (host: HTMLElement, label: string) =>
@@ -328,7 +326,7 @@ describe('header', () => {
     expect(text(s.host)).toContain('Testnet');
     click(byLabel(s.host, 'Lock wallet'));
     await s.tick();
-    expect(s.onLocked).toHaveBeenCalled();
+    expect(s.calls.some((c) => c.method === 'wallet.lock')).toBe(true);
   });
 });
 

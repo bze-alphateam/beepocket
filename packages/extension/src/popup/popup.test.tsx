@@ -5,6 +5,8 @@ import { ClientProvider, useClient } from './client-context';
 import { Layout } from './Layout';
 import { Router, useRoute, type RouteTable } from './router';
 import { App } from './App';
+import { act } from 'preact/test-utils';
+import { LockEnvProvider } from '../features/lock';
 
 afterEach(cleanup);
 
@@ -88,19 +90,49 @@ describe('Layout', () => {
 });
 
 describe('App', () => {
-  it('opens on the token home screen', () => {
+  it('routes an unlocked wallet to the token home screen', async () => {
     vi.stubGlobal('matchMedia', () => ({
       matches: true,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
     }));
-    const client: Client = { call: () => new Promise(() => undefined) };
+    const bze = {
+      denom: 'ubze',
+      symbol: 'BZE',
+      name: 'BeeZee',
+      decimals: 6,
+      kind: 'native',
+      source: 'chain',
+      branding: null,
+    };
+    const answers: Record<string, unknown> = {
+      'wallet.state': { state: 'unlocked', retryAt: null },
+      'home.context': { network: 'mainnet', brandThemes: true },
+      'tokens.preferred': [bze],
+      'wallet.addresses': { addresses: [] },
+      'tokens.balances': { denom: 'ubze', addresses: [], total: '0', partial: false },
+      'tokens.theme': null,
+    };
+    const client: Client = {
+      call: vi.fn((method: string) =>
+        Promise.resolve({ ok: true as const, value: answers[method] }),
+      ) as Client['call'],
+    };
+    const events = { subscribe: () => () => undefined };
+    const clock = { now: () => 0, sleep: () => Promise.resolve() };
     const { host } = render(
       <ClientProvider client={client}>
-        <App />
+        <LockEnvProvider clock={clock} events={events}>
+          <App />
+        </LockEnvProvider>
       </ClientProvider>,
     );
-    expect(host.querySelector('[role="status"]')).not.toBeNull();
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+    expect(host.querySelector('.bp-home-token')?.textContent).toContain('BZE');
     vi.unstubAllGlobals();
   });
 });

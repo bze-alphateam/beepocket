@@ -1,5 +1,6 @@
 import { app } from './app';
 import { home } from './home';
+import { lock } from './lock';
 
 /**
  * The one entry point for English strings. A feature adds `src/i18n/<feature>.ts` (keys
@@ -8,6 +9,7 @@ import { home } from './home';
 export const en = {
   ...app,
   ...home,
+  ...lock,
 } as const;
 
 export type StringKey = keyof typeof en;

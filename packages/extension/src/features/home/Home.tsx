@@ -7,6 +7,7 @@ import { Layout } from '../../popup/Layout';
 import { useRoute } from '../../popup/router';
 import { applyTheme } from '../../theme';
 import { Banner, Button, Pill, Spinner } from '../../ui';
+import { useLock } from '../lock/useLock';
 import { AddressesTab } from './AddressesTab';
 import { useBalances } from './data';
 import { useHomeEnv } from './env';
@@ -37,6 +38,7 @@ export function Home() {
   const client = useClient();
   const env = useHomeEnv();
   const { navigate } = useRoute<HomeRoute | SettingsTarget>();
+  const lockWallet = useLock();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
   const [denom, setDenom] = useState<string | null>(null);
@@ -60,19 +62,24 @@ export function Home() {
       client.call('tokens.preferred', {}),
       client.call('wallet.addresses', {}),
     ]);
-    const first = tokens.ok ? tokens.value[0] : undefined;
-    if (!ctx.ok || !tokens.ok || !addresses.ok || !first) {
+    let list = tokens;
+    if (tokens.ok && tokens.value.length === 0) {
+      // A new wallet starts with BZE as its one preferred token.
+      list = await client.call('tokens.add', { denom: 'ubze' });
+    }
+    const first = list.ok ? list.value[0] : undefined;
+    if (!ctx.ok || !list.ok || !addresses.ok || !first) {
       setFailed(true);
       return;
     }
     setLoaded({
       network: ctx.value.network,
       brandThemes: ctx.value.brandThemes,
-      tokens: tokens.value,
+      tokens: list.value,
       addresses: addresses.value.addresses,
     });
     setDenom((current) =>
-      current !== null && tokens.value.some((x) => x.denom === current) ? current : first.denom,
+      current !== null && list.value.some((x) => x.denom === current) ? current : first.denom,
     );
   }, [client]);
 
@@ -150,9 +157,7 @@ export function Home() {
     );
   };
   const lock = () => {
-    void client.call('wallet.lock', {}).then((res) => {
-      if (res.ok) env.onLocked();
-    });
+    void lockWallet();
   };
   const addAddress = async () => {
     if (addingRef.current) return;

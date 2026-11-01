@@ -1,6 +1,8 @@
 import { render } from 'preact';
+import { SystemClock } from '@beepocket/core';
 import { RuntimeClient } from '../protocol/client';
 import { applyTheme, systemScheme } from '../theme';
+import { LockEnvProvider, RuntimeStateEvents } from '../features/lock';
 import { App } from './App';
 import { ClientProvider } from './client-context';
 
@@ -21,7 +23,12 @@ const root = document.getElementById('root');
 if (root) {
   render(
     <ClientProvider client={new RuntimeClient(chrome.runtime)}>
-      <App />
+      <LockEnvProvider
+        clock={new SystemClock()}
+        events={new RuntimeStateEvents(chrome.runtime.onMessage)}
+      >
+        <App />
+      </LockEnvProvider>
     </ClientProvider>,
     root,
   );

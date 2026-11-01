@@ -9,6 +9,7 @@ export type { AppProtocol } from './app';
 export type { HomeProtocol } from './home';
 export * from './tokens';
 export * from './wallet';
+export * from './lock';
 
 /**
  * Every method the popup can call. Each feature adds one `FeatureProtocol` here:
