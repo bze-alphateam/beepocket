@@ -1,10 +1,12 @@
 import type { AppProtocol } from './app';
+import type { SettingsProtocol } from './settings';
 import type { TokensProtocol } from './tokens';
 import type { WalletProtocol } from './wallet';
 import type { FeatureProtocol } from './types';
 
 export * from './types';
 export type { AppProtocol } from './app';
+export * from './settings';
 export * from './tokens';
 export * from './wallet';
 
@@ -14,7 +16,8 @@ export * from './wallet';
  */
 export type Protocol = FeatureProtocol<AppProtocol> &
   FeatureProtocol<WalletProtocol> &
-  FeatureProtocol<TokensProtocol>;
+  FeatureProtocol<TokensProtocol> &
+  FeatureProtocol<SettingsProtocol>;
 
 export type Method = keyof Protocol;
 export type RequestOf<M extends Method> = Protocol[M]['req'];

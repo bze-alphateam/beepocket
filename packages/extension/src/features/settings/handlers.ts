@@ -1,0 +1,55 @@
+import { ErrorCodes, fail, ok, type Result, type WalletSettings } from '../../protocol';
+import type { HandlerRegistry } from '../../background/registry';
+import { isNetworkId, type SettingsService } from './service';
+
+type Payload = Record<string, unknown>;
+
+const bad = (message: string): Result<never> => fail(ErrorCodes.badRequest, message);
+
+function asObject(payload: unknown): Payload | null {
+  if (payload === undefined || payload === null) return {};
+  return typeof payload === 'object' && !Array.isArray(payload) ? (payload as Payload) : null;
+}
+
+const noArgs = (): Result<Record<string, never>> => ok({});
+
+/** Only known fields of the right type pass; range rules belong to the wallet service. */
+function validatePatch(payload: unknown): Result<Partial<WalletSettings>> {
+  const p = asObject(payload);
+  if (!p) return bad('settings.set got a malformed request.');
+  const patch: Partial<WalletSettings> = {};
+  if (p.brandThemes !== undefined) {
+    if (typeof p.brandThemes !== 'boolean') return bad('brandThemes must be a boolean.');
+    patch.brandThemes = p.brandThemes;
+  }
+  for (const key of ['weakLockMinutes', 'fullLockMinutes'] as const) {
+    const value = p[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'number') return bad(`${key} must be a number.`);
+    patch[key] = value;
+  }
+  return ok(patch);
+}
+
+/** Thin protocol layer for settings and the network switch. */
+export function registerSettingsHandlers(
+  registry: HandlerRegistry,
+  service: SettingsService,
+): void {
+  registry.register('settings.get', { validate: noArgs, handle: () => service.get() });
+  registry.register('settings.set', {
+    validate: validatePatch,
+    handle: (patch) => service.set(patch),
+  });
+  registry.register('network.get', {
+    validate: noArgs,
+    handle: async () => ok(await service.network()),
+  });
+  registry.register('network.set', {
+    validate: (payload) => {
+      const id = asObject(payload)?.id;
+      return isNetworkId(id) ? ok({ id }) : bad('network.set needs a known network id.');
+    },
+    handle: ({ id }) => service.setNetwork(id),
+  });
+}

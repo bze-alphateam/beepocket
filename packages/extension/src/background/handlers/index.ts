@@ -5,6 +5,8 @@ import { registerTokenHandlers } from '../../features/tokens/handlers';
 import { walletTokenSeams } from '../../features/tokens/wallet-seams';
 import type { WalletService } from '../../features/wallet';
 import { registerWalletHandlers } from '../../features/wallet/handlers';
+import { registerSettingsHandlers } from '../../features/settings/handlers';
+import { SettingsService } from '../../features/settings/service';
 import { registerAppHandlers } from './app';
 
 /** What handlers may use. Handlers hold no state of their own: the worker can restart. */
@@ -19,4 +21,8 @@ export function registerHandlers(registry: HandlerRegistry, deps: HandlerDeps): 
   registerAppHandlers(registry, deps);
   registerWalletHandlers(registry, deps.wallet);
   registerTokenHandlers(registry, deps, walletTokenSeams(deps.wallet));
+  registerSettingsHandlers(
+    registry,
+    new SettingsService({ wallet: deps.wallet, storage: deps.platform.storage }),
+  );
 }
