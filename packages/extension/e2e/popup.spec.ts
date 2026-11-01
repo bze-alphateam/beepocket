@@ -1,9 +1,9 @@
 import { expect, test } from './fixtures';
 
-test('popup shows BeePocket in the BeePocket theme', async ({ context, extensionId }) => {
+test('popup opens in the BeePocket theme', async ({ context, extensionId }) => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
-  await expect(page.getByRole('heading', { name: 'BeePocket' })).toBeVisible();
+  await expect(page.locator('.bp-frame')).toBeVisible();
   const primary = await page.evaluate(() =>
     document.documentElement.style.getPropertyValue('--bp-primary'),
   );

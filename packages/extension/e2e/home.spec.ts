@@ -94,6 +94,8 @@ test('home shows balances, derives, renames and re-themes per token', async ({
   await expect(page.getByRole('dialog', { name: 'Address added' })).toBeVisible();
   await page.getByRole('textbox', { name: 'Label' }).fill('Savings');
   await page.getByRole('button', { name: 'Done' }).click();
+  // The new address holds nothing yet, so it folds away.
+  await page.getByRole('button', { name: 'Show 1 empty address' }).click();
   await expect(page.getByRole('button', { name: 'Rename Savings' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Rename Main' }).click();
