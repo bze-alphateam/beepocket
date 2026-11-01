@@ -4,3 +4,5 @@ coverage/
 node_modules/
 playwright-report/
 test-results/
+packages/core/src/proto/
+packages/core/test/fixtures/

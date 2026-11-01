@@ -1,0 +1,46 @@
+{
+  "accountNumber": "7",
+  "authInfoBytes": "ClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiECumaoTPeDmvFyoT5/yfXnAIy4vKFYX487r7MDnto8H90SBAoCCAEYAxISCgwKBHViemUSBDIwMDAQwJoM",
+  "bodyBytes": "CokBChwvY29zbW9zLmJhbmsudjFiZXRhMS5Nc2dTZW5kEmkKKmJ6ZTFyNXY1c3JkYTd4ZnRoM2huMnMyNnR4dnJjcm50bGRqdXgwdHM5ZxIqYnplMXZ0YWQ4NjgwdmhkZnF2eHgwZjJ5YXhhNmFnZHlsZWxtOTJzbTZwGg8KBHViemUSBzEwMDAwMDAKvAEKHC9jb3Ntb3MuYmFuay52MWJldGExLk1zZ1NlbmQSmwEKKmJ6ZTFyNXY1c3JkYTd4ZnRoM2huMnMyNnR4dnJjcm50bGRqdXgwdHM5ZxIqYnplMXZ0YWQ4NjgwdmhkZnF2eHgwZjJ5YXhhNmFnZHlsZWxtOTJzbTZwGkEKN2ZhY3RvcnkvYnplMTNnenE0MGNoZTkzdGdmbTlrem1rcGphbWFoNW5qMGo3M3B5aHFrL3V2ZGwSBjI1MDAwMA==",
+  "chainId": "beezee-1",
+  "description": "two bank sends in one transaction (ubze and a factory denom)",
+  "fee": [
+    {
+      "amount": "2000",
+      "denom": "ubze"
+    }
+  ],
+  "gasLimit": "200000",
+  "memo": "",
+  "messages": [
+    {
+      "amount": [
+        {
+          "amount": "1000000",
+          "denom": "ubze"
+        }
+      ],
+      "fromAddress": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+      "toAddress": "bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p",
+      "typeUrl": "/cosmos.bank.v1beta1.MsgSend"
+    },
+    {
+      "amount": [
+        {
+          "amount": "250000",
+          "denom": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl"
+        }
+      ],
+      "fromAddress": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+      "toAddress": "bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p",
+      "typeUrl": "/cosmos.bank.v1beta1.MsgSend"
+    }
+  ],
+  "name": "two-messages",
+  "pubKey": "ArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/d",
+  "sequence": "3",
+  "signature": "sQvK5d1A6nm58pWaMzebKffI39Yl2h1j/UeYuWCOfE4c32vux7MW8pXTBZffVjcdxGg8zGWAx6eMkG2587T2lg==",
+  "signer": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+  "signerIndex": 0,
+  "txRaw": "CssCCokBChwvY29zbW9zLmJhbmsudjFiZXRhMS5Nc2dTZW5kEmkKKmJ6ZTFyNXY1c3JkYTd4ZnRoM2huMnMyNnR4dnJjcm50bGRqdXgwdHM5ZxIqYnplMXZ0YWQ4NjgwdmhkZnF2eHgwZjJ5YXhhNmFnZHlsZWxtOTJzbTZwGg8KBHViemUSBzEwMDAwMDAKvAEKHC9jb3Ntb3MuYmFuay52MWJldGExLk1zZ1NlbmQSmwEKKmJ6ZTFyNXY1c3JkYTd4ZnRoM2huMnMyNnR4dnJjcm50bGRqdXgwdHM5ZxIqYnplMXZ0YWQ4NjgwdmhkZnF2eHgwZjJ5YXhhNmFnZHlsZWxtOTJzbTZwGkEKN2ZhY3RvcnkvYnplMTNnenE0MGNoZTkzdGdmbTlrem1rcGphbWFoNW5qMGo3M3B5aHFrL3V2ZGwSBjI1MDAwMBJmClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiECumaoTPeDmvFyoT5/yfXnAIy4vKFYX487r7MDnto8H90SBAoCCAEYAxISCgwKBHViemUSBDIwMDAQwJoMGkCxC8rl3UDqebnylZozN5sp98jf1iXaHWP9R5i5YI58Thzfa+7HsxbyldMFl99WNx3EaDzMZYDHp4yQbbnztPaW"
+}

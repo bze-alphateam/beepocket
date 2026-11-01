@@ -1,0 +1,35 @@
+{
+  "accountNumber": "7",
+  "authInfoBytes": "ClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiECumaoTPeDmvFyoT5/yfXnAIy4vKFYX487r7MDnto8H90SBAoCCAEYAxISCgwKBHViemUSBDIwMDAQwJoM",
+  "bodyBytes": "CrwBChwvY29zbW9zLmJhbmsudjFiZXRhMS5Nc2dTZW5kEpsBCipiemUxcjV2NXNyZGE3eGZ0aDNobjJzMjZ0eHZyY3JudGxkanV4MHRzOWcSKmJ6ZTF2dGFkODY4MHZoZGZxdnh4MGYyeWF4YTZhZ2R5bGVsbTkyc202cBpBCjdmYWN0b3J5L2J6ZTEzZ3pxNDBjaGU5M3RnZm05a3pta3BqYW1haDVuajBqNzNweWhxay91dmRsEgYyNTAwMDA=",
+  "chainId": "beezee-1",
+  "description": "bank send of a factory denom",
+  "fee": [
+    {
+      "amount": "2000",
+      "denom": "ubze"
+    }
+  ],
+  "gasLimit": "200000",
+  "memo": "",
+  "messages": [
+    {
+      "amount": [
+        {
+          "amount": "250000",
+          "denom": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl"
+        }
+      ],
+      "fromAddress": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+      "toAddress": "bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p",
+      "typeUrl": "/cosmos.bank.v1beta1.MsgSend"
+    }
+  ],
+  "name": "send-factory-denom",
+  "pubKey": "ArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/d",
+  "sequence": "3",
+  "signature": "ODit+W7ZJNda9XufPVaBbXJv6KNpRd80jsyf9I4T+XAwsDUK4DXYsecHJNv8XC8on8aIoNxTuC+Q652/WOH5aw==",
+  "signer": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+  "signerIndex": 0,
+  "txRaw": "Cr8BCrwBChwvY29zbW9zLmJhbmsudjFiZXRhMS5Nc2dTZW5kEpsBCipiemUxcjV2NXNyZGE3eGZ0aDNobjJzMjZ0eHZyY3JudGxkanV4MHRzOWcSKmJ6ZTF2dGFkODY4MHZoZGZxdnh4MGYyeWF4YTZhZ2R5bGVsbTkyc202cBpBCjdmYWN0b3J5L2J6ZTEzZ3pxNDBjaGU5M3RnZm05a3pta3BqYW1haDVuajBqNzNweWhxay91dmRsEgYyNTAwMDASZgpQCkYKHy9jb3Ntb3MuY3J5cHRvLnNlY3AyNTZrMS5QdWJLZXkSIwohArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/dEgQKAggBGAMSEgoMCgR1YnplEgQyMDAwEMCaDBpAODit+W7ZJNda9XufPVaBbXJv6KNpRd80jsyf9I4T+XAwsDUK4DXYsecHJNv8XC8on8aIoNxTuC+Q652/WOH5aw=="
+}

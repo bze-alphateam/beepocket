@@ -1,0 +1,35 @@
+{
+  "accountNumber": "7",
+  "authInfoBytes": "ClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiECumaoTPeDmvFyoT5/yfXnAIy4vKFYX487r7MDnto8H90SBAoCCAEYAxISCgwKBHViemUSBDIwMDAQwJoM",
+  "bodyBytes": "CokBChwvY29zbW9zLmJhbmsudjFiZXRhMS5Nc2dTZW5kEmkKKmJ6ZTFyNXY1c3JkYTd4ZnRoM2huMnMyNnR4dnJjcm50bGRqdXgwdHM5ZxIqYnplMXZ0YWQ4NjgwdmhkZnF2eHgwZjJ5YXhhNmFnZHlsZWxtOTJzbTZwGg8KBHViemUSBzEwMDAwMDASEHRoYW5rcyBmb3IgbHVuY2g=",
+  "chainId": "beezee-1",
+  "description": "bank send of 1,000,000 ubze with a memo",
+  "fee": [
+    {
+      "amount": "2000",
+      "denom": "ubze"
+    }
+  ],
+  "gasLimit": "200000",
+  "memo": "thanks for lunch",
+  "messages": [
+    {
+      "amount": [
+        {
+          "amount": "1000000",
+          "denom": "ubze"
+        }
+      ],
+      "fromAddress": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+      "toAddress": "bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p",
+      "typeUrl": "/cosmos.bank.v1beta1.MsgSend"
+    }
+  ],
+  "name": "send-ubze-memo",
+  "pubKey": "ArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/d",
+  "sequence": "3",
+  "signature": "CqtMjjBsbffkBBkycD/NL9mP/LlAW1ho2EDOi0QAfZkhcZSuExi/K6gg5r30d4dF3zX/1qJJHIITGwszkU2IZg==",
+  "signer": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+  "signerIndex": 0,
+  "txRaw": "Cp4BCokBChwvY29zbW9zLmJhbmsudjFiZXRhMS5Nc2dTZW5kEmkKKmJ6ZTFyNXY1c3JkYTd4ZnRoM2huMnMyNnR4dnJjcm50bGRqdXgwdHM5ZxIqYnplMXZ0YWQ4NjgwdmhkZnF2eHgwZjJ5YXhhNmFnZHlsZWxtOTJzbTZwGg8KBHViemUSBzEwMDAwMDASEHRoYW5rcyBmb3IgbHVuY2gSZgpQCkYKHy9jb3Ntb3MuY3J5cHRvLnNlY3AyNTZrMS5QdWJLZXkSIwohArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/dEgQKAggBGAMSEgoMCgR1YnplEgQyMDAwEMCaDBpACqtMjjBsbffkBBkycD/NL9mP/LlAW1ho2EDOi0QAfZkhcZSuExi/K6gg5r30d4dF3zX/1qJJHIITGwszkU2IZg=="
+}
