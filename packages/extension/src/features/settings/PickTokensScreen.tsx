@@ -5,6 +5,7 @@ import { useClient } from '../../popup/client-context';
 import { Layout } from '../../popup/Layout';
 import { useRoute, type RouteBase } from '../../popup/router';
 import { Banner, Button } from '../../ui';
+import { homeTarget } from '../lock/targets';
 import { NetworkPill } from './NetworkPill';
 
 const networkName: Record<NetworkId, string> = {
@@ -35,7 +36,7 @@ export function PickTokensScreen() {
   const addBze = async () => {
     setFailed(false);
     const r = await client.call('tokens.add', { denom: 'ubze' });
-    if (r.ok) navigate({ name: 'shell.home' });
+    if (r.ok) navigate(homeTarget);
     else setFailed(true);
   };
 
@@ -49,7 +50,7 @@ export function PickTokensScreen() {
     }
     setNetwork(r.value.id);
     const tokens = await client.call('tokens.preferred', {});
-    if (tokens.ok && tokens.value.length > 0) navigate({ name: 'shell.home' });
+    if (tokens.ok && tokens.value.length > 0) navigate(homeTarget);
   };
 
   if (network === null) return <Layout>{null}</Layout>;

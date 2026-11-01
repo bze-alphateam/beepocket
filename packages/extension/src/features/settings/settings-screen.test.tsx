@@ -80,12 +80,12 @@ const clock = {
 
 const manifest = { version: () => '1.2.3' };
 
-type TestRoute = SettingsRoute | { name: 'shell.home' } | { name: 'book' };
+type TestRoute = SettingsRoute | { name: 'home.main' } | { name: 'book' };
 const Marker = (props: { route: { name: string } }) => <p>at:{props.route.name}</p>;
 const table = {
   ...settingsRoutes,
   'settings.main': () => <SettingsScreen manifest={manifest} />,
-  'shell.home': Marker,
+  'home.main': Marker,
   book: Marker,
 } as RouteTable<TestRoute>;
 
@@ -299,7 +299,7 @@ describe('pick tokens screen', () => {
     fireEvent(button(host, 'Switch network'), 'click');
     await flush();
     expect(client.network).toBe('mainnet');
-    expect(host.textContent).toBe('at:shell.home');
+    expect(host.textContent).toBe('at:home.main');
   });
 
   it('add BZE picks the token and goes home', async () => {
@@ -307,7 +307,7 @@ describe('pick tokens screen', () => {
     const host = await openPick(client);
     fireEvent(button(host, 'Add BZE'), 'click');
     await flush();
-    expect(host.textContent).toBe('at:shell.home');
+    expect(host.textContent).toBe('at:home.main');
   });
 });
 

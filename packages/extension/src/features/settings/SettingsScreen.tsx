@@ -7,6 +7,7 @@ import { Layout } from '../../popup/Layout';
 import { useRoute, type RouteBase } from '../../popup/router';
 import { Banner, Button, Spinner } from '../../ui';
 import type { ManifestSource } from './manifest';
+import { homeTarget } from '../lock/targets';
 import { NetworkPill } from './NetworkPill';
 import { RevealPhrase } from './RevealPhrase';
 
@@ -124,7 +125,7 @@ export function SettingsScreen({ manifest }: { manifest: ManifestSource }) {
       <Button
         variant="quiet"
         onClick={() => {
-          navigate({ name: 'shell.home' });
+          navigate(homeTarget);
         }}
       >
         {t('settings.back')}
