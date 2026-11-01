@@ -112,7 +112,6 @@
 }
 
 .bp-home-label {
-  grid-area: label;
   justify-self: start;
   padding: 0;
   border: 0;
@@ -123,17 +122,27 @@
 }
 
 .bp-home-short {
-  grid-area: short;
   color: var(--bp-muted);
   font-size: 12px;
+}
+
+.bp-home-addresses .bp-home-label {
+  grid-area: label;
+}
+
+.bp-home-addresses .bp-home-short {
+  grid-area: short;
 }
 
 .bp-home-addresses .bp-home-icon {
   grid-area: icon;
 }
 
-.bp-home-amount {
+.bp-home-addresses .bp-home-amount {
   grid-area: amount;
+}
+
+.bp-home-amount {
   font-variant-numeric: tabular-nums;
 }
 
