@@ -5,3 +5,7 @@ export * from './vault';
 export * from './decode';
 export * from './signer';
 export * from './tx';
+export * from './amounts';
+export * from './cache';
+export * from './fees';
+export * from './tokens';
