@@ -260,3 +260,64 @@ p {
   background: var(--bp-bad-soft);
   color: var(--bp-bad-text);
 }
+
+/* Address book */
+.bp-book,
+.bp-book-picker,
+.bp-book-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bp-book-heading {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--bp-muted);
+}
+
+.bp-book-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bp-book-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bp-book-row {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--bp-line-strong);
+  border-radius: 12px;
+  background: var(--bp-inset);
+  color: var(--bp-text);
+  font: inherit;
+  text-align: left;
+}
+
+button.bp-book-row {
+  width: 100%;
+  cursor: pointer;
+}
+
+.bp-book-row small,
+.bp-book-empty {
+  color: var(--bp-muted);
+}
+
+.bp-book-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

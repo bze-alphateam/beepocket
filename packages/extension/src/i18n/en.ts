@@ -1,3 +1,4 @@
+import { addressBook } from './address-book';
 import { app } from './app';
 
 /**
@@ -6,6 +7,7 @@ import { app } from './app';
  */
 export const en = {
   ...app,
+  ...addressBook,
 } as const;
 
 export type StringKey = keyof typeof en;
