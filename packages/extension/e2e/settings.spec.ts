@@ -110,10 +110,10 @@ test('home settings icon, Testnet toggle with pill, and the reveal sheet in the 
   await expect(page.locator('.bp-pill')).toHaveCount(0);
 
   await page.getByRole('button', { name: /Show recovery phrase/ }).click();
-  await page.getByLabel('Password').fill('wrong password');
+  await page.getByRole('dialog').getByLabel('Password').fill('wrong password');
   await page.getByRole('button', { name: 'Show', exact: true }).click();
   await expect(page.getByText('Wrong password.')).toBeVisible();
-  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('dialog').getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Show', exact: true }).click();
   await expect(page.locator('.bp-phrase li')).toHaveCount(24);
 });
