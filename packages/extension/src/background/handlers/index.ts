@@ -11,6 +11,7 @@ import { registerSettingsHandlers } from '../../features/settings/handlers';
 import { SettingsService } from '../../features/settings/service';
 import { registerHomeHandlers } from '../../features/home/handlers';
 import { registerSendHandlers } from '../../features/send/handlers';
+import { registerActivityHandlers } from '../../features/activity/handlers';
 import { registerAppHandlers } from './app';
 
 /** What handlers may use. Handlers hold no state of their own: the worker can restart. */
@@ -32,4 +33,5 @@ export function registerHandlers(registry: HandlerRegistry, deps: HandlerDeps): 
   registerBookHandlers(registry, walletBookStore(deps.wallet));
   registerHomeHandlers(registry, deps);
   registerSendHandlers(registry, deps);
+  registerActivityHandlers(registry, deps);
 }
