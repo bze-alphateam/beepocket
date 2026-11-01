@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/feegrant/v1beta1/feegrant.ts), registry lines removed. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 3.2.0 (src/cosmos/feegrant/v1beta1/feegrant.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";
 import { Timestamp } from "../../../google/protobuf/timestamp";

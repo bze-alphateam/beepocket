@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/authz/v1beta1/tx.ts), registry lines removed. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 3.2.0 (src/cosmos/authz/v1beta1/tx.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Grant, GrantAmino, GrantSDKType } from "./authz";
 import { Any, AnyProtoMsg, AnyAmino, AnySDKType } from "../../../google/protobuf/any";

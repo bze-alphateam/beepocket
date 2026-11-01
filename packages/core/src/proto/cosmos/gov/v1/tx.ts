@@ -1,5 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/gov/v1/tx.ts), registry lines removed. Do not edit; re-copy on chain upgrades.
-//@ts-nocheck
+// Copied from @bze/bzejs 3.2.0 (src/cosmos/gov/v1/tx.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 import { VoteOption, voteOptionFromJSON, voteOptionToJSON } from "./gov";
 import { BinaryReader, BinaryWriter } from "../../../binary";
 import { isSet } from "../../../helpers";

@@ -46,7 +46,7 @@ if (!process.argv[2]) throw new Error('usage: copy-proto.mjs <path-to-bzejs>');
 const version = JSON.parse(readFileSync(join(src, 'package.json'), 'utf8')).version;
 
 const header = (path) =>
-  `// Copied from @bze/bzejs ${version} (src/${path}), registry lines removed. Do not edit; re-copy on chain upgrades.\n`;
+  `// Copied from @bze/bzejs ${version} (src/${path}); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.\n`;
 const read = (path) => readFileSync(join(src, 'src', path), 'utf8');
 const write = (path, text) => {
   mkdirSync(dirname(join(out, path)), { recursive: true });
@@ -96,7 +96,6 @@ const ifaceEnd = lineIndex(tx, ' * MsgVoteWeighted defines a message to cast a v
 const implStart = lineIndex(tx, 'function createBaseMsgVote(): MsgVote {');
 const implEnd = lineIndex(tx, 'function createBaseMsgVoteWeighted()');
 const govTx = [
-  '//@ts-nocheck',
   'import { VoteOption, voteOptionFromJSON, voteOptionToJSON } from "./gov";',
   'import { BinaryReader, BinaryWriter } from "../../../binary";',
   'import { isSet } from "../../../helpers";',

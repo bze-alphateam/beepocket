@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/bze/burner/tx.ts), registry lines removed. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 3.2.0 (src/bze/burner/tx.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Params, ParamsAmino, ParamsSDKType } from "./params";
 import { BinaryReader, BinaryWriter } from "../../binary";

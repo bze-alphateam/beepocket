@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/tx/signing/v1beta1/signing.ts), registry lines removed. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 3.2.0 (src/cosmos/tx/signing/v1beta1/signing.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { CompactBitArray, CompactBitArrayAmino, CompactBitArraySDKType } from "../../../crypto/multisig/v1beta1/multisig";
 import { Any, AnyAmino, AnySDKType } from "../../../../google/protobuf/any";

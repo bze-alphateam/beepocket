@@ -6,12 +6,15 @@ version 3.2.0 = chain v8.2.0). The wallet has no runtime dependency on bzejs, co
 other package outside `@noble/*`, `@scure/*` and `preact`. Do not edit these files by hand;
 correctness is proven byte-for-byte against `bzed` in `../golden.test.ts`.
 
-ESLint and Prettier ignore this directory (generated code); `tsc` still checks it.
+ESLint and Prettier ignore this directory (generated code). `tsc` includes it, but the files
+that carry the original telescope `//@ts-nocheck` line are not type-checked (the trimmed
+`cosmos/gov/v1/` files are).
 
 ## Files
 
-Each file below is copied from `src/<same path>` in bzejs with a header line added and nothing
-else changed, except where noted.
+Each file below is copied byte-for-byte from `src/<same path>` in bzejs with one header line
+prepended, except where noted. The copied files still import `GlobalDecoderRegistry` from
+`registry.ts` and call it; that import resolves to the hand-written stand-in below.
 
 - `binary.ts`, `utf8.ts`, `varint.ts`
 - `helpers.ts` (the base64 re-export from `@interchainjs/encoding` is replaced with `@scure/base`)

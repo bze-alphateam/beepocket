@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/bze/tradebin/tx.ts), registry lines removed. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 3.2.0 (src/bze/tradebin/tx.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Params, ParamsAmino, ParamsSDKType } from "./v2/params";
 import { Coin, CoinAmino, CoinSDKType } from "../../cosmos/base/v1beta1/coin";
