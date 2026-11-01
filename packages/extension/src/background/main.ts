@@ -51,9 +51,13 @@ export function startBackground(env: BackgroundEnv): void {
   });
 }
 
-/** Only the extension's own pages (popup, wallet windows) may talk to the wallet; never a tab. */
+/**
+ * Only the extension's own pages (popup, wallet windows) may talk to the wallet. A content
+ * script carries the extension id too, but its `url` is the web page's, so the url prefix
+ * rejects it. `sender.tab` is not checked: an own page opened as a tab or a popup window has one.
+ */
 function isOwnPage(sender: MessageSender, id: string | undefined): boolean {
-  if (id === undefined || sender.id !== id || sender.tab !== undefined) return false;
+  if (id === undefined || sender.id !== id) return false;
   return sender.url?.startsWith(`chrome-extension://${id}/`) === true;
 }
 

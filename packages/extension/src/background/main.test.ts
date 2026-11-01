@@ -87,12 +87,18 @@ describe('startBackground', () => {
       { id: 'me', url: 'https://evil.example/chrome-extension://me/' },
     ],
     ['a look-alike id', { id: 'me', url: 'chrome-extension://me2/popup.html' }],
-    ['a tab (content script)', { ...OWN, tab: { id: 1 } }],
+    ['a content script in a tab', { id: 'me', url: 'https://example.com/page', tab: { id: 1 } }],
   ])('ignores messages from %s', async (_name, sender) => {
     const { send } = start();
     const { async, reply } = await send(ping, sender);
     expect(async).toBeUndefined();
     expect(reply).toBeUndefined();
+  });
+
+  it('answers an own page that lives in a tab or popup window', async () => {
+    const { send } = start();
+    const { reply } = await send(ping, { ...OWN, tab: { id: 1 } });
+    expect(reply).toMatchObject({ ok: true });
   });
 
   it('retries a failed start on the next message', async () => {
