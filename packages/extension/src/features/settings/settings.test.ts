@@ -3,12 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { HandlerRegistry } from '../../background/registry';
 import { ChromeSessionStorage, ChromeStorage } from '../../platform';
 import { FakeArea } from '../../platform/test-support';
-import {
-  WalletErrorCodes,
-  type Method,
-  type ResponseOf,
-  type Result,
-} from '../../protocol';
+import { WalletErrorCodes, type Method, type ResponseOf, type Result } from '../../protocol';
 import type { Alarms } from '../wallet/alarms';
 import { WalletService } from '../wallet/service';
 import { registerSettingsHandlers } from './handlers';
