@@ -1,0 +1,119 @@
+import { deriveAccount } from '@beepocket/core';
+import type { BrowserContext, Page } from '@playwright/test';
+import { expect, test } from './fixtures';
+
+const PASSWORD = 'correct horse';
+const PHRASE = `${'abandon '.repeat(23)}art`;
+
+/** Balances per node host: the same address holds different amounts on mainnet and testnet. */
+async function mockNodes(context: BrowserContext): Promise<void> {
+  const amounts: Record<string, string> = {
+    'rest.getbze.com': '1000',
+    'testnet.getbze.com': '777',
+  };
+  await context.route(/^https:\/\/(rest|testnet)\.getbze\.com\//, (route) => {
+    const url = new URL(route.request().url());
+    const amount = amounts[url.host];
+    if (url.pathname.includes('/cosmos/bank/v1beta1/balances/') && amount !== undefined) {
+      return route.fulfill({
+        json: {
+          balances: [{ denom: 'ubze', amount }],
+          pagination: { next_key: null, total: '1' },
+        },
+      });
+    }
+    if (url.pathname.endsWith('/supply/by_denom')) {
+      return route.fulfill({
+        json: { amount: { denom: url.searchParams.get('denom'), amount: '1000000' } },
+      });
+    }
+    return route.fulfill({ status: 404, json: { code: 5, message: 'not found', details: [] } });
+  });
+}
+
+async function call(
+  page: Page,
+  method: string,
+  payload: unknown,
+): Promise<Record<string, unknown>> {
+  const reply = await page.evaluate((m): Promise<unknown> => chrome.runtime.sendMessage(m), {
+    method,
+    payload,
+  });
+  return reply as Record<string, unknown>;
+}
+
+test('testnet toggle switches the node, back again, and the phrase needs the password', async ({
+  context,
+  extensionId,
+}) => {
+  await mockNodes(context);
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await call(page, 'wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE });
+  const address = deriveAccount(PHRASE, 0).address;
+
+  expect(await call(page, 'network.get', {})).toEqual({ ok: true, value: { id: 'mainnet' } });
+  expect(await call(page, 'tokens.balances', { denom: 'ubze', refresh: true })).toMatchObject({
+    value: { addresses: [{ address, amount: '1000' }] },
+  });
+
+  await call(page, 'network.set', { id: 'testnet' });
+  expect(await call(page, 'tokens.balances', { denom: 'ubze', refresh: true })).toMatchObject({
+    value: { addresses: [{ address, amount: '777' }] },
+  });
+
+  await call(page, 'network.set', { id: 'mainnet' });
+  expect(await call(page, 'tokens.balances', { denom: 'ubze', refresh: true })).toMatchObject({
+    value: { addresses: [{ address, amount: '1000' }] },
+  });
+
+  expect(await call(page, 'wallet.revealMnemonic', { password: 'wrong' })).toMatchObject({
+    ok: true,
+    value: { status: 'wrong-password' },
+  });
+  expect(await call(page, 'wallet.revealMnemonic', { password: PASSWORD })).toMatchObject({
+    ok: true,
+    value: { status: 'ok', mnemonic: PHRASE },
+  });
+
+  expect(await call(page, 'settings.set', { weakLockMinutes: 5 })).toMatchObject({ ok: true });
+  expect(await call(page, 'settings.set', { fullLockMinutes: 1 })).toMatchObject({
+    error: { code: 'invalid_settings' },
+  });
+});
+
+test('home settings icon, Testnet toggle with pill, and the reveal sheet in the popup', async ({
+  context,
+  extensionId,
+}) => {
+  // Creating the wallet runs the real key derivation, which is slow on CI.
+  test.setTimeout(90_000);
+  await mockNodes(context);
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await call(page, 'wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE });
+  await call(page, 'tokens.add', { denom: 'ubze' });
+  await page.reload();
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.locator('.bp-pill')).toHaveCount(0);
+
+  await page.getByRole('switch', { name: /Testnet/ }).check();
+  await expect(page.getByText('Pick your tokens')).toBeVisible();
+  await expect(page.locator('.bp-pill')).toHaveText('Testnet');
+  expect(await call(page, 'network.get', {})).toEqual({ ok: true, value: { id: 'testnet' } });
+
+  await page.getByRole('button', { name: 'Switch network' }).click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('switch', { name: /Testnet/ })).not.toBeChecked();
+  await expect(page.locator('.bp-pill')).toHaveCount(0);
+
+  await page.getByRole('button', { name: /Show recovery phrase/ }).click();
+  await page.getByRole('dialog').getByLabel('Password').fill('wrong password');
+  await page.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect(page.getByText('Wrong password.')).toBeVisible();
+  await page.getByRole('dialog').getByLabel('Password').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect(page.locator('.bp-phrase li')).toHaveCount(24);
+});

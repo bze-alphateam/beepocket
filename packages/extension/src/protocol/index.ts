@@ -1,4 +1,5 @@
 import type { AppProtocol } from './app';
+import type { SettingsProtocol } from './settings';
 import type { BookProtocol } from './address-book';
 import type { HomeProtocol } from './home';
 import type { TokensProtocol } from './tokens';
@@ -7,6 +8,7 @@ import type { FeatureProtocol } from './types';
 
 export * from './types';
 export type { AppProtocol } from './app';
+export * from './settings';
 export * from './address-book';
 export type { HomeProtocol } from './home';
 export * from './tokens';
@@ -20,6 +22,7 @@ export * from './lock';
 export type Protocol = FeatureProtocol<AppProtocol> &
   FeatureProtocol<WalletProtocol> &
   FeatureProtocol<TokensProtocol> &
+  FeatureProtocol<SettingsProtocol> &
   FeatureProtocol<BookProtocol> &
   FeatureProtocol<HomeProtocol>;
 
