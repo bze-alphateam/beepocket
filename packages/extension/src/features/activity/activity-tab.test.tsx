@@ -208,6 +208,7 @@ describe('ActivityTab card', () => {
     const text = host.querySelector('a.bp-act-card')?.textContent ?? '';
     expect(text).toContain('OTHER');
     expect(text).toContain('+2.50');
+    expect(text).not.toContain('factory/…');
     expect(host.querySelector('a.bp-act-card')?.getAttribute('aria-label')).not.toContain(
       'unknown token',
     );
