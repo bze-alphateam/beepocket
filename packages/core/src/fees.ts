@@ -126,6 +126,7 @@ export class FeeEstimator {
     for (const pool of pools) {
       const found = nativeReserves(pool, native);
       if (!found || rates.has(found.denom) || haltedSet.has(found.denom)) continue;
+      // Eligibility is checked per pool, so an unusable pool never hides a usable one.
       // A pool the node reports as halted cannot price a swap: leave the token out.
       if (pool.halted === true) continue;
       if (found.native < params.minNativeLiquidityForModuleSwap) continue;
