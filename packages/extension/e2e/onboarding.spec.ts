@@ -46,7 +46,7 @@ test('create a wallet, confirm words, set a password and start with a token code
   await page.getByLabel('Token code').press('Enter');
   await expect(page.getByText('Gold Coin')).toBeVisible();
   await page.getByRole('button', { name: 'Open wallet with GOLD' }).click();
-  await expect(page.getByRole('heading', { name: 'Your wallet is ready' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open wallet with GOLD' })).toBeHidden();
 
   const state = await page.evaluate((): Promise<unknown> =>
     chrome.runtime.sendMessage({ method: 'wallet.state', payload: {} }),

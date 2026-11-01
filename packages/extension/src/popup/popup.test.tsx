@@ -1,4 +1,3 @@
-import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Client } from '../protocol/client';
 import { cleanup, fireEvent, render } from '../ui/test-render';
@@ -6,6 +5,8 @@ import { ClientProvider, useClient } from './client-context';
 import { Layout } from './Layout';
 import { Router, useRoute, type RouteTable } from './router';
 import { App } from './App';
+import { act } from 'preact/test-utils';
+import { LockEnvProvider } from '../features/lock';
 
 afterEach(cleanup);
 
@@ -89,24 +90,22 @@ describe('Layout', () => {
 });
 
 describe('App', () => {
-  it('opens on the shell home screen and hands a fresh install to onboarding', async () => {
+  it('routes an unlocked wallet to the shell home screen', async () => {
     const client: Client = {
       call: vi.fn(() =>
-        Promise.resolve({
-          ok: true as const,
-          value: { state: 'uninitialised', retryAt: null },
-        }),
+        Promise.resolve({ ok: true as const, value: { state: 'unlocked', retryAt: null } }),
       ) as Client['call'],
     };
+    const events = { subscribe: () => () => undefined };
+    const clock = { now: () => 0, sleep: () => Promise.resolve() };
     const { host } = render(
       <ClientProvider client={client}>
-        <App />
+        <LockEnvProvider clock={clock} events={events}>
+          <App />
+        </LockEnvProvider>
       </ClientProvider>,
     );
+    await act(() => Promise.resolve());
     expect(host.querySelector('h1')?.textContent).toBe('BeePocket');
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(host.textContent).toContain('Create a new wallet');
   });
 });

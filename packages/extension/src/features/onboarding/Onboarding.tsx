@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
+import { homeTarget } from '../lock/targets';
 import { Layout } from '../../popup/Layout';
 import {
   Confirm,
@@ -30,9 +31,10 @@ const FLOWS: Record<Path, StepName[]> = {
  */
 export function Onboarding({ route }: { route: OnboardingRoute }) {
   const client = useClient();
-  const { navigate } = useRoute<{ name: 'home'; denom?: string } | OnboardingRoute>();
-  const [step, setStep] = useState<StepName>('welcome');
-  const [path, setPath] = useState<Path>('create');
+  const { navigate } = useRoute();
+  const importFirst = route.name === 'onboarding.import';
+  const [step, setStep] = useState<StepName>(importFirst ? 'import' : 'welcome');
+  const [path, setPath] = useState<Path>(importFirst ? 'import' : 'create');
   const [phrase, setPhrase] = useState<string | null>(null);
   const [phraseFailed, setPhraseFailed] = useState(false);
   const [importText, setImportText] = useState('');
@@ -58,8 +60,9 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
     }
     setStep(prev ?? 'welcome');
   };
-  const home = (denom?: string) => {
-    navigate(denom === undefined ? { name: 'home' } : { name: 'home', denom });
+  // The home screen reads the preferred tokens itself and opens on the first one.
+  const home = () => {
+    navigate(homeTarget);
   };
 
   const walletMade = () => {
@@ -79,7 +82,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
       if (!res.ok) return false;
       last = res.value;
     }
-    home(last[0]?.denom);
+    home();
     return true;
   };
 

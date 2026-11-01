@@ -57,6 +57,8 @@ export interface WalletDeps {
   alarms: Alarms;
   /** Chain client of the active network, used to find the funded addresses of an import. */
   chain(): Promise<ChainClient>;
+  /** Told the new state whenever it changes, so an open popup can follow. Failures are ignored. */
+  onStateChange?(state: { state: WalletState; retryAt: number | null }): void;
 }
 
 type Rejection = Extract<PasswordOutcome, { status: 'wrong-password' | 'throttled' }>;
@@ -128,6 +130,16 @@ export class WalletService {
     return { state, retryAt };
   }
 
+  /** Pushes the current state to the listener; never throws. */
+  private async notify(): Promise<void> {
+    if (!this.deps.onStateChange) return;
+    try {
+      this.deps.onStateChange(await this.state());
+    } catch {
+      // a popup that is not listening must not break a lock
+    }
+  }
+
   generateMnemonic(): string {
     return createMnemonic(this.deps.random);
   }
@@ -175,6 +187,7 @@ export class WalletService {
         await this.deps.session.set(SESSION_KEY, toBase64(key));
         await this.deps.session.set(SESSION_PROFILE, profile.value);
         await this.rearm();
+        await this.notify();
         return ok({ status: 'ok' });
       } finally {
         key.fill(0);
@@ -197,6 +210,7 @@ export class WalletService {
         key.fill(0);
       }
       await this.rearm();
+      await this.notify();
       return ok({ status: 'ok' });
     });
   }
@@ -220,7 +234,10 @@ export class WalletService {
 
   /** Full lock: nothing stays in session storage. */
   lock(): Promise<void> {
-    return this.exclusive(() => this.lockNow());
+    return this.exclusive(async () => {
+      await this.lockNow();
+      await this.notify();
+    });
   }
 
   private async lockNow(): Promise<void> {
@@ -232,7 +249,10 @@ export class WalletService {
 
   /** Weak lock: only K goes, the decrypted profile stays so the wallet can still be shown. */
   weakLock(): Promise<void> {
-    return this.exclusive(() => this.weakLockNow());
+    return this.exclusive(async () => {
+      await this.weakLockNow();
+      await this.notify();
+    });
   }
 
   private async weakLockNow(): Promise<void> {
@@ -511,6 +531,7 @@ export class WalletService {
     } finally {
       created.key.fill(0);
     }
+    await this.notify();
     return ok({ addresses: profile.addresses.map(toWalletAddress) });
   }
 }

@@ -74,5 +74,4 @@ export const onboarding = {
   'onboarding.tokens.kit': 'Brand kit',
   'onboarding.tokens.noKit': 'No brand kit · default look',
   'onboarding.tokens.unresolved': 'Details unavailable',
-  'onboarding.home.title': 'Your wallet is ready',
 } as const;

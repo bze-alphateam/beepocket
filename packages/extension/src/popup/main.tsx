@@ -1,8 +1,10 @@
 import { render } from 'preact';
 import { RandomProvider } from '../features/onboarding';
 import { CryptoRandom } from '../platform';
+import { SystemClock } from '@beepocket/core';
 import { RuntimeClient } from '../protocol/client';
 import { applyTheme, systemScheme } from '../theme';
+import { LockEnvProvider, RuntimeStateEvents } from '../features/lock';
 import { App } from './App';
 import { ClientProvider } from './client-context';
 
@@ -24,7 +26,12 @@ if (root) {
   render(
     <ClientProvider client={new RuntimeClient(chrome.runtime)}>
       <RandomProvider random={new CryptoRandom(crypto)}>
-        <App />
+        <LockEnvProvider
+          clock={new SystemClock()}
+          events={new RuntimeStateEvents(chrome.runtime.onMessage)}
+        >
+          <App />
+        </LockEnvProvider>
       </RandomProvider>
     </ClientProvider>,
     root,

@@ -1,4 +1,4 @@
-import { ErrorCodes, fail } from '../protocol';
+import { ErrorCodes, fail, lockStateEvent } from '../protocol';
 import { createPlatform, type PlatformEnv } from '../platform';
 import {
   ChromeAlarms,
@@ -31,7 +31,12 @@ export interface MessageEventLike {
 
 export interface BackgroundEnv extends PlatformEnv {
   chrome: PlatformEnv['chrome'] & {
-    runtime: { id?: string | undefined; onMessage: MessageEventLike };
+    runtime: {
+      id?: string | undefined;
+      onMessage: MessageEventLike;
+      /** Optional: pushes lock-state events to an open popup. */
+      sendMessage?: (message: unknown) => Promise<unknown>;
+    };
     alarms: AlarmsLike & { onAlarm: AlarmEventLike };
   };
 }
@@ -102,7 +107,16 @@ function isOwnPage(sender: MessageSender, id: string | undefined): boolean {
 async function createRegistry(env: BackgroundEnv): Promise<Started> {
   const platform = await createPlatform(env);
   const services = createServices(platform);
-  const wallet = createWalletService(platform, services, new ChromeAlarms(env.chrome.alarms));
+  const wallet = createWalletService(
+    platform,
+    services,
+    new ChromeAlarms(env.chrome.alarms),
+    (s) => {
+      // Nobody listening (popup closed) rejects the send; that is fine.
+      const sent = env.chrome.runtime.sendMessage?.(lockStateEvent(s.state, s.retryAt));
+      void sent?.catch(() => undefined);
+    },
+  );
   const registry = new HandlerRegistry();
   registerHandlers(registry, { platform, services, wallet });
   return { registry, wallet };

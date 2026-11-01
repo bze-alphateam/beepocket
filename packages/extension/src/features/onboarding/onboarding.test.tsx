@@ -67,13 +67,13 @@ function mockRandom(): Random {
   };
 }
 
-function mount(client: Client, route: OnboardingRoute = { name: 'onboarding' }) {
+function mount(client: Client, route: OnboardingRoute = { name: 'onboarding.welcome' }) {
   const seen: unknown[] = [];
   const table = {
     ...onboardingRoutes,
-    home: ({ route: r }: { route: { name: 'home'; denom?: string } }) => {
+    'shell.home': ({ route: r }: { route: { name: 'shell.home' } }) => {
       seen.push(r);
-      return <p>home:{r.denom ?? 'none'}</p>;
+      return <p>home</p>;
     },
   };
   const view = render(
@@ -237,6 +237,13 @@ describe('create flow', () => {
   });
 });
 
+describe('import entry route', () => {
+  it('opens straight on the import step', () => {
+    const { host } = mount(mockClient(baseHandlers), { name: 'onboarding.import' });
+    expect(host.textContent).toContain(en['onboarding.import.title']);
+  });
+});
+
 describe('import flow', () => {
   async function toImport(client: Client) {
     const view = mount(client);
@@ -320,7 +327,7 @@ describe('start with a token code', () => {
     expect(client.calls.filter(([m]) => m === 'tokens.add')).toEqual([
       ['tokens.add', { denom: GOLD.denom }],
     ]);
-    expect(seen).toEqual([{ name: 'home', denom: GOLD.denom }]);
+    expect(seen).toEqual([{ name: 'shell.home' }]);
   });
 
   it('says so when no token has the code', async () => {
@@ -338,7 +345,10 @@ describe('start with a token code', () => {
 
   it('pre-fills and looks up the code of a link', async () => {
     const client = mockClient(baseHandlers);
-    const { host } = await createdWallet(client, { name: 'onboarding', prefillCode: GOLD.denom });
+    const { host } = await createdWallet(client, {
+      name: 'onboarding.welcome',
+      prefillCode: GOLD.denom,
+    });
     expect((field(host, en['onboarding.start.codeLabel']) as HTMLInputElement).value).toBe(
       GOLD.denom,
     );
@@ -406,7 +416,7 @@ describe('retries and navigation', () => {
     expect(adds).toEqual(
       [{ denom: 'ubze' }, { denom: GOLD.denom }, { denom: GOLD.denom }].slice(0, 3),
     );
-    expect(seen).toEqual([{ name: 'home', denom: 'ubze' }]);
+    expect(seen).toEqual([{ name: 'shell.home' }]);
   });
 });
 
@@ -446,7 +456,7 @@ describe('pick tokens', () => {
       { denom: GOLD.denom },
       { denom: 'ubze' },
     ]);
-    expect(seen).toEqual([{ name: 'home', denom: 'ubze' }]);
+    expect(seen).toEqual([{ name: 'shell.home' }]);
   });
 
   it('can leave BZE out and unselect', async () => {

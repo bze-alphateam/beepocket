@@ -1,2 +1,2 @@
-export { onboardingRoutes, type OnboardingRoute, type HomePlaceholderRoute } from './routes';
+export { onboardingRoutes, type OnboardingRoute } from './routes';
 export { RandomProvider } from './random';
