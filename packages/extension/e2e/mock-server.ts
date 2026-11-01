@@ -26,7 +26,7 @@ const FACTORY_METADATA = {
 
 const FACTORY_BRANDING = {
   branding: {
-    font: 'Inter',
+    font: 'inter',
     light: { background: '#FFFFFF', text: '#111111', primary: '#CC8800', secondary: '#888888' },
     dark: { background: '#000000', text: '#EEEEEE', primary: '#FFB000', secondary: '#777777' },
   },

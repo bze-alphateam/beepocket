@@ -104,7 +104,8 @@ export class TokenService {
     const needle = query.trim().slice(0, MAX_QUERY_LENGTH).toLowerCase();
     const held = new Set<string>([NATIVE_DENOM]);
     for (const { balances } of await this.storedBalances(false)) {
-      for (const [denom, amount] of Object.entries(balances)) if (BigInt(amount) > 0n) held.add(denom);
+      for (const [denom, amount] of Object.entries(balances))
+        if (BigInt(amount) > 0n) held.add(denom);
     }
     const candidates = [...held].slice(0, MAX_SEARCH_CANDIDATES);
     const tokens = await this.resolveAll(candidates);

@@ -21,7 +21,8 @@ test('tokens.lookup returns metadata and branding of a factory token', async ({
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
   const reply = await page.evaluate(
-    (code): Promise<unknown> => chrome.runtime.sendMessage({ method: 'tokens.lookup', payload: { code } }),
+    (code): Promise<unknown> =>
+      chrome.runtime.sendMessage({ method: 'tokens.lookup', payload: { code } }),
     mockFactoryDenom,
   );
   expect(reply).toMatchObject({
@@ -32,7 +33,7 @@ test('tokens.lookup returns metadata and branding of a factory token', async ({
       name: 'Gold Coin',
       decimals: 6,
       kind: 'factory',
-      branding: { font: 'Inter', dark: { primary: '#FFB000' } },
+      branding: { font: 'inter', dark: { primary: '#FFB000' } },
     },
   });
 });
@@ -43,13 +44,15 @@ test('tokens.lookup answers null branding on a 404 and no-such-token for zero su
 }) => {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
-  const theme = await page.evaluate(
-    (): Promise<unknown> => chrome.runtime.sendMessage({ method: 'tokens.theme', payload: { denom: 'ubze' } }),
+  const theme = await page.evaluate((): Promise<unknown> =>
+    chrome.runtime.sendMessage({ method: 'tokens.theme', payload: { denom: 'ubze' } }),
   );
   expect(theme).toEqual({ ok: true, value: null });
-  const unknown = await page.evaluate(
-    (): Promise<unknown> =>
-      chrome.runtime.sendMessage({ method: 'tokens.lookup', payload: { code: 'factory/bze1recorded/ghost' } }),
+  const unknown = await page.evaluate((): Promise<unknown> =>
+    chrome.runtime.sendMessage({
+      method: 'tokens.lookup',
+      payload: { code: 'factory/bze1recorded/ghost' },
+    }),
   );
   expect(unknown).toEqual({
     ok: false,

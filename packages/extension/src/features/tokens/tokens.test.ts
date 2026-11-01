@@ -10,7 +10,7 @@ import type { PreferredTokensStore, WalletAddress, WalletAddresses } from './por
 const FACTORY = 'factory/bze1abc/gold';
 const IBC = 'ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2';
 const BRANDING: DenomBranding = {
-  font: 'Inter',
+  font: 'inter',
   light: { background: '#FFFFFF', text: '#111111', primary: '#CC8800', secondary: '#888888' },
   dark: { background: '#000000', text: '#EEEEEE', primary: '#FFB000', secondary: '#777777' },
 };
@@ -24,7 +24,9 @@ interface Chain {
   supplyCalls: string[];
 }
 
-function setup(opts: { addresses?: WalletAddress[]; scanDown?: boolean; preferred?: string[] } = {}) {
+function setup(
+  opts: { addresses?: WalletAddress[]; scanDown?: boolean; preferred?: string[] } = {},
+) {
   const chainData: Chain = {
     supplies: { ubze: 10n, [FACTORY]: 5n, [IBC]: 5n },
     metadata: { [FACTORY]: { symbol: 'GOLD', name: 'Gold Coin', exponent: 6 } },
@@ -51,7 +53,14 @@ function setup(opts: { addresses?: WalletAddress[]; scanDown?: boolean; preferre
       scanCalls.push(d);
       return opts.scanDown
         ? Promise.reject(new Error('scan down'))
-        : Promise.resolve({ denom: d, symbol: 'ATOM', name: 'Cosmos Hub', exponent: 6, kind: 'ibc', halted: false });
+        : Promise.resolve({
+            denom: d,
+            symbol: 'ATOM',
+            name: 'Cosmos Hub',
+            exponent: 6,
+            kind: 'ibc',
+            halted: false,
+          });
     },
   };
 
@@ -128,7 +137,13 @@ describe('tokens.lookup', () => {
     const r = await setup().call<TokenInfo>('tokens.lookup', { code: FACTORY });
     expect(r).toMatchObject({
       ok: true,
-      value: { symbol: 'GOLD', name: 'Gold Coin', decimals: 6, source: 'chain', branding: BRANDING },
+      value: {
+        symbol: 'GOLD',
+        name: 'Gold Coin',
+        decimals: 6,
+        source: 'chain',
+        branding: BRANDING,
+      },
     });
   });
 
@@ -137,7 +152,10 @@ describe('tokens.lookup', () => {
     t.chainData.metadata = {};
     t.chainData.branding = {};
     const r = await t.call<TokenInfo>('tokens.lookup', { code: FACTORY });
-    expect(r).toMatchObject({ ok: true, value: { symbol: 'GOLD', source: 'fallback', branding: null } });
+    expect(r).toMatchObject({
+      ok: true,
+      value: { symbol: 'GOLD', source: 'fallback', branding: null },
+    });
   });
 
   it('reads IBC tokens from Scan and caches them', async () => {
@@ -226,7 +244,10 @@ describe('preferred tokens', () => {
 describe('tokens.balances', () => {
   function withBalances() {
     const t = setup({ addresses: ADDRS });
-    t.chainData.balances['bze1a'] = new Map([['ubze', 5n], [FACTORY, 7n]]);
+    t.chainData.balances['bze1a'] = new Map([
+      ['ubze', 5n],
+      [FACTORY, 7n],
+    ]);
     t.chainData.balances['bze1b'] = new Map([['ubze', 2n]]);
     return t;
   }
@@ -305,7 +326,10 @@ describe('tokens.search', () => {
 
   it('matches symbol, name and denom case-insensitively over held tokens', async () => {
     const t = setup({ addresses: ADDRS });
-    t.chainData.balances['bze1a'] = new Map([[FACTORY, 7n], [IBC, 0n]]);
+    t.chainData.balances['bze1a'] = new Map([
+      [FACTORY, 7n],
+      [IBC, 0n],
+    ]);
     const bySymbol = await t.call<TokenInfo[]>('tokens.search', { query: 'gOlD' });
     expect(bySymbol.ok && bySymbol.value.map((x) => x.denom)).toEqual([FACTORY]);
     const byName = await t.call<TokenInfo[]>('tokens.search', { query: 'beezee' });
@@ -319,7 +343,10 @@ describe('tokens.search', () => {
 
 describe('tokens.theme', () => {
   it('returns the on-chain brand palette', async () => {
-    expect(await setup().call('tokens.theme', { denom: FACTORY })).toEqual({ ok: true, value: BRANDING });
+    expect(await setup().call('tokens.theme', { denom: FACTORY })).toEqual({
+      ok: true,
+      value: BRANDING,
+    });
   });
 
   it('returns null for a token without branding and for ubze', async () => {
@@ -344,7 +371,10 @@ describe('registerHandlers', () => {
         clients: () =>
           Promise.resolve({
             network: NETWORKS.mainnet,
-            chain: { supply: () => Promise.resolve(1n), denomBranding: () => Promise.resolve(null) },
+            chain: {
+              supply: () => Promise.resolve(1n),
+              denomBranding: () => Promise.resolve(null),
+            },
             scan: {},
           }),
       } as unknown as Services,
