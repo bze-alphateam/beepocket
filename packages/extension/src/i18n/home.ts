@@ -6,6 +6,7 @@ export const home = {
   'home.network.testnet': 'Testnet',
   'home.balance.label': '{symbol} balance',
   'home.balance.partial': 'Some addresses could not be read. Pull again in a moment.',
+  'home.balance.unavailable': 'Balance unavailable right now.',
   'home.sub.all': 'across {count} addresses',
   'home.sub.all.one': 'in your address',
   'home.sub.some': 'in {held} of {count} addresses',

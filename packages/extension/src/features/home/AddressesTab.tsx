@@ -12,6 +12,8 @@ export interface AddressesTabProps {
   onCopy: (address: string) => void;
   onRename: (address: WalletAddress) => void;
   onAdd: () => void;
+  /** A derive is in flight: the button waits. */
+  adding: boolean;
 }
 
 /** Addresses holding the token; empty ones fold away unless nobody holds it. */
@@ -79,7 +81,7 @@ export function AddressesTab(props: AddressesTabProps) {
               : t('home.address.showEmpty', { count: empty.length })}
         </button>
       )}
-      <button type="button" class="bp-home-link" onClick={props.onAdd}>
+      <button type="button" class="bp-home-link" disabled={props.adding} onClick={props.onAdd}>
         + {t('home.address.add')}
       </button>
     </div>

@@ -65,6 +65,8 @@ interface World {
   network: 'mainnet' | 'testnet';
   search: ListedToken[];
   lookup: Result<ListedToken>;
+  /** Indexes of addresses whose balance read fails. */
+  failed: number[];
 }
 
 function setup(over: Partial<World> = {}) {
@@ -76,6 +78,7 @@ function setup(over: Partial<World> = {}) {
     network: 'mainnet',
     search: [],
     lookup: fail(TokenErrorCodes.noSuchToken, 'none'),
+    failed: [],
     ...over,
   };
   const calls: { method: string; req: unknown }[] = [];
@@ -83,8 +86,14 @@ function setup(over: Partial<World> = {}) {
     'home.context': () => ok({ network: w.network, brandThemes: w.brandThemes }),
     'tokens.preferred': () => ok(w.tokens),
     'wallet.addresses': () => ok({ addresses: w.addresses }),
-    'tokens.balances': (r) =>
-      ok(balancesOf(r.denom, w.amounts[r.denom] ?? w.addresses.map(() => '0'))),
+    'tokens.balances': (r) => {
+      const b = balancesOf(r.denom, w.amounts[r.denom] ?? w.addresses.map(() => '0'));
+      const addrs = b.addresses.map((a) =>
+        w.failed.includes(a.index) ? { ...a, amount: '0', failed: true } : a,
+      );
+      const total = addrs.reduce((n, a) => n + BigInt(a.amount), 0n).toString();
+      return ok({ ...b, addresses: addrs, total, partial: w.failed.length > 0 });
+    },
     'tokens.theme': (r) => ok(r.denom === PAGE.denom ? BRAND : null),
     'tokens.search': () => ok(w.search),
     'tokens.lookup': () => w.lookup,
@@ -113,11 +122,26 @@ function setup(over: Partial<World> = {}) {
     },
     'wallet.lock': () => ok({}),
   };
+  const gates = new Map<string, Promise<void>>();
+  const hold = (method: string) => {
+    let release: () => void = () => undefined;
+    gates.set(
+      method,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    return () => {
+      gates.delete(method);
+      release();
+    };
+  };
   const client: Client = {
-    call: vi.fn(<M extends Method>(method: M, req: RequestOf<M>) => {
+    call: vi.fn(async <M extends Method>(method: M, req: RequestOf<M>) => {
       calls.push({ method, req });
+      await gates.get(method);
       const h = handlers[method] as ((r: RequestOf<M>) => Result<unknown>) | undefined;
-      return Promise.resolve((h ? h(req) : fail('unknown_method', method)) as never);
+      return (h ? h(req) : fail('unknown_method', method)) as never;
     }),
   };
 
@@ -169,10 +193,12 @@ function setup(over: Partial<World> = {}) {
     </ClientProvider>,
   );
   const tick = async () => {
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    // Effects flush per `act`, and each stage (load, render, effect, call) needs another one.
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
   };
   const fire = (ms: number) => {
     void act(() => {
@@ -182,7 +208,7 @@ function setup(over: Partial<World> = {}) {
       }
     });
   };
-  return { host, w, calls, style, written, onLocked, timers, tick, fire };
+  return { host, hold, w, calls, style, written, onLocked, timers, tick, fire };
 }
 
 const byLabel = (host: HTMLElement, label: string) =>
@@ -414,5 +440,111 @@ describe('HomeTabs slot', () => {
       [...s.host.querySelectorAll('[role="tab"]')].find((b) => b.textContent === 'Probe') ?? null,
     );
     expect(text(s.host)).toContain('probe body');
+  });
+});
+
+describe('unreadable addresses', () => {
+  it('shows "unavailable" instead of zero when every read failed', async () => {
+    const s = setup({ failed: [0, 1] });
+    await s.tick();
+    expect(text(s.host)).toContain('Balance unavailable right now.');
+    expect(text(s.host)).not.toContain('No BZE yet');
+    expect(text(s.host)).not.toContain('in none of');
+  });
+
+  it('counts only the readable addresses and warns when some failed', async () => {
+    const s = setup({
+      addresses: [addr(0, 'Main'), addr(1, 'Two'), addr(2, 'Three')],
+      amounts: { ubze: ['5', '7', '9'] },
+      failed: [2],
+    });
+    await s.tick();
+    expect(text(s.host)).toContain('across 2 addresses');
+    expect(text(s.host)).toContain('Some addresses could not be read');
+    expect(text(s.host)).toContain('Unavailable');
+  });
+});
+
+describe('races and guards', () => {
+  it('keeps a rename that lands while an address is being derived', async () => {
+    const s = setup();
+    await s.tick();
+    const release = s.hold('wallet.deriveNext');
+    click(
+      [...s.host.querySelectorAll('button')].find((b) => b.textContent.includes('Add address')) ??
+        null,
+    );
+    await s.tick();
+    click(byLabel(s.host, 'Rename Main'));
+    const input = s.host.querySelector<HTMLInputElement>('[role="dialog"] input');
+    if (input) input.value = 'Daily';
+    fireEvent(input, 'input');
+    fireEvent(s.host.querySelector('[role="dialog"] form'), 'submit');
+    await s.tick();
+    release();
+    await s.tick();
+    expect(text(s.host)).toContain('Daily');
+    expect(s.host.querySelector('[role="dialog"]')?.textContent).toContain('Address added');
+  });
+
+  it('derives once on a double tap of "+"', async () => {
+    const s = setup();
+    await s.tick();
+    const release = s.hold('wallet.deriveNext');
+    const plus = [...s.host.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Add address'),
+    );
+    click(plus ?? null);
+    click(plus ?? null);
+    await s.tick();
+    expect(plus?.hasAttribute('disabled')).toBe(true);
+    release();
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'wallet.deriveNext')).toHaveLength(1);
+  });
+
+  it('re-arms the Copied toast on a second copy', async () => {
+    const s = setup();
+    await s.tick();
+    click(byLabel(s.host, 'Copy address Main'));
+    await s.tick();
+    s.fire(1800);
+    click(byLabel(s.host, 'Copy address Main'));
+    await s.tick();
+    expect(text(s.host)).toContain('Copied');
+  });
+
+  it('does not poll again while a read is in flight', async () => {
+    const s = setup();
+    await s.tick();
+    const release = s.hold('tokens.balances');
+    s.fire(15_000);
+    s.fire(15_000);
+    await s.tick();
+    expect(balanceCalls(s.calls)).toBe(2);
+    release();
+    await s.tick();
+  });
+
+  it('hands tabs a refresh that reads the balances again', async () => {
+    let refresh: (() => Promise<void>) | undefined;
+    registerHomeTab({
+      id: 'probe2',
+      label: 'Probe2',
+      render: (ctx) => {
+        refresh = ctx.refresh;
+        return <p>probe2</p>;
+      },
+    });
+    const s = setup();
+    await s.tick();
+    click(
+      [...s.host.querySelectorAll('[role="tab"]')].find((b) => b.textContent === 'Probe2') ?? null,
+    );
+    const before = balanceCalls(s.calls);
+    await act(async () => {
+      await refresh?.();
+    });
+    expect(balanceCalls(s.calls)).toBe(before + 1);
   });
 });

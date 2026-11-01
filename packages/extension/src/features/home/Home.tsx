@@ -1,5 +1,5 @@
 import type { DenomBranding } from '@beepocket/core';
-import { useCallback, useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { ListedToken, WalletAddress } from '../../protocol';
 import { useClient } from '../../popup/client-context';
@@ -40,13 +40,16 @@ export function Home() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
   const [denom, setDenom] = useState<string | null>(null);
-  const [branding, setBranding] = useState<DenomBranding | null>(null);
+  // The kit on screen: set once per token, after its brand data arrived, so colours never flash.
+  const [kit, setKit] = useState<{ denom: string; branding: DenomBranding | null } | null>(null);
   const [tab, setTab] = useState(ADDRESSES);
   const [switcher, setSwitcher] = useState(false);
   const [renaming, setRenaming] = useState<WalletAddress | null>(null);
   const [added, setAdded] = useState<WalletAddress | null>(null);
   const [addFailed, setAddFailed] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedAt, setCopiedAt] = useState(0);
+  const [adding, setAdding] = useState(false);
+  const addingRef = useRef(false);
   const [scheme, setScheme] = useState(env.scheme.current());
   const { balances, refresh } = useBalances(denom);
 
@@ -89,27 +92,33 @@ export function Home() {
   useEffect(() => {
     if (denom === null) return;
     let live = true;
-    setBranding(null);
     if (brandThemes) {
       void client.call('tokens.theme', { denom }).then((res) => {
-        if (live && res.ok) setBranding(res.value);
+        if (live) setKit({ denom, branding: res.ok ? res.value : null });
       });
-    }
+    } else setKit({ denom, branding: null });
     return () => {
       live = false;
     };
   }, [client, denom, brandThemes]);
 
   useEffect(() => {
-    applyTheme(env.themeTarget, { denom, branding, brandThemes, scheme });
-  }, [env, denom, branding, brandThemes, scheme]);
+    if (kit) {
+      applyTheme(env.themeTarget, {
+        denom: kit.denom,
+        branding: kit.branding,
+        brandThemes,
+        scheme,
+      });
+    }
+  }, [env, kit, brandThemes, scheme]);
 
   useEffect(() => {
-    if (!copied) return;
+    if (copiedAt === 0) return;
     return env.scheduler.after(COPIED_MS, () => {
-      setCopied(false);
+      setCopiedAt(0);
     });
-  }, [copied, env]);
+  }, [copiedAt, env]);
 
   if (failed) {
     return (
@@ -133,9 +142,12 @@ export function Home() {
   }
 
   const copy = (address: string) => {
-    void env.clipboard.writeText(address).then(() => {
-      setCopied(true);
-    });
+    env.clipboard.writeText(address).then(
+      () => {
+        setCopiedAt((n) => n + 1);
+      },
+      () => undefined,
+    );
   };
   const lock = () => {
     void client.call('wallet.lock', {}).then((res) => {
@@ -143,29 +155,52 @@ export function Home() {
     });
   };
   const addAddress = async () => {
+    if (addingRef.current) return;
+    addingRef.current = true;
+    setAdding(true);
     setAddFailed(false);
     const res = await client.call('wallet.deriveNext', {});
+    addingRef.current = false;
+    setAdding(false);
     if (!res.ok) {
       setAddFailed(true);
       return;
     }
-    setLoaded({ ...loaded, addresses: [...loaded.addresses, res.value.address] });
-    setAdded(res.value.address);
+    const created = res.value.address;
+    setLoaded(
+      (cur) =>
+        cur && {
+          ...cur,
+          addresses: cur.addresses.some((a) => a.index === created.index)
+            ? cur.addresses
+            : [...cur.addresses, created],
+        },
+    );
+    setAdded(created);
     void refresh();
   };
   const rename = async (address: WalletAddress, label: string) => {
     const res = await client.call('wallet.renameAddress', { index: address.index, label });
     if (!res.ok) return false;
     const next = res.value.address;
-    setLoaded({
-      ...loaded,
-      addresses: loaded.addresses.map((a) => (a.index === next.index ? next : a)),
-    });
+    setLoaded(
+      (cur) =>
+        cur && {
+          ...cur,
+          addresses: cur.addresses.map((a) => (a.index === next.index ? next : a)),
+        },
+    );
     return true;
   };
 
-  const total = balances ? amountText(balances.total, token.decimals) : '…';
-  const none = balances?.addresses.every((a) => BigInt(a.amount) === 0n);
+  const unreadable = balances?.addresses.filter((a) => a.failed === true).length ?? 0;
+  const allFailed = balances !== null && unreadable === balances.addresses.length;
+  const total = !balances ? '…' : allFailed ? '—' : amountText(balances.total, token.decimals);
+  // Empty only when every address was read and none holds the token.
+  const none =
+    balances !== null &&
+    unreadable === 0 &&
+    balances.addresses.every((a) => BigInt(a.amount) === 0n);
   const extra = homeTabs();
   const active = extra.find((x) => x.id === tab);
 
@@ -214,8 +249,11 @@ export function Home() {
           <h1>
             {total} <small>{token.symbol}</small>
           </h1>
-          {balances && <p>{subline(balances.addresses)}</p>}
-          {balances?.partial === true && <p role="status">{t('home.balance.partial')}</p>}
+          {balances && !allFailed && <p>{subline(balances.addresses)}</p>}
+          {allFailed && <p role="status">{t('home.balance.unavailable')}</p>}
+          {balances?.partial === true && !allFailed && (
+            <p role="status">{t('home.balance.partial')}</p>
+          )}
         </section>
         <div class="bp-home-tabs" role="tablist" aria-label={t('home.tabs')}>
           {[{ id: ADDRESSES, label: t('home.tab.addresses') }, ...extra].map((x) => (
@@ -233,10 +271,10 @@ export function Home() {
           ))}
         </div>
         {active ? (
-          active.render({ token, balances, addresses: loaded.addresses })
+          active.render({ token, balances, addresses: loaded.addresses, refresh })
         ) : (
           <>
-            {none === true && (
+            {none && (
               <div class="bp-home-empty">
                 <strong>{t('home.empty.title', { symbol: token.symbol })}</strong>
                 <p>{t('home.empty.body', { symbol: token.symbol })}</p>
@@ -249,12 +287,13 @@ export function Home() {
               addresses={loaded.addresses}
               onCopy={copy}
               onRename={setRenaming}
+              adding={adding}
               onAdd={() => void addAddress()}
             />
             {addFailed && <p role="alert">{t('home.address.error')}</p>}
           </>
         )}
-        {copied && (
+        {copiedAt > 0 && (
           <div class="bp-home-toast" role="status">
             {t('home.copied')}
           </div>
@@ -269,7 +308,7 @@ export function Home() {
           setTab(ADDRESSES);
         }}
         onTokens={(tokens) => {
-          setLoaded({ ...loaded, tokens });
+          setLoaded((cur) => cur && { ...cur, tokens });
           if (!tokens.some((x) => x.denom === denom) && tokens[0]) setDenom(tokens[0].denom);
         }}
         onClose={() => {

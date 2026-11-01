@@ -24,15 +24,18 @@ export function useBalances(denom: string | null): Balances {
   const [balances, setBalances] = useState<TokenBalances | null>(null);
   const [failed, setFailed] = useState(false);
   const latest = useRef(0);
+  const inFlight = useRef(0);
 
   const read = useCallback(
     async (force: boolean) => {
       if (denom === null) return;
       const id = ++latest.current;
-      const res = await client.call(
-        'tokens.balances',
-        force ? { denom, refresh: true } : { denom },
-      );
+      inFlight.current++;
+      const res = await client
+        .call('tokens.balances', force ? { denom, refresh: true } : { denom })
+        .finally(() => {
+          inFlight.current--;
+        });
       if (id !== latest.current) return;
       if (res.ok) {
         setBalances(res.value);
@@ -48,7 +51,7 @@ export function useBalances(denom: string | null): Balances {
     if (denom === null) return;
     void read(false);
     const stop = scheduler.every(REFRESH_MS, () => {
-      void read(false);
+      if (inFlight.current === 0) void read(false);
     });
     return () => {
       latest.current++;

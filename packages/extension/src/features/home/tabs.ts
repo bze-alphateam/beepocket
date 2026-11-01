@@ -7,6 +7,8 @@ export interface HomeTabContext {
   /** Null until the first read finished. */
   balances: TokenBalances | null;
   addresses: WalletAddress[];
+  /** Reads the balances again now (after a send, say). */
+  refresh: () => Promise<void>;
 }
 
 export interface HomeTab {

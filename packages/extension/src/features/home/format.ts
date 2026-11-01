@@ -11,7 +11,9 @@ export function holds(a: AddressBalance): boolean {
 }
 
 /** Business Logic §5: "across N" when every address holds it, "none of" when none does. */
-export function subline(addresses: AddressBalance[]): string {
+export function subline(all: AddressBalance[]): string {
+  // Addresses that could not be read are unknown, not empty: leave them out of the counts.
+  const addresses = all.filter((a) => a.failed !== true);
   const count = addresses.length;
   const held = addresses.filter(holds).length;
   if (held === 0) return t('home.sub.none', { count });
