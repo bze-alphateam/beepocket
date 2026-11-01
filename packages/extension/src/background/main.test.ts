@@ -140,11 +140,8 @@ describe('startBackground', () => {
   it('still drops the session secrets when the auto-lock fails', async () => {
     const failing = new FailingRemove();
     const t = start(failing);
-    const phrase = `${'abandon '.repeat(23)}art`;
-    await t.send({
-      method: 'wallet.createWallet',
-      payload: { password: 'correct horse', mnemonic: phrase },
-    });
+    failing.data.set('wallet.key', 'AAAA');
+    failing.data.set('wallet.profile', {});
     expect(t.session.data.size).toBe(2);
     failing.arm();
     t.alarm('full-lock');
