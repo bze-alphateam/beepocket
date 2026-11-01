@@ -123,6 +123,9 @@ function ActivityCard({ item, explorer, known }: CardProps) {
           </span>
           <span class="bp-act-address">
             <span class="bp-act-addr-label">{item.addressLabel}</span>
+            {item.feeOnly && item.kind !== 'fee_only' && (
+              <span class="bp-act-arrow">· {wordsFor({ ...item, success: true })}</span>
+            )}
             {item.counterparty !== null && (
               <>
                 <span class="bp-act-arrow" aria-hidden="true">
