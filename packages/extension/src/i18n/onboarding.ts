@@ -18,6 +18,7 @@ export const onboarding = {
   'onboarding.phrase.copied': 'Copied',
   'onboarding.phrase.saved': "I've written it down somewhere safe",
   'onboarding.phrase.wordLabel': 'Word {n}',
+  'onboarding.phrase.retry': 'Try again',
   'onboarding.phrase.loading': 'Creating your phrase',
   'onboarding.confirm.title': 'Check your phrase',
   'onboarding.confirm.hint': 'Pick the right word for each position.',

@@ -16,20 +16,22 @@ export function Step(props: {
   total: number;
   title: string;
   hint?: string;
-  onBack: () => void;
+  onBack?: () => void;
   children: ComponentChildren;
 }) {
   return (
     <section class="ob-step">
       <div class="ob-top">
-        <button
-          type="button"
-          class="ob-back"
-          aria-label={t('onboarding.back')}
-          onClick={props.onBack}
-        >
-          ‹
-        </button>
+        {props.onBack && (
+          <button
+            type="button"
+            class="ob-back"
+            aria-label={t('onboarding.back')}
+            onClick={props.onBack}
+          >
+            ‹
+          </button>
+        )}
         <div
           class="ob-bars"
           role="img"
@@ -78,7 +80,7 @@ export function Phrase(props: {
       <>
         <Banner tone="red">{t('app.error.generic')}</Banner>
         <Button variant="quiet" onClick={props.onRetry}>
-          {t('onboarding.start.lookup')}
+          {t('onboarding.phrase.retry')}
         </Button>
       </>
     );
@@ -104,14 +106,25 @@ export function Phrase(props: {
     <>
       <Banner tone="amber">{t('onboarding.phrase.warning')}</Banner>
       <div class="ob-words-wrap">
-        <ol class={revealed ? 'ob-words' : 'ob-words ob-blur'} aria-hidden={!revealed}>
-          {phrase.split(' ').map((w, i) => (
-            <li key={i} aria-label={t('onboarding.phrase.wordLabel', { n: i + 1 })}>
-              <b>{i + 1}</b>
-              {w}
-            </li>
-          ))}
-        </ol>
+        {revealed ? (
+          <ol class="ob-words">
+            {phrase.split(' ').map((w, i) => (
+              <li key={i} aria-label={t('onboarding.phrase.wordLabel', { n: i + 1 })}>
+                <b>{i + 1}</b>
+                {w}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ol class="ob-words ob-blur" aria-hidden="true">
+            {Array.from({ length: 24 }, (_, i) => (
+              <li key={i}>
+                <b>{i + 1}</b>
+                <span class="ob-ph" />
+              </li>
+            ))}
+          </ol>
+        )}
         {!revealed && (
           <div class="ob-veil">
             <Button
@@ -337,6 +350,14 @@ export function TokenCard(props: { token: ListedToken; note?: string }) {
   );
 }
 
+type StartError = 'noSuchToken' | 'invalid' | 'failed';
+
+const START_ERRORS = {
+  noSuchToken: 'onboarding.start.noSuchToken',
+  invalid: 'onboarding.start.invalid',
+  failed: 'onboarding.start.failed',
+} as const;
+
 export function Start(props: {
   prefillCode: string | undefined;
   onOpen: (denom: string) => Promise<boolean>;
@@ -346,7 +367,7 @@ export function Start(props: {
   const [mode, setMode] = useState<'none' | 'code'>(props.prefillCode ? 'code' : 'none');
   const [code, setCode] = useState(props.prefillCode ?? '');
   const [found, setFound] = useState<ListedToken | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<StartError | null>(null);
   const [busy, setBusy] = useState(false);
   const lookup = async (value: string) => {
     const trimmed = value.trim();
@@ -357,11 +378,9 @@ export function Start(props: {
     const res = await client.call('tokens.lookup', { code: trimmed });
     setBusy(false);
     if (res.ok) setFound(res.value);
-    else if (res.error.code === TokenErrorCodes.noSuchToken)
-      setError(t('onboarding.start.noSuchToken'));
-    else if (res.error.code === TokenErrorCodes.invalidCode)
-      setError(t('onboarding.start.invalid'));
-    else setError(t('onboarding.start.failed'));
+    else if (res.error.code === TokenErrorCodes.noSuchToken) setError('noSuchToken');
+    else if (res.error.code === TokenErrorCodes.invalidCode) setError('invalid');
+    else setError('failed');
   };
   useEffect(() => {
     if (props.prefillCode) void lookup(props.prefillCode);
@@ -370,7 +389,7 @@ export function Start(props: {
   const open = async () => {
     if (!found) return;
     setBusy(true);
-    setError((await props.onOpen(found.denom)) ? null : t('onboarding.start.failed'));
+    setError((await props.onOpen(found.denom)) ? null : 'failed');
     setBusy(false);
   };
   return (
@@ -408,10 +427,8 @@ export function Start(props: {
           )}
           {error !== null && (
             <Banner tone="red">
-              {error}
-              {error === t('onboarding.start.noSuchToken') && (
-                <small> {t('onboarding.start.noSuchTokenHint')}</small>
-              )}
+              {t(START_ERRORS[error])}
+              {error === 'noSuchToken' && <small> {t('onboarding.start.noSuchTokenHint')}</small>}
             </Banner>
           )}
           {found && (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
@@ -38,14 +38,6 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const [importText, setImportText] = useState('');
   const [importRejected, setImportRejected] = useState(false);
 
-  useEffect(
-    () => () => {
-      setPhrase(null);
-      setImportText('');
-    },
-    [],
-  );
-
   const generate = () => {
     setPhrase(null);
     setPhraseFailed(false);
@@ -59,6 +51,11 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const index = flow.indexOf(step);
   const back = () => {
     const prev = flow[index - 1];
+    if (prev === undefined) {
+      // Leaving the first step drops whatever phrase was shown or typed.
+      setPhrase(null);
+      setImportText('');
+    }
     setStep(prev ?? 'welcome');
   };
   const home = (denom?: string) => {
@@ -72,8 +69,12 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   };
 
   const addAll = async (denoms: string[]): Promise<boolean> => {
-    let last: { denom: string }[] = [];
+    // A failed attempt may have added some tokens: a retry only adds what is still missing.
+    const current = await client.call('tokens.preferred', {});
+    if (!current.ok) return false;
+    let last = current.value;
     for (const denom of denoms) {
+      if (last.some((tok) => tok.denom === denom)) continue;
       const res = await client.call('tokens.add', { denom });
       if (!res.ok) return false;
       last = res.value;
@@ -182,7 +183,6 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
           total={flow.length}
           title={t('onboarding.start.title')}
           hint={t('onboarding.start.hint')}
-          onBack={() => undefined}
         >
           <Start
             prefillCode={route.prefillCode}

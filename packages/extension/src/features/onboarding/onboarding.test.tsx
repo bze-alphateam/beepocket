@@ -14,7 +14,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const PHRASE = Array.from({ length: 24 }, (_, i) => `word${String.fromCharCode(97 + i)}`).join(' ');
+const PHRASE = Array.from({ length: 24 }, (_, i) => `term${String.fromCharCode(97 + i)}`).join(' ');
 const PHRASE_12 =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 const GOLD = {
@@ -116,6 +116,7 @@ const field = (host: HTMLElement, label: string) => {
 
 const baseHandlers = {
   'wallet.generateMnemonic': () => ok({ mnemonic: PHRASE }),
+  'tokens.preferred': () => ok([]),
   'wallet.createWallet': () => ok({ addresses: [] }),
   'wallet.importWallet': () => ok({ addresses: [] }),
   'tokens.add': ({ denom }: { denom: string }) => ok([{ ...BZE, denom }]),
@@ -171,9 +172,11 @@ describe('create flow', () => {
   it('needs the phrase revealed and acknowledged before continuing', async () => {
     const { host } = mount(mockClient(baseHandlers));
     await click(host, 'Create a new wallet');
-    expect(host.textContent).toContain(PHRASE.split(' ')[0]);
+    // The words are not in the page at all until revealed.
+    for (const w of PHRASE.split(' ')) expect(host.textContent).not.toContain(w);
     expect(button(host, 'Continue')?.disabled).toBe(true);
     await click(host, 'Reveal phrase');
+    expect(host.textContent).toContain(PHRASE.split(' ')[0]);
     expect(button(host, 'Continue')?.disabled).toBe(true);
     fireEvent(host.querySelector('input[type="checkbox"]'), 'click');
     expect(button(host, 'Continue')?.disabled).toBe(false);
@@ -342,6 +345,68 @@ describe('start with a token code', () => {
     expect(client.calls).toContainEqual(['tokens.lookup', { code: GOLD.denom }]);
     expect(host.textContent).toContain(en['onboarding.start.prefilled']);
     expect(button(host, 'Open wallet with GOLD')).toBeDefined();
+  });
+});
+
+describe('retries and navigation', () => {
+  it('offers a proper retry when the phrase cannot be made', async () => {
+    let fails = true;
+    const client = mockClient({
+      ...baseHandlers,
+      'wallet.generateMnemonic': () => (fails ? fail('internal', 'x') : ok({ mnemonic: PHRASE })),
+    });
+    const { host } = mount(client);
+    await click(host, 'Create a new wallet');
+    expect(button(host, en['onboarding.start.lookup'])).toBeUndefined();
+    fails = false;
+    await click(host, en['onboarding.phrase.retry']);
+    expect(host.textContent).toContain(en['onboarding.phrase.reveal']);
+  });
+
+  it('drops the phrase when going back to the welcome screen', async () => {
+    const client = mockClient(baseHandlers);
+    const { host } = mount(client);
+    await click(host, 'Create a new wallet');
+    await click(host, 'Reveal phrase');
+    fireEvent(host.querySelector('.ob-back'), 'click');
+    expect(host.textContent).not.toContain(PHRASE.split(' ')[0]);
+    await click(host, 'Create a new wallet');
+    expect(client.calls.filter(([m]) => m === 'wallet.generateMnemonic')).toHaveLength(2);
+  });
+
+  it('has no back button on the start step', async () => {
+    const { host } = await createdWallet(mockClient(baseHandlers));
+    expect(host.querySelector('.ob-back')).toBeNull();
+  });
+
+  it('a retry after a partial add only adds what is missing', async () => {
+    let preferred: unknown[] = [];
+    let failGold = true;
+    const client = mockClient({
+      ...baseHandlers,
+      'tokens.preferred': () => ok(preferred),
+      'tokens.add': ({ denom }: { denom: string }) => {
+        if (denom === GOLD.denom && failGold) return fail('internal', 'x');
+        preferred = [...preferred, { ...BZE, denom }];
+        return ok(preferred);
+      },
+    });
+    const { host, seen } = await createdWallet(client);
+    await click(host, en['onboarding.start.choose']);
+    await flush();
+    const boxes = host.querySelectorAll('input[type="checkbox"]');
+    fireEvent(boxes[0], 'click'); // BZE
+    fireEvent(boxes[1], 'click'); // GOLD
+    await click(host, 'Finish');
+    expect(seen).toEqual([]);
+    expect(host.textContent).toContain(en['app.error.generic']);
+    failGold = false;
+    await click(host, 'Finish');
+    const adds = client.calls.filter(([m]) => m === 'tokens.add').map(([, r]) => r);
+    expect(adds).toEqual(
+      [{ denom: 'ubze' }, { denom: GOLD.denom }, { denom: GOLD.denom }].slice(0, 3),
+    );
+    expect(seen).toEqual([{ name: 'home', denom: 'ubze' }]);
   });
 });
 
