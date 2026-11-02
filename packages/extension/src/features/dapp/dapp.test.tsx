@@ -291,6 +291,11 @@ describe('the sign screen', () => {
   });
 });
 
+function found<T>(el: T | null): T {
+  if (el === null) throw new Error('element not found');
+  return el;
+}
+
 const ME = ADDRESSES[0]?.address ?? '';
 const OTHER = ADDRESSES[1]?.address ?? '';
 const sendMsg = (): AnyMsg =>
@@ -327,7 +332,8 @@ function setTick(host: HTMLElement): void {
   box.checked = true;
   fireEvent(box, 'change');
 }
-const tick = (host: HTMLElement) => host.querySelector<HTMLInputElement>('input[type=checkbox]')!;
+const tick = (host: HTMLElement) =>
+  found(host.querySelector<HTMLInputElement>('input[type=checkbox]'));
 
 describe('the sign screen: risk levels', () => {
   it('shows an unknown message with the amber line and its raw JSON open', async () => {
@@ -433,9 +439,9 @@ describe('the sign screen: risk levels', () => {
     });
     await settle();
     expect(t.host.querySelector('input[type=password]')).not.toBeNull();
-    const submit = () => t.host.querySelector<HTMLButtonElement>('button[type=submit]')!;
+    const submit = () => found(t.host.querySelector<HTMLButtonElement>('button[type=submit]'));
     expect(submit().className).toContain('bp-btn-danger');
-    const password = t.host.querySelector<HTMLInputElement>('input[type=password]')!;
+    const password = found(t.host.querySelector<HTMLInputElement>('input[type=password]'));
     password.value = 'pw';
     fireEvent(password, 'input');
     await settle();
