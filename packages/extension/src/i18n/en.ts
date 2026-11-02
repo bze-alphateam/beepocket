@@ -8,6 +8,7 @@ import { send } from './send';
 import { activity } from './activity';
 import { dapp } from './dapp';
 import { sites } from './sites';
+import { addtoken } from './addtoken';
 
 /**
  * The one entry point for English strings. A feature adds `src/i18n/<feature>.ts` (keys
@@ -24,6 +25,7 @@ export const en = {
   ...activity,
   ...dapp,
   ...sites,
+  ...addtoken,
 } as const;
 
 export type StringKey = keyof typeof en;

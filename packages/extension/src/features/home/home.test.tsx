@@ -69,7 +69,12 @@ interface World {
   failed: number[];
 }
 
-function setup(over: Partial<World> = {}) {
+function setup(
+  over: Partial<World> = {},
+  route: HomeRoute = { name: 'home.main' },
+  /** Methods that wait from the first render until `releaseAll()`. */
+  held: Method[] = [],
+) {
   const w: World = {
     tokens: [BZE, PAGE],
     addresses: [addr(0, 'Main'), addr(1, 'Savings')],
@@ -136,6 +141,7 @@ function setup(over: Partial<World> = {}) {
       release();
     };
   };
+  const releases = held.map(hold);
   const client: Client = {
     call: vi.fn(async <M extends Method>(method: M, req: RequestOf<M>) => {
       calls.push({ method, req });
@@ -186,7 +192,7 @@ function setup(over: Partial<World> = {}) {
   const { host } = render(
     <ClientProvider client={client}>
       <HomeEnvProvider env={env}>
-        <Router<HomeRoute> table={table} initial={{ name: 'home.main' }} />
+        <Router<HomeRoute> table={table} initial={route} />
       </HomeEnvProvider>
     </ClientProvider>,
   );
@@ -206,7 +212,10 @@ function setup(over: Partial<World> = {}) {
       }
     });
   };
-  return { host, hold, w, calls, style, written, timers, tick, fire };
+  const releaseAll = () => {
+    for (const release of releases) release();
+  };
+  return { host, hold, releaseAll, w, calls, style, written, timers, tick, fire };
 }
 
 const byLabel = (host: HTMLElement, label: string) =>
@@ -239,6 +248,45 @@ describe('balance block', () => {
     expect(text(s.host)).toContain('No BZE yet');
     expect(text(s.host)).toContain('Main');
     expect(text(s.host)).toContain('Savings');
+  });
+});
+
+describe('arrival from the add-a-token link', () => {
+  it('opens on the chosen token and shows the toast until it expires', async () => {
+    const s = setup({}, { name: 'home.main', denom: PAGE.denom, toast: 'PAGE added' });
+    await s.tick();
+    expect(text(s.host)).toContain('PAGE');
+    expect(
+      s.calls.some(
+        (c) => c.method === 'tokens.balances' && (c.req as { denom: string }).denom === 'ubze',
+      ),
+    ).toBe(false);
+    expect(text(s.host)).toContain('PAGE added');
+    s.fire(1800);
+    expect(text(s.host)).not.toContain('PAGE added');
+  });
+
+  it('starts the toast timer only once the screen is showing', async () => {
+    const s = setup({}, { name: 'home.main', denom: PAGE.denom, toast: 'PAGE added' }, [
+      'tokens.preferred',
+    ]);
+    await s.tick();
+    s.fire(1800);
+    s.releaseAll();
+    await s.tick();
+    expect(text(s.host)).toContain('PAGE added');
+    s.fire(1800);
+    expect(text(s.host)).not.toContain('PAGE added');
+  });
+
+  it('falls back to the first token when the chosen one is not in the list', async () => {
+    const s = setup({}, { name: 'home.main', denom: 'factory/bze1x/gone' });
+    await s.tick();
+    expect(
+      s.calls.some(
+        (c) => c.method === 'tokens.balances' && (c.req as { denom: string }).denom === 'ubze',
+      ),
+    ).toBe(true);
   });
 });
 

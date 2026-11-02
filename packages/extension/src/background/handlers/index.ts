@@ -13,6 +13,7 @@ import { registerHomeHandlers } from '../../features/home/handlers';
 import { registerSendHandlers } from '../../features/send/handlers';
 import { registerActivityHandlers } from '../../features/activity/handlers';
 import { registerDappPopupHandlers, registerSitesHandlers, type DappService } from '../../dapp';
+import { registerAddTokenHandlers, type AddTokenService } from '../../features/addtoken';
 import { registerAppHandlers } from './app';
 
 /** What handlers may use. Handlers hold no state of their own: the worker can restart. */
@@ -21,6 +22,7 @@ export interface HandlerDeps {
   services: Services;
   wallet: WalletService;
   dapp: DappService;
+  addToken: AddTokenService;
 }
 
 /** One line per feature: `register<Feature>Handlers(registry, deps)`. */
@@ -42,4 +44,5 @@ export function registerHandlers(registry: HandlerRegistry, deps: HandlerDeps): 
   registerActivityHandlers(registry, deps);
   registerDappPopupHandlers(registry, deps.dapp);
   registerSitesHandlers(registry, deps.dapp);
+  registerAddTokenHandlers(registry, deps.addToken);
 }

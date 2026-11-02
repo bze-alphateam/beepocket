@@ -18,6 +18,7 @@ import {
   type WindowsLike,
 } from '../dapp';
 import { DAPP_EXPIRY_ALARM } from '../dapp/requests';
+import { AddTokenService, linkSender, type LinkTabsLike } from '../features/addtoken';
 import { registerHandlers } from './handlers';
 import { HandlerRegistry } from './registry';
 import { createServices } from './services';
@@ -39,11 +40,14 @@ export interface BackgroundEnv extends PlatformEnv {
     runtime: {
       id?: string | undefined;
       onMessage: MessageEventLike;
+      /** Fires on install and update; the add-a-token link looks for open tabs on install. */
+      onInstalled: { addListener(listener: (details: { reason: string }) => void): void };
       /** Optional: pushes lock-state events to an open popup. */
       sendMessage?: (message: unknown) => Promise<unknown>;
     };
     alarms: AlarmsLike & { onAlarm: AlarmEventLike };
-    tabs: TabsLike & { onRemoved: { addListener(listener: (tabId: number) => void): void } };
+    tabs: TabsLike &
+      LinkTabsLike & { onRemoved: { addListener(listener: (tabId: number) => void): void } };
     windows: WindowsLike & {
       onRemoved: { addListener(listener: (windowId: number) => void): void };
     };
@@ -74,6 +78,15 @@ export function startBackground(env: BackgroundEnv): void {
         .then(sendResponse);
       return true;
     }
+    if (hasField(message, 'addToken')) {
+      const link = linkSender(sender, env.chrome.runtime.id);
+      if (link === null) return undefined;
+      void registry()
+        .then((r) => r.addToken.receive(link, (message as { addToken: unknown }).addToken))
+        .catch(() => ({ error: { code: 'invalid-request', message: 'The wallet is not ready.' } }))
+        .then(sendResponse);
+      return true;
+    }
     const dapp = dappMessage(message);
     const from = dappSender(sender, env.chrome.runtime.id);
     if (dapp === undefined || from === null) return undefined;
@@ -90,6 +103,11 @@ export function startBackground(env: BackgroundEnv): void {
       )
       .catch(() => undefined);
     return true;
+  });
+  env.chrome.runtime.onInstalled.addListener((details) => {
+    void registry()
+      .then((r) => r.addToken.installed(details.reason))
+      .catch(() => undefined);
   });
   env.chrome.tabs.onRemoved.addListener((tabId) => {
     void registry()
@@ -136,13 +154,16 @@ interface Started {
   registry: HandlerRegistry;
   wallet: WalletService;
   dapp: DappService;
+  addToken: AddTokenService;
 }
 
 /** The `dapp` field of a content-script message, if it has one. */
 function dappMessage(message: unknown): unknown {
-  return typeof message === 'object' && message !== null && Object.hasOwn(message, 'dapp')
-    ? (message as { dapp: unknown }).dapp
-    : undefined;
+  return hasField(message, 'dapp') ? (message as { dapp: unknown }).dapp : undefined;
+}
+
+function hasField(message: unknown, name: string): boolean {
+  return typeof message === 'object' && message !== null && Object.hasOwn(message, name);
 }
 
 /**
@@ -173,7 +194,12 @@ async function createRegistry(env: BackgroundEnv): Promise<Started> {
     windows: env.chrome.windows,
     alarms: new ChromeAlarms(env.chrome.alarms),
   });
+  const addToken = new AddTokenService({
+    session: platform.session,
+    windows: env.chrome.windows,
+    tabs: env.chrome.tabs,
+  });
   const registry = new HandlerRegistry();
-  registerHandlers(registry, { platform, services, wallet, dapp });
-  return { registry, wallet, dapp };
+  registerHandlers(registry, { platform, services, wallet, dapp, addToken });
+  return { registry, wallet, dapp, addToken };
 }

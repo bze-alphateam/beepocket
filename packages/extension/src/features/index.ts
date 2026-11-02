@@ -7,6 +7,7 @@ import { sendRoutes, type SendRoute } from './send/routes';
 import type { RouteTable } from '../popup/router';
 import { lockRoutes, type LockRoute } from './lock/routes';
 import { dappRoutes, type DappRoute } from './dapp/routes';
+import { addTokenRoutes, type AddTokenRoute } from './addtoken/routes';
 
 /**
  * Every route of the popup. A feature adds its union here and its table below: one line each.
@@ -20,7 +21,8 @@ export type AppRoute =
   | OnboardingRoute
   | SettingsRoute
   | SendRoute
-  | DappRoute;
+  | DappRoute
+  | AddTokenRoute;
 
 export const routeTable: RouteTable<AppRoute> = {
   ...shellRoutes,
@@ -31,6 +33,7 @@ export const routeTable: RouteTable<AppRoute> = {
   ...bookRoutes,
   ...sendRoutes,
   ...dappRoutes,
+  ...addTokenRoutes,
 };
 
 export const initialRoute: AppRoute = { name: 'lock.root' };
@@ -40,6 +43,13 @@ export function isRequestWindow(search: string): boolean {
   return new URLSearchParams(search).get('window') === 'request';
 }
 
+/** The add-a-token link opens `window=add-token`; a link found at install opens `window=onboarding`. */
+export function isAddTokenWindow(search: string): boolean {
+  const window = new URLSearchParams(search).get('window');
+  return window === 'add-token' || window === 'onboarding';
+}
+
 export function initialRouteFor(search: string): AppRoute {
-  return isRequestWindow(search) ? { name: 'dapp.request' } : initialRoute;
+  if (isRequestWindow(search)) return { name: 'dapp.request' };
+  return isAddTokenWindow(search) ? { name: 'addtoken.main' } : initialRoute;
 }

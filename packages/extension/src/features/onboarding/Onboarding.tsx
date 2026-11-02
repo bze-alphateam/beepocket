@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
@@ -29,6 +29,14 @@ const FLOWS: Record<Path, StepName[]> = {
  * The first-run flow. The recovery phrase lives only in this component's state: it is dropped
  * as soon as the wallet exists, and again when the component unmounts.
  */
+function linkStrip(symbol: string | null, host: string | null): string | undefined {
+  if (symbol === null)
+    return host === null ? undefined : t('onboarding.link.stripNoToken', { host });
+  return host === null
+    ? t('onboarding.link.stripNoSite', { symbol })
+    : t('onboarding.link.strip', { symbol, host });
+}
+
 export function Onboarding({ route }: { route: OnboardingRoute }) {
   const client = useClient();
   const { navigate } = useRoute();
@@ -39,6 +47,20 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const [phraseFailed, setPhraseFailed] = useState(false);
   const [importText, setImportText] = useState('');
   const [importRejected, setImportRejected] = useState(false);
+
+  // The token behind a link, for the Welcome strip; the strip falls back to the host alone.
+  const [linkSymbol, setLinkSymbol] = useState<string | null>(null);
+  useEffect(() => {
+    if (route.prefillCode === undefined || route.link === undefined) return;
+    let live = true;
+    void client.call('tokens.lookup', { code: route.prefillCode }).then((res) => {
+      if (live && res.ok) setLinkSymbol(res.value.symbol);
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, route.prefillCode, route.link]);
+  const strip = route.link === undefined ? undefined : linkStrip(linkSymbol, route.link.host);
 
   const generate = () => {
     setPhrase(null);
@@ -91,6 +113,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
     case 'welcome':
       body = (
         <Welcome
+          strip={strip}
           onCreate={() => {
             setPath('create');
             setStep('phrase');
@@ -189,6 +212,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
         >
           <Start
             prefillCode={route.prefillCode}
+            warn={route.link !== undefined && !route.link.known}
             onOpen={(denom) => addAll([denom])}
             onPick={() => {
               setStep('tokens');

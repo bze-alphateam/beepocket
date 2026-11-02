@@ -46,6 +46,7 @@ function start(session: FakeArea = new FakeArea()) {
       storage: { local, session },
       runtime: {
         id: 'me',
+        onInstalled: { addListener: () => undefined },
         onMessage: {
           addListener: (l) => {
             listener = l;
@@ -58,6 +59,8 @@ function start(session: FakeArea = new FakeArea()) {
           return Promise.resolve();
         },
         onRemoved: { addListener: () => undefined },
+        query: () => Promise.resolve([]),
+        update: () => Promise.resolve({}),
       },
       windows: {
         create: () => Promise.resolve({ id: 1 }),
