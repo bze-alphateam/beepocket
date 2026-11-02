@@ -57,3 +57,8 @@
   position: relative;
   flex: none;
 }
+
+/* A sheet opened from the body covers the whole frame, the header and the pinned footer too. */
+.bp-body:has(> .bp-sheet-root) {
+  position: static;
+}

@@ -1,0 +1,13 @@
+/* StarButton: outline star in faint, filled star in the kit accent. */
+.bp-star {
+  color: var(--bp-faint);
+}
+
+.bp-star-on {
+  color: var(--bp-accent-text);
+}
+
+/* The last preferred token's star stays visible: it explains itself through its name. */
+.bp-star:disabled {
+  opacity: 1;
+}

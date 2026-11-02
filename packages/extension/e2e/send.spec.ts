@@ -117,7 +117,7 @@ async function openSend(context: BrowserContext, extensionId: string): Promise<P
   await call(page, 'wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE });
   await call(page, 'book.add', { name: 'Alex', address: CONTACT });
   await page.reload();
-  await page.getByRole('button', { name: 'Send BZE' }).click();
+  await page.getByRole('button', { name: 'Send BZE', exact: true }).click();
   await page.getByRole('button', { name: 'Open address book' }).click();
   await page.getByRole('button', { name: /Alex/ }).click();
   await expect(page.getByText('Alex · Contact')).toBeVisible();
@@ -141,7 +141,7 @@ test('sends BZE to a contact and shows success', async ({ context, extensionId }
   expect(node.broadcasts).toBe(1);
 
   await page.getByRole('button', { name: 'Done' }).click();
-  await expect(page.getByRole('button', { name: 'Send BZE' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send BZE', exact: true })).toBeVisible();
 });
 
 test("shows the node's message when the fee is too low and Try again works", async ({

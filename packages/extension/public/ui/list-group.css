@@ -1,0 +1,10 @@
+/* ListGroup: a section title over its rows. */
+.bp-list-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bp-list-group-flat > .bp-list-row-option:not(.bp-list-row-on) {
+  border-color: transparent;
+}

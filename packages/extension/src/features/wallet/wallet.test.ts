@@ -359,6 +359,55 @@ describe('unlock, locks and timers', () => {
     ]);
   });
 
+  it('previewNext shows the next address without storing anything', async () => {
+    const t = await created();
+    const before = JSON.stringify([...t.local.data.entries()]);
+    expect(value(await t.call('wallet.previewNext', {}))).toEqual({ index: 1, address: addr(1) });
+    expect(value(await t.call('wallet.previewNext', {}))).toEqual({ index: 1, address: addr(1) });
+    expect(JSON.stringify([...t.local.data.entries()])).toBe(before);
+    expect(value(await t.call('wallet.addresses', {})).addresses.map((a) => a.address)).toEqual([
+      addr(0),
+    ]);
+  });
+
+  it('deriveNext stores exactly the previewed address with its label', async () => {
+    const t = await created();
+    const preview = value(await t.call('wallet.previewNext', {}));
+    const added = value(
+      await t.call('wallet.deriveNext', { index: preview.index, label: '  x7-cold ' }),
+    ).address;
+    expect(added).toEqual({ index: preview.index, label: 'x7-cold', address: preview.address });
+    expect(value(await t.boot().call('wallet.addresses', {})).addresses).toContainEqual(added);
+  });
+
+  it('deriveNext without a label keeps the default one', async () => {
+    const t = await created();
+    const added = value(await t.call('wallet.deriveNext', { index: 1, label: '   ' })).address;
+    expect(added.label).toBe('Address 2');
+  });
+
+  it('deriveNext refuses a stale index, a long label and a malformed request', async () => {
+    const t = await created();
+    const preview = value(await t.call('wallet.previewNext', {}));
+    value(await t.call('wallet.deriveNext', {}));
+    expect(code(await t.call('wallet.deriveNext', { index: preview.index }))).toBe('stale_index');
+    expect(code(await t.call('wallet.deriveNext', { label: 'x'.repeat(33) }))).toBe(
+      'invalid_label',
+    );
+    for (const payload of [{ index: 1.5 }, { index: '2' }, { label: 7 }]) {
+      expect(code(await t.call('wallet.deriveNext', payload as never))).toBe('bad_request');
+    }
+    expect(value(await t.call('wallet.addresses', {})).addresses).toHaveLength(2);
+  });
+
+  it('previewNext needs the unlocked wallet', async () => {
+    const t = await created();
+    await t.service.onAlarm('weak-lock');
+    expect(code(await t.call('wallet.previewNext', {}))).toBe('needs-password');
+    await t.call('wallet.lock', {});
+    expect(code(await t.call('wallet.previewNext', {}))).toBe('wallet_locked');
+  });
+
   it('unlock with a corrupt record is a typed error and counts no failure', async () => {
     const t = await created();
     await t.call('wallet.lock', {});

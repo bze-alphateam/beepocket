@@ -1,0 +1,5 @@
+/* CopyButton: the check after a copy is status green, never the token colour. */
+.bp-btn-icon.bp-copy-done,
+.bp-list-row-line .bp-btn-icon.bp-copy-done {
+  color: var(--bp-ok);
+}
