@@ -4,7 +4,7 @@ import type { BookProtocol } from './address-book';
 import type { HomeProtocol } from './home';
 import type { SendProtocol } from './send';
 import type { ActivityProtocol } from './activity';
-import type { DappProtocol } from './dapp';
+import type { DappProtocol, SitesProtocol } from './dapp';
 import type { TokensProtocol } from './tokens';
 import type { WalletProtocol } from './wallet';
 import type { FeatureProtocol } from './types';
@@ -33,7 +33,8 @@ export type Protocol = FeatureProtocol<AppProtocol> &
   FeatureProtocol<HomeProtocol> &
   FeatureProtocol<SendProtocol> &
   FeatureProtocol<ActivityProtocol> &
-  FeatureProtocol<DappProtocol>;
+  FeatureProtocol<DappProtocol> &
+  FeatureProtocol<SitesProtocol>;
 
 export type Method = keyof Protocol;
 export type RequestOf<M extends Method> = Protocol[M]['req'];

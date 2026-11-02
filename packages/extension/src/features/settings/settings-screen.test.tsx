@@ -22,6 +22,7 @@ class FakeClient implements Client {
   network = 'mainnet';
   preferred: Record<string, string[]> = { mainnet: ['ubze'], testnet: ['ubze'] };
   walletState = 'unlocked';
+  sites: unknown[] = [];
   reveal: Result<unknown> = ok({ status: 'ok', mnemonic: PHRASE });
   call(method: Method, request: unknown): Promise<Result<never>> {
     this.calls.push({ method, request });
@@ -47,6 +48,8 @@ class FakeClient implements Client {
         case 'tokens.add':
           this.preferred[this.network] = ['ubze'];
           return ok(['ubze']);
+        case 'sites.list':
+          return ok({ network: this.network, sites: this.sites, addresses: [] });
         case 'wallet.state':
           return ok({ state: this.walletState, retryAt: null });
         case 'wallet.revealMnemonic':
@@ -122,7 +125,7 @@ describe('SettingsScreen', () => {
     expect(text).toContain('Show recovery phrase');
     expect(text).toContain('Version 1.2.3');
     expect(text).toContain('github.com/bze-alphateam/beepocket');
-    expect(text).not.toContain('Connected');
+    expect(text).toContain('Connected sites');
   });
 
   it('saves the brand themes flag and a lock timer', async () => {

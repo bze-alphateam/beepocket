@@ -11,6 +11,8 @@ export interface SettingsDeps {
   wallet: SettingsWallet;
   /** The unencrypted store holding the `network` key. */
   storage: Pick<Storage, 'get' | 'set'>;
+  /** Told after the active network changed (open dapp pages must ask again). Failures are ignored. */
+  onNetworkChanged?(): Promise<void>;
 }
 
 export function isNetworkId(x: unknown): x is NetworkId {
@@ -42,7 +44,9 @@ export class SettingsService {
   }
 
   async setNetwork(id: NetworkId): Promise<Result<{ id: NetworkId }>> {
+    const before = await this.network();
     await this.deps.storage.set(NETWORK_KEY, id);
+    if (before.id !== id) await this.deps.onNetworkChanged?.().catch(() => undefined);
     return ok({ id });
   }
 }

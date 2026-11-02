@@ -82,6 +82,7 @@ export function SettingsScreen({ manifest }: { manifest: ManifestSource }) {
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [revealing, setRevealing] = useState(false);
+  const [siteCount, setSiteCount] = useState<number | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -97,6 +98,16 @@ export function SettingsScreen({ manifest }: { manifest: ManifestSource }) {
       live = false;
     };
   }, [client]);
+
+  useEffect(() => {
+    let live = true;
+    void client.call('sites.list', {}).then((r) => {
+      if (live && r.ok) setSiteCount(r.value.sites.length);
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, network]);
 
   const save = async (patch: Partial<WalletSettings>) => {
     setError(null);
@@ -186,6 +197,15 @@ export function SettingsScreen({ manifest }: { manifest: ManifestSource }) {
           }}
         >
           {t('settings.addressBook')}
+        </button>
+        <button
+          type="button"
+          class="bp-row"
+          onClick={() => {
+            navigate({ name: 'dapp.sites' });
+          }}
+        >
+          {siteCount === null ? t('sites.row') : t('sites.row.count', { count: siteCount })}
         </button>
         <button
           type="button"
