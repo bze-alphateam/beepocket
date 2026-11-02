@@ -30,6 +30,12 @@ body {
     color 0.35s ease;
 }
 
+/* Set by the popup until the stored appearance is applied: the first paint does not fade. */
+:root[data-booting] body,
+:root[data-booting] * {
+  transition: none !important;
+}
+
 #root {
   width: 360px;
   height: 600px;

@@ -3,7 +3,7 @@ import { RandomProvider } from '../features/onboarding';
 import { CryptoRandom } from '../platform';
 import { SystemClock } from '@beepocket/core';
 import { RuntimeClient } from '../protocol/client';
-import { AppearanceState, applyTheme } from '../theme';
+import { AppearanceState, applyTheme, LocalAppearanceCache } from '../theme';
 import { LockEnvProvider, RuntimeStateEvents } from '../features/lock';
 import { initialRouteFor } from '../features';
 import { App } from './App';
@@ -11,9 +11,11 @@ import { AppearanceProvider } from './appearance';
 import { ClientProvider } from './client-context';
 
 const client = new RuntimeClient(chrome.runtime);
-const appearance = new AppearanceState(window.matchMedia('(prefers-color-scheme: dark)'), (value) =>
-  client.call('appearance.set', { appearance: value }),
-);
+const appearance = new AppearanceState(window.matchMedia('(prefers-color-scheme: dark)'), {
+  save: (value) => client.call('appearance.set', { appearance: value }),
+  // The last value seen in this browser: the first paint already has the right scheme.
+  cache: new LocalAppearanceCache(() => window.localStorage),
+});
 
 // The BeePocket look until a screen applies its token kit. Subscribed first, so a screen that
 // re-applies its kit on a scheme change runs after this and wins.
@@ -25,12 +27,21 @@ const theme = () => {
     scheme: appearance.current(),
   });
 };
+// No colour fade while the page boots, including a correction from the stored value below.
+document.documentElement.dataset.booting = '';
 theme();
 appearance.subscribe(theme);
-// Dark until the stored setting arrives (the default); a failed read keeps the default.
-void client.call('appearance.get', {}).then((res) => {
-  if (res.ok) appearance.load(res.value.appearance);
-});
+// The worker's stored value wins over the cached copy; a failed read keeps what is shown.
+void client
+  .call('appearance.get', {})
+  .then((res) => {
+    if (res.ok) appearance.load(res.value.appearance);
+  })
+  .finally(() => {
+    requestAnimationFrame(() => {
+      delete document.documentElement.dataset.booting;
+    });
+  });
 
 const root = document.getElementById('root');
 if (root) {

@@ -20,7 +20,7 @@ import {
   ListRow,
   Logo,
   OnboardingHeader,
-  RadioCard,
+  RadioCardGroup,
   ResultLayout,
   ScreenHeader,
   Segmented,
@@ -137,6 +137,17 @@ describe('Button', () => {
     expect(chip?.className).toBe('bp-btn bp-btn-chip');
     expect(icon?.getAttribute('aria-label')).toBe('Add address');
     expect(icon?.querySelector('.bp-btn-disc [data-icon="plus"]')).not.toBeNull();
+  });
+
+  it('names every icon-only button, and a nameless one does not compile', () => {
+    const b = render(<Button variant="icon" icon="copy" label="Copy address Main" />).host
+      .firstElementChild;
+    expect(b?.tagName).toBe('BUTTON');
+    expect(b?.getAttribute('aria-label')).toBe('Copy address Main');
+    expect(b?.textContent).toBe('');
+    // @ts-expect-error: an icon-only button needs a label.
+    const nameless = <Button variant="icon" icon="copy" />;
+    expect(render(nameless).host.querySelector('button')?.hasAttribute('aria-label')).toBe(false);
   });
 
   it('renders a link that opens in a new tab', () => {
@@ -494,7 +505,7 @@ describe('Segmented', () => {
   });
 });
 
-describe('Toggle, Check, RadioCard', () => {
+describe('Toggle, Check, RadioCardGroup', () => {
   it('Toggle is a switch', () => {
     const onChange = vi.fn();
     const { host } = render(
@@ -527,26 +538,71 @@ describe('Toggle, Check, RadioCard', () => {
     expect(off.querySelector('[data-icon="check"]')).toBeNull();
   });
 
-  it('RadioCard opens its body only while picked', () => {
-    const onSelect = vi.fn();
-    const closed = render(
-      <RadioCard checked={false} onSelect={onSelect} title="I have a token code" icon="ticket">
-        <input aria-label="Token code" />
-      </RadioCard>,
-    ).host;
-    const radio = closed.querySelector('[role="radio"]');
-    expect(radio?.getAttribute('aria-checked')).toBe('false');
-    expect(closed.querySelector('input')).toBeNull();
-    fireEvent(radio, 'click');
-    expect(onSelect).toHaveBeenCalledOnce();
-    const open = render(
-      <RadioCard checked onSelect={onSelect} title="Code" subtitle="One step" icon="ticket">
-        <input aria-label="Token code" />
-      </RadioCard>,
-    ).host;
-    expect(open.querySelector('input')).not.toBeNull();
-    expect(open.firstElementChild?.classList.contains('bp-radio-card-on')).toBe(true);
-    expect(open.querySelector('.bp-radio-on')).not.toBeNull();
+  function Start(props: { onChange?: (v: string) => void }) {
+    const [v, setV] = useState<'code' | 'manual' | 'later' | null>(null);
+    return (
+      <RadioCardGroup
+        label="How do you want to start?"
+        value={v}
+        onChange={(next) => {
+          props.onChange?.(next);
+          setV(next);
+        }}
+        options={[
+          {
+            value: 'code',
+            title: 'I have a token code',
+            subtitle: 'One step',
+            icon: 'ticket',
+            body: <input aria-label="Token code" />,
+          },
+          { value: 'manual', title: "I'll choose my tokens", icon: 'grid', iconTone: 'inset' },
+          { value: 'later', title: 'Later', icon: 'x' },
+        ]}
+      />
+    );
+  }
+  const radios = (host: HTMLElement) => [...host.querySelectorAll<HTMLElement>('[role="radio"]')];
+  const checked = (host: HTMLElement) =>
+    radios(host).map((r) => r.getAttribute('aria-checked') === 'true');
+  const tabbable = (host: HTMLElement) => radios(host).map((r) => r.tabIndex === 0);
+
+  it('RadioCardGroup is a named radiogroup; a tap picks a card and opens its body', () => {
+    const onChange = vi.fn();
+    const { host } = render(<Start onChange={onChange} />);
+    expect(host.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe(
+      'How do you want to start?',
+    );
+    expect(checked(host)).toEqual([false, false, false]);
+    // Before any pick only the first card is in the Tab order.
+    expect(tabbable(host)).toEqual([true, false, false]);
+    expect(host.querySelector('input')).toBeNull();
+    fireEvent(radios(host)[0], 'click');
+    expect(onChange).toHaveBeenCalledWith('code');
+    expect(checked(host)).toEqual([true, false, false]);
+    expect(host.querySelector('[aria-label="Token code"]')).not.toBeNull();
+    expect(host.querySelector('.bp-radio-card-on .bp-radio-on')).not.toBeNull();
+  });
+
+  it('RadioCardGroup moves the pick and the Tab stop with the arrow keys', async () => {
+    const { host } = render(<Start />);
+    const group = host.querySelector('[role="radiogroup"]');
+    fireEvent(group, 'keydown', { key: 'ArrowDown' });
+    expect(checked(host)).toEqual([true, false, false]);
+    fireEvent(group, 'keydown', { key: 'ArrowDown' });
+    expect(checked(host)).toEqual([false, true, false]);
+    expect(tabbable(host)).toEqual([false, true, false]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(radios(host)[1]);
+    fireEvent(group, 'keydown', { key: 'ArrowUp' });
+    fireEvent(group, 'keydown', { key: 'ArrowUp' });
+    expect(checked(host)).toEqual([false, false, true]);
+    fireEvent(group, 'keydown', { key: 'Home' });
+    expect(checked(host)).toEqual([true, false, false]);
+    fireEvent(group, 'keydown', { key: 'End' });
+    expect(checked(host)).toEqual([false, false, true]);
+    fireEvent(group, 'keydown', { key: 'a' });
+    expect(checked(host)).toEqual([false, false, true]);
   });
 });
 
@@ -650,7 +706,9 @@ describe('states', () => {
     expect(host.querySelector(`.bp-result-disc [data-icon="${icon}"]`)).not.toBeNull();
     expect(host.querySelector('h1')?.textContent).toBe('Sent');
     expect(host.querySelector('.bp-result-link a')).not.toBeNull();
-    expect(byText(host, 'Done')).toBeDefined();
+    const done = byText(host, 'Done');
+    expect(done?.tagName).toBe('BUTTON');
+    expect(done?.closest('.bp-bottom')).not.toBeNull();
     expect(host.querySelector('.bp-detail')?.textContent).toBe('FromMain');
   });
 

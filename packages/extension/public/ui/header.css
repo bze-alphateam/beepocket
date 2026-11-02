@@ -48,7 +48,7 @@
   flex: 1;
   height: 4px;
   border-radius: 999px;
-  background: var(--bp-track);
+  background: var(--bp-switch-off);
 }
 
 .bp-progress > .bp-progress-on {

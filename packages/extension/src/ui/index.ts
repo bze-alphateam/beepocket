@@ -6,11 +6,12 @@ export { Button, type ButtonProps } from './Button';
 export { Card, DetailRow, ListRow, type CardProps, type ListRowProps } from './Card';
 export {
   Check,
-  RadioCard,
+  RadioCardGroup,
   RadioDot,
   Toggle,
   type CheckProps,
-  type RadioCardProps,
+  type RadioCardGroupProps,
+  type RadioCardOption,
   type ToggleProps,
 } from './choices';
 export { DropdownSheet, type DropdownOption, type DropdownSheetProps } from './DropdownSheet';

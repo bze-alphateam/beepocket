@@ -25,7 +25,7 @@ function SchemeProbe() {
 describe('AppearanceToggle', () => {
   it('flips the shared appearance and saves the explicit choice', () => {
     const save = vi.fn(() => Promise.resolve());
-    const state = new AppearanceState(new FakeQuery(false), save);
+    const state = new AppearanceState(new FakeQuery(false), { save });
     const { host } = render(
       <AppearanceProvider state={state}>
         <AppearanceToggle />
@@ -43,7 +43,7 @@ describe('AppearanceToggle', () => {
 
   it('follows the OS live while the setting is system', () => {
     const query = new FakeQuery(true);
-    const state = new AppearanceState(query, undefined, 'system');
+    const state = new AppearanceState(query, { initial: 'system' });
     const { host } = render(
       <AppearanceProvider state={state}>
         <SchemeProbe />

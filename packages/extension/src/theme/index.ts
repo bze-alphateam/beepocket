@@ -7,11 +7,15 @@ export { buildCssVars, type CssVars } from './theme';
 export {
   AppearanceState,
   DEFAULT_APPEARANCE,
+  LocalAppearanceCache,
   isAppearance,
   resolveScheme,
   type Appearance,
+  type AppearanceCache,
+  type AppearanceOptions,
   type SchemeQuery,
   type SchemeSource,
+  type SyncStore,
 } from './appearance';
 
 export interface ThemeInput extends KitInput {

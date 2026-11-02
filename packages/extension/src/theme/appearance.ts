@@ -29,6 +29,56 @@ export interface SchemeSource {
   subscribe(listener: () => void): () => void;
 }
 
+/** A synchronous copy of the last appearance, readable before the first paint. */
+export interface AppearanceCache {
+  read(): Appearance | null;
+  write(appearance: Appearance): void;
+}
+
+/** The slice of a page's `localStorage` the cache uses. */
+export interface SyncStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/**
+ * The cache in the extension page's `localStorage`. The worker's stored value stays the truth;
+ * this copy only lets the page paint the right scheme at once. Storage that is unavailable or
+ * throws reads as no value and is never written.
+ */
+export class LocalAppearanceCache implements AppearanceCache {
+  constructor(
+    private readonly store: () => SyncStore,
+    private readonly key = 'beepocket.appearance',
+  ) {}
+
+  read(): Appearance | null {
+    try {
+      const value = this.store().getItem(this.key);
+      return isAppearance(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  write(appearance: Appearance): void {
+    try {
+      this.store().setItem(this.key, appearance);
+    } catch {
+      // A missing copy only costs one switch at the next open.
+    }
+  }
+}
+
+export interface AppearanceOptions {
+  /** Persists a choice made in the popup; its failures are ignored. */
+  save?: ((appearance: Appearance) => Promise<unknown>) | undefined;
+  /** Gives the first scheme before the stored value arrives, and keeps every later value. */
+  cache?: AppearanceCache | undefined;
+  /** The starting value when there is no cached one; dark by default. */
+  initial?: Appearance | undefined;
+}
+
 /**
  * The popup's appearance: the setting plus the OS query, resolved to one scheme. Listeners run
  * in subscription order whenever the shown scheme changes, so the root theme (subscribed first)
@@ -38,13 +88,11 @@ export class AppearanceState implements SchemeSource {
   private value: Appearance;
   private readonly listeners = new Set<() => void>();
 
-  /** `save` persists a choice made in the popup; its failures are ignored. */
   constructor(
     private readonly query: SchemeQuery,
-    private readonly save: (appearance: Appearance) => Promise<unknown> = () => Promise.resolve(),
-    initial: Appearance = DEFAULT_APPEARANCE,
+    private readonly options: AppearanceOptions = {},
   ) {
-    this.value = initial;
+    this.value = options.cache?.read() ?? options.initial ?? DEFAULT_APPEARANCE;
     query.addEventListener('change', () => {
       if (this.value === 'system') this.notify();
     });
@@ -73,7 +121,7 @@ export class AppearanceState implements SchemeSource {
   /** The user's choice: shown at once, then saved. */
   set(appearance: Appearance): void {
     this.change(appearance);
-    void this.save(appearance).catch(() => undefined);
+    void (this.options.save?.(appearance) ?? Promise.resolve()).catch(() => undefined);
   }
 
   /** The header button: from whatever shows now to the explicit other scheme. */
@@ -84,6 +132,7 @@ export class AppearanceState implements SchemeSource {
   private change(appearance: Appearance): void {
     const before = this.current();
     this.value = appearance;
+    this.options.cache?.write(appearance);
     if (this.current() !== before) this.notify();
   }
 

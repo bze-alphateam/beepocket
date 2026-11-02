@@ -1,3 +1,5 @@
+import { rovingKeyDown } from './roving';
+
 export interface SegmentedOption<V extends string> {
   value: V;
   label: string;
@@ -22,7 +24,7 @@ export interface SegmentedProps<V extends string> {
   id?: string | undefined;
 }
 
-/** A segmented control. Arrow keys move between segments. */
+/** A segmented control. Arrow keys, Home and End move between segments. */
 export function Segmented<V extends string>({
   options,
   value,
@@ -33,26 +35,18 @@ export function Segmented<V extends string>({
   id,
 }: SegmentedProps<V>) {
   const tabs = kind === 'tabs';
-  const move = (from: number, step: number) => {
-    const next = options[(from + step + options.length) % options.length];
-    if (next) onChange(next.value);
-  };
   return (
     <div
       class={`bp-seg bp-seg-${size}`}
       role={tabs ? 'tablist' : 'radiogroup'}
       aria-label={label}
       onKeyDown={(e) => {
-        const at = options.findIndex((o) => o.value === value);
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') move(at, 1);
-        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') move(at, -1);
-        else return;
-        e.preventDefault();
-        const group = e.currentTarget as HTMLElement;
-        // After the re-render moved tabindex 0 to the new segment.
-        setTimeout(() => {
-          group.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
-        }, 0);
+        rovingKeyDown(
+          e,
+          options.map((o) => o.value),
+          value,
+          onChange,
+        );
       }}
     >
       {options.map((o) => {

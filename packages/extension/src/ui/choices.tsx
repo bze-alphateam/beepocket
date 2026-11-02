@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { IconTile } from './Avatar';
 import { Icon, type IconName } from './icons';
+import { rovingKeyDown } from './roving';
 
 export interface ToggleProps {
   checked: boolean;
@@ -72,41 +73,92 @@ export function RadioDot(props: { checked: boolean }) {
   );
 }
 
-export interface RadioCardProps {
+interface RadioCardProps {
   checked: boolean;
   onSelect: () => void;
+  tabIndex: number;
+  option: RadioCardOption<string>;
+}
+
+/** One option card: icon tile, title, subtitle, radio dot, and its body while picked. */
+function RadioCard({ checked, onSelect, tabIndex, option }: RadioCardProps) {
+  const open = checked && option.body !== undefined;
+  return (
+    <div class={checked ? 'bp-radio-card bp-radio-card-on' : 'bp-radio-card'}>
+      <button
+        type="button"
+        role="radio"
+        class="bp-radio-card-head"
+        aria-checked={checked}
+        tabIndex={tabIndex}
+        onClick={onSelect}
+      >
+        <IconTile icon={option.icon} tone={option.iconTone ?? 'soft'} />
+        <span class="bp-radio-card-text">
+          <span class="bp-radio-card-title">{option.title}</span>
+          {option.subtitle !== undefined && (
+            <span class="bp-radio-card-sub">{option.subtitle}</span>
+          )}
+        </span>
+        <RadioDot checked={checked} />
+      </button>
+      {open && <div class="bp-radio-card-body">{option.body}</div>}
+    </div>
+  );
+}
+
+export interface RadioCardOption<V extends string> {
+  value: V;
   title: string;
   subtitle?: string | undefined;
   icon: IconName;
   /** Icon tile tone: `soft` accent (the recommended option) or `inset` neutral. */
   iconTone?: 'soft' | 'inset' | undefined;
   /** Shown inside the card while it is picked (the token-code field on Ob-Start). */
-  children?: ComponentChildren;
+  body?: ComponentChildren;
+}
+
+export interface RadioCardGroupProps<V extends string> {
+  /** Accessible name of the group ("How do you want to start?"). */
+  label: string;
+  options: readonly RadioCardOption<V>[];
+  /** The picked option, or null before the first pick. */
+  value: V | null;
+  onChange: (value: V) => void;
 }
 
 /**
- * An option card with an icon, title, subtitle and radio dot (`Ob-Start`). Put the cards in an
- * element with `role="radiogroup"` and an `aria-label`.
+ * Option cards as one radio group (`Ob-Start`): a tap or the arrow keys pick a card, and only the
+ * picked card (or the first, before any pick) is in the Tab order.
  */
-export function RadioCard(props: RadioCardProps) {
-  const open = props.checked && props.children !== undefined;
+export function RadioCardGroup<V extends string>(props: RadioCardGroupProps<V>) {
+  const { options, value, onChange } = props;
+  const focusable = value ?? options[0]?.value;
   return (
-    <div class={props.checked ? 'bp-radio-card bp-radio-card-on' : 'bp-radio-card'}>
-      <button
-        type="button"
-        role="radio"
-        class="bp-radio-card-head"
-        aria-checked={props.checked}
-        onClick={props.onSelect}
-      >
-        <IconTile icon={props.icon} tone={props.iconTone ?? 'soft'} />
-        <span class="bp-radio-card-text">
-          <span class="bp-radio-card-title">{props.title}</span>
-          {props.subtitle !== undefined && <span class="bp-radio-card-sub">{props.subtitle}</span>}
-        </span>
-        <RadioDot checked={props.checked} />
-      </button>
-      {open && <div class="bp-radio-card-body">{props.children}</div>}
+    <div
+      class="bp-radio-cards"
+      role="radiogroup"
+      aria-label={props.label}
+      onKeyDown={(e) => {
+        rovingKeyDown(
+          e,
+          options.map((o) => o.value),
+          value,
+          onChange,
+        );
+      }}
+    >
+      {options.map((o) => (
+        <RadioCard
+          key={o.value}
+          option={o}
+          checked={o.value === value}
+          tabIndex={o.value === focusable ? 0 : -1}
+          onSelect={() => {
+            onChange(o.value);
+          }}
+        />
+      ))}
     </div>
   );
 }

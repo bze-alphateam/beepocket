@@ -1,19 +1,12 @@
 import type { ComponentChildren } from 'preact';
 import { Icon, type IconName } from './icons';
 
-export interface ButtonProps {
-  /**
-   * - `primary`: kit gradient with glow, full width. `secondary`: outline, full width.
-   * - `ghost`: text with an optional icon ("View on Explorer", "Show 1 empty address").
-   * - `chip`: small inline button (MAX, Paste). `icon`: 44 × 44 icon-only button (needs `label`).
-   * - `quiet` / `danger`: the pre-canvas styles, kept until every screen has moved.
-   */
-  variant?: 'primary' | 'secondary' | 'ghost' | 'chip' | 'icon' | 'quiet' | 'danger' | undefined;
+interface ButtonBase {
   /** Primary and secondary height: `md` 44 px (flow screens), `lg` 48 px (Welcome, Unlock). */
   size?: 'md' | 'lg' | undefined;
   /** Ghost text colour: `accent` (default), `muted` or `link` (Explorer links). */
   tone?: 'accent' | 'muted' | 'link' | undefined;
-  /** Leading icon; for `icon` buttons the only content. */
+  /** Leading icon. */
   icon?: IconName | undefined;
   /** Icon size in px (default 20 for `icon`, 16 otherwise). */
   iconSize?: number | undefined;
@@ -25,8 +18,6 @@ export interface ButtonProps {
   href?: string | undefined;
   type?: 'button' | 'submit' | undefined;
   disabled?: boolean | undefined;
-  /** Accessible name; required for icon-only buttons. */
-  label?: string | undefined;
   pressed?: boolean | undefined;
   expanded?: boolean | undefined;
   onClick?: (() => void) | undefined;
@@ -35,25 +26,48 @@ export interface ButtonProps {
   children?: ComponentChildren | undefined;
 }
 
+/** An icon-only button: the icon is its only content, so it must have a name. */
+export interface IconButtonProps extends ButtonBase {
+  variant: 'icon';
+  icon: IconName;
+  /** Accessible name ("Back", "Settings", "Copy address Main"). */
+  label: string;
+}
+
+export interface TextButtonProps extends ButtonBase {
+  /**
+   * - `primary`: kit gradient with glow, full width. `secondary`: outline, full width.
+   * - `ghost`: text with an optional icon ("View on Explorer", "Show 1 empty address").
+   * - `chip`: small inline button (MAX, Paste). The 44 × 44 `icon` button: `IconButtonProps`.
+   * - `quiet` / `danger`: the pre-canvas styles, kept until every screen has moved.
+   */
+  variant?: 'primary' | 'secondary' | 'ghost' | 'chip' | 'quiet' | 'danger' | undefined;
+  /** Accessible name when the visible text is not enough. */
+  label?: string | undefined;
+}
+
+export type ButtonProps = IconButtonProps | TextButtonProps;
+
 /** Every button of the kit. */
-export function Button({
-  variant = 'primary',
-  size = 'md',
-  tone,
-  icon,
-  iconSize,
-  trailingIcon,
-  round = false,
-  href,
-  type = 'button',
-  disabled = false,
-  label,
-  pressed,
-  expanded,
-  onClick,
-  class: extra,
-  children,
-}: ButtonProps) {
+export function Button(props: ButtonProps) {
+  const {
+    variant = 'primary',
+    size = 'md',
+    tone,
+    icon,
+    iconSize,
+    trailingIcon,
+    round = false,
+    href,
+    type = 'button',
+    disabled = false,
+    label,
+    pressed,
+    expanded,
+    onClick,
+    class: extra,
+    children,
+  } = props;
   const classes = ['bp-btn', `bp-btn-${variant}`];
   if (size === 'lg') classes.push('bp-btn-lg');
   if (variant === 'ghost') classes.push(`bp-tone-${tone ?? 'accent'}`);

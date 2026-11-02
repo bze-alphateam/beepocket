@@ -3,9 +3,11 @@ import {
   AppearanceState,
   DEFAULT_APPEARANCE,
   isAppearance,
+  LocalAppearanceCache,
   resolveScheme,
   themeVars,
   type SchemeQuery,
+  type SyncStore,
 } from '.';
 
 class FakeQuery implements SchemeQuery {
@@ -41,7 +43,7 @@ describe('appearance', () => {
 
   it('follows the OS live only while set to system', () => {
     const query = new FakeQuery(true);
-    const state = new AppearanceState(query, undefined, 'system');
+    const state = new AppearanceState(query, { initial: 'system' });
     const seen: string[] = [];
     state.subscribe(() => seen.push(state.current()));
     query.flip(false);
@@ -55,7 +57,7 @@ describe('appearance', () => {
 
   it('toggles between explicit dark and light and saves each choice', () => {
     const save = vi.fn(() => Promise.resolve());
-    const state = new AppearanceState(new FakeQuery(false), save, 'system');
+    const state = new AppearanceState(new FakeQuery(false), { save, initial: 'system' });
     expect(state.current()).toBe('light');
     state.toggle();
     expect(state.appearance).toBe('dark');
@@ -66,7 +68,7 @@ describe('appearance', () => {
 
   it('does not save a loaded setting and ignores save failures', async () => {
     const save = vi.fn(() => Promise.reject(new Error('worker gone')));
-    const state = new AppearanceState(new FakeQuery(true), save);
+    const state = new AppearanceState(new FakeQuery(true), { save });
     state.load('light');
     expect(save).not.toHaveBeenCalled();
     state.set('dark');
@@ -89,6 +91,62 @@ describe('appearance', () => {
   });
 });
 
+class MemoryStore implements SyncStore {
+  readonly items = new Map<string, string>();
+  getItem(key: string): string | null {
+    return this.items.get(key) ?? null;
+  }
+  setItem(key: string, value: string): void {
+    this.items.set(key, value);
+  }
+}
+
+describe('first paint from the cached appearance', () => {
+  it('starts from the cached value, then the stored value wins and is cached', () => {
+    const store = new MemoryStore();
+    store.setItem('beepocket.appearance', 'light');
+    const cache = new LocalAppearanceCache(() => store);
+    const state = new AppearanceState(new FakeQuery(true), { cache });
+    // Before the worker answers: light at once, not the dark default.
+    expect(state.current()).toBe('light');
+    const seen: string[] = [];
+    state.subscribe(() => seen.push(state.current()));
+    state.load('dark');
+    expect(seen).toEqual(['dark']);
+    expect(store.getItem('beepocket.appearance')).toBe('dark');
+    // The next page opens dark straight away.
+    expect(new AppearanceState(new FakeQuery(false), { cache }).current()).toBe('dark');
+  });
+
+  it('caches a choice made in the popup', () => {
+    const store = new MemoryStore();
+    const state = new AppearanceState(new FakeQuery(true), {
+      cache: new LocalAppearanceCache(() => store),
+    });
+    state.set('system');
+    expect(store.getItem('beepocket.appearance')).toBe('system');
+  });
+
+  it('falls back to dark when the cache is empty, garbage or broken', () => {
+    const empty = new LocalAppearanceCache(() => new MemoryStore());
+    expect(new AppearanceState(new FakeQuery(false), { cache: empty }).current()).toBe('dark');
+    const garbage = new MemoryStore();
+    garbage.setItem('beepocket.appearance', 'sepia');
+    expect(new LocalAppearanceCache(() => garbage).read()).toBeNull();
+    const broken = new LocalAppearanceCache(() => {
+      throw new Error('storage blocked');
+    });
+    expect(broken.read()).toBeNull();
+    expect(() => {
+      broken.write('light');
+    }).not.toThrow();
+    const state = new AppearanceState(new FakeQuery(false), { cache: broken });
+    expect(state.current()).toBe('dark');
+    state.set('light');
+    expect(state.current()).toBe('light');
+  });
+});
+
 describe('onboarding board variables', () => {
   // Values the Onboarding board hard-codes for the default kit.
   it('mixes the default kit into the board values', () => {
@@ -96,10 +154,10 @@ describe('onboarding board variables', () => {
     expect(dark['--bp-mark-shadow']).toBe('0 14px 26px rgba(61,208,122,0.32)');
     expect(dark['--bp-pick-line']).toBe('rgba(61,208,122,0.6)');
     expect(dark['--bp-veil']).toBe('rgba(10,12,16,0.35)');
-    expect(dark['--bp-track']).toBe(dark['--bp-switch-off']);
+    expect(dark).not.toHaveProperty('--bp-track');
     const light = themeVars({ denom: null, branding: null, brandThemes: true, scheme: 'light' });
     expect(light['--bp-mark-shadow']).toBe('0 14px 22px rgba(26,122,67,0.22)');
-    expect(light['--bp-track']).toBe('#D5DAE1');
+    expect(light['--bp-switch-off']).toBe('#D5DAE1');
     expect(light['--bp-seg-on']).toBe('#FFFFFF');
     expect(light['--bp-secondary-fill']).toBe('#FFFFFF');
     expect(light['--bp-veil']).toBe('rgba(245,247,250,0.35)');
