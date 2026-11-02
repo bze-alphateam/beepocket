@@ -163,6 +163,63 @@
   overflow-wrap: anywhere;
 }
 
+.bp-dapp-raw {
+  max-height: 140px;
+  padding: 8px;
+  border: 1px solid var(--bp-line);
+  border-radius: 8px;
+  background: var(--bp-card);
+}
+
+.bp-dapp-together {
+  margin: 0;
+  font-weight: 600;
+}
+
+.bp-dapp-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bp-dapp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--bp-line);
+  border-radius: 12px;
+  background: var(--bp-card);
+}
+
+.bp-dapp-card-unknown {
+  border-color: var(--bp-warn-line);
+}
+
+.bp-dapp-card-dangerous {
+  border-color: var(--bp-bad-line);
+}
+
+.bp-dapp-cardno,
+.bp-dapp-cardline {
+  color: var(--bp-muted);
+  overflow-wrap: anywhere;
+}
+
+.bp-dapp-cardhero {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.bp-dapp-trust {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .bp-sites {
   display: flex;
   flex-direction: column;

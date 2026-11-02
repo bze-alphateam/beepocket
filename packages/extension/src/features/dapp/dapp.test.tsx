@@ -1,3 +1,4 @@
+import { encodeMsgSend, rawJson, summarise, type AnyMsg } from '@beepocket/core';
 import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ClientProvider } from '../../popup/client-context';
@@ -7,6 +8,7 @@ import type { Client } from '../../protocol/client';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { HomeEnvProvider, type HomeEnv } from '../home/env';
 import { LockEnvProvider } from '../lock/env';
+import { grantMsg, nothingMsg } from '../../dapp/test-support';
 import { RequestScreen } from './RequestScreen';
 
 afterEach(cleanup);
@@ -192,7 +194,7 @@ const SIGN: Extract<RequestView, { status: 'sign' }> = {
     memo: 'thanks',
   },
   rawJson: '[{"typeUrl":"/cosmos.bank.v1beta1.MsgSend"}]',
-  approvable: true,
+  messageJson: ['{"typeUrl":"/cosmos.bank.v1beta1.MsgSend"}'],
   locked: false,
   fee: { denom: 'ubze', amount: '2000', symbol: 'BZE', decimals: 6 },
   options: [
@@ -287,17 +289,168 @@ describe('the sign screen', () => {
     expect(button(t.host, 'Approve')).toBeUndefined();
     expect(button(t.host, 'Reject')).toBeDefined();
   });
+});
 
-  it('offers only Reject for a request it cannot show yet', async () => {
-    const t = signRig({
-      ...SIGN,
-      approvable: false,
-      summary: { ...SIGN.summary, level: 'unknown' },
+function found<T>(el: T | null): T {
+  if (el === null) throw new Error('element not found');
+  return el;
+}
+
+const ME = ADDRESSES[0]?.address ?? '';
+const OTHER = ADDRESSES[1]?.address ?? '';
+const sendMsg = (): AnyMsg =>
+  encodeMsgSend({
+    fromAddress: ME,
+    toAddress: OTHER,
+    amount: [{ denom: 'ubze', amount: '1000000' }],
+  });
+const grant = (): AnyMsg => grantMsg(ME, OTHER, '/cosmos.bank.v1beta1.MsgSend');
+
+/** A sign view for the messages, summarised by core exactly as the worker does. */
+async function signView(
+  messages: AnyMsg[],
+  options: { locked?: boolean } = {},
+): Promise<Extract<RequestView, { status: 'sign' }>> {
+  const summary = await summarise(messages, {
+    tokens: {
+      resolve: () =>
+        Promise.resolve({ ...BZE, kind: 'native' as const, source: 'builtin' as const }),
+    },
+    markets: { markets: () => Promise.resolve([]), liquidityPools: () => Promise.resolve([]) },
+    orders: { marketOrder: () => Promise.resolve(null) },
+    addressBook: () => null,
+  });
+  return {
+    ...SIGN,
+    summary,
+    rawJson: rawJson(messages),
+    messageJson: messages.map((m) => rawJson([m])),
+    locked: options.locked ?? false,
+  };
+}
+
+const disabled = (host: HTMLElement, name: string) => button(host, name)?.disabled;
+function setTick(host: HTMLElement): void {
+  const box = tick(host);
+  box.checked = true;
+  fireEvent(box, 'change');
+}
+const tick = (host: HTMLElement) =>
+  found(host.querySelector<HTMLInputElement>('input[type=checkbox]'));
+
+describe('the sign screen: risk levels', () => {
+  it('shows an unknown message with the amber line and its raw JSON open', async () => {
+    const t = signRig(await signView([nothingMsg()]));
+    await settle();
+    expect(t.host.textContent).toContain(
+      "BeePocket can't put this message in plain words. Check the details before approving.",
+    );
+    expect(t.host.querySelector('.bp-dapp-raw')?.textContent).toContain('/test.v1.MsgNothing');
+    expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
+    expect(disabled(t.host, 'Approve')).toBe(false);
+    expect(t.host.querySelector('input[type=checkbox]')).toBeNull();
+  });
+
+  it('keeps a dangerous request disabled until the tick, and approves with trusted', async () => {
+    const t = signRig(await signView([grant()]));
+    await settle();
+    expect(t.host.textContent).toContain('power over your address');
+    expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
+    expect(disabled(t.host, 'Approve')).toBe(true);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).not.toHaveBeenCalledWith('dapp.answer', expect.anything());
+
+    expect(t.host.textContent).toContain('I set this up myself and trust this address');
+    setTick(t.host);
+    await settle();
+    expect(disabled(t.host, 'Approve')).toBe(false);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      approve: true,
+      fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
+      trusted: true,
+    });
+  });
+
+  it('resets the tick when the fee token changes', async () => {
+    const t = signRig(await signView([grant()]));
+    await settle();
+    setTick(t.host);
+    await settle();
+    expect(disabled(t.host, 'Approve')).toBe(false);
+    fireEvent(
+      [...t.host.querySelectorAll('button')].find((b) => b.textContent.includes('▾')),
+      'click',
+    );
+    await settle();
+    fireEvent(
+      [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('OTH')),
+      'click',
+    );
+    await settle();
+    expect(tick(t.host).checked).toBe(false);
+    expect(disabled(t.host, 'Approve')).toBe(true);
+  });
+
+  it('numbers a normal and an unknown message and says both happen', async () => {
+    const t = signRig(await signView([sendMsg(), nothingMsg()]));
+    await settle();
+    const text = t.host.textContent;
+    expect(text).toContain('Signed together: both happen, or neither does');
+    expect(text).toContain('1 of 2');
+    expect(text).toContain('2 of 2');
+    const cards = [...t.host.querySelectorAll('.bp-dapp-card')];
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.className).toContain('bp-dapp-card-normal');
+    expect(cards[1]?.className).toContain('bp-dapp-card-unknown');
+    expect(cards[0]?.querySelector('.bp-dapp-raw')).toBeNull();
+    expect(cards[1]?.querySelector('.bp-dapp-raw')?.textContent).toContain('/test.v1.MsgNothing');
+    expect([...(cards[0]?.querySelectorAll('dt') ?? [])].map((d) => d.textContent)).toEqual([
+      'To',
+      'Amount',
+    ]);
+    expect(cards[0]?.textContent).toContain(OTHER);
+    expect(cards[0]?.textContent).toContain('1.00 BZE');
+    expect(cards[1]?.querySelectorAll('dt')).toHaveLength(0);
+    expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
+  });
+
+  it('turns red and needs the tick when one of several messages is dangerous', async () => {
+    const t = signRig(await signView([sendMsg(), grant()]));
+    await settle();
+    expect(t.host.querySelectorAll('.bp-dapp-card-dangerous')).toHaveLength(1);
+    expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
+    expect(disabled(t.host, 'Approve')).toBe(true);
+    setTick(t.host);
+    await settle();
+    expect(disabled(t.host, 'Approve')).toBe(false);
+  });
+
+  it('says all of these for more than two messages', async () => {
+    const t = signRig(await signView([sendMsg(), sendMsg(), sendMsg()]));
+    await settle();
+    expect(t.host.textContent).toContain('Signed together: all of these happen, or none does');
+    expect(t.host.textContent).toContain('3 of 3');
+  });
+
+  it('asks for the password and the tick in the weak lock', async () => {
+    const t = signRig(await signView([grant()], { locked: true }), {
+      'wallet.reauth': () => ok({ status: 'ok' }),
     });
     await settle();
-    expect(t.host.textContent).toContain("BeePocket can't show this request yet");
-    expect(button(t.host, 'Approve')).toBeUndefined();
-    expect(button(t.host, 'Message details')).toBeUndefined();
-    expect(button(t.host, 'Reject')).toBeDefined();
+    expect(t.host.querySelector('input[type=password]')).not.toBeNull();
+    const submit = () => found(t.host.querySelector<HTMLButtonElement>('button[type=submit]'));
+    expect(submit().className).toContain('bp-btn-danger');
+    const password = found(t.host.querySelector<HTMLInputElement>('input[type=password]'));
+    password.value = 'pw';
+    fireEvent(password, 'input');
+    await settle();
+    expect(submit().disabled).toBe(true);
+    setTick(t.host);
+    await settle();
+    expect(submit().disabled).toBe(false);
   });
 });

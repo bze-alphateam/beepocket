@@ -29,9 +29,13 @@ export const dapp = {
   'dapp.sign.approving': 'Signing',
   'dapp.sign.unlock': 'Unlock and approve',
   'dapp.sign.unlockHint': 'Signing needs your password.',
-  'dapp.sign.unsupported': "BeePocket can't show this request yet",
-  'dapp.sign.unsupportedHint':
-    'It is not safe to approve something that cannot be shown in plain words. Reject it.',
+  'dapp.sign.unknown':
+    "BeePocket can't put this message in plain words. Check the details before approving.",
+  'dapp.sign.dangerFallback': 'This message gives another address power over yours',
+  'dapp.sign.trust': 'I set this up myself and trust this address',
+  'dapp.sign.together.two': 'Signed together: both happen, or neither does',
+  'dapp.sign.together.many': 'Signed together: all of these happen, or none does',
+  'dapp.sign.cardNo': '{n} of {count}',
   'dapp.sign.changed': 'The network fee changed. Check the new numbers before you approve.',
   'dapp.sign.failed': 'The transaction could not be signed. Please try again.',
   'dapp.failed': 'The wallet service did not answer. Please try again.',

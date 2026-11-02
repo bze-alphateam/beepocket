@@ -16,8 +16,8 @@ export interface SignDetails {
   summary: TxSummary;
   /** The decoded messages as pretty JSON, for "Message details". */
   rawJson: string;
-  /** Only a request that is fully summarised and `normal` can be approved. */
-  approvable: boolean;
+  /** The decoded JSON of each message, same order as `summary.messages`. */
+  messageJson: string[];
   /** The weak lock: the screen asks the password before approving. */
   locked: boolean;
   /** The pre-selected fee, one of `options`. */

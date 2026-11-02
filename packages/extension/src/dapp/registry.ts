@@ -21,6 +21,8 @@ export interface UserAnswer {
   index?: number;
   /** The fee the user reviewed, for a request that signs. */
   fee?: ReviewedFee;
+  /** The tick a dangerous request needs. */
+  trusted?: boolean;
 }
 
 /**

@@ -37,7 +37,14 @@ export interface DappProtocol {
   'dapp.current': { req: Record<string, never>; res: RequestView };
   /** The user's answer: Cancel (`approve: false`) or Connect with the picked address `index`. */
   'dapp.answer': {
-    req: { id: string; approve: boolean; index?: number; fee?: ReviewedFee };
+    req: {
+      id: string;
+      approve: boolean;
+      index?: number;
+      fee?: ReviewedFee;
+      /** The user ticked "I set this up myself and trust this address" (dangerous requests). */
+      trusted?: boolean;
+    };
     res: Record<string, never>;
   };
 }

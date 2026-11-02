@@ -189,3 +189,54 @@ test('in the weak lock the sign screen goes through Unlock and approve', async (
     stop();
   }
 });
+
+test('a MsgGrant shows the red sign screen and Approve waits for the tick', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  const { dapp, stop } = await connectedDapp(context, extensionId);
+  try {
+    await dapp.getByLabel('Recipient').fill(RECIPIENT);
+    const [sign] = await Promise.all([
+      context.waitForEvent('page'),
+      dapp.getByRole('button', { name: 'Grant authz to address 2' }).click(),
+    ]);
+    const approve = sign.getByRole('button', { name: 'Approve' });
+    await expect(sign.getByRole('alert')).toContainText('power over your address');
+    await expect(approve).toHaveClass(/bp-btn-danger/);
+    await expect(approve).toBeDisabled();
+    await sign.getByLabel('I set this up myself and trust this address').check();
+    await expect(approve).toBeEnabled();
+    await approve.click();
+    await expect(dapp.getByRole('status')).toHaveText(`hash ${HASH.toLowerCase()}`);
+  } finally {
+    stop();
+  }
+});
+
+test('a send plus an unknown message shows two cards, the second with its raw JSON', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  const { dapp, stop } = await connectedDapp(context, extensionId);
+  try {
+    await dapp.getByLabel('Recipient').fill(RECIPIENT);
+    const [sign] = await Promise.all([
+      context.waitForEvent('page'),
+      dapp.getByRole('button', { name: 'Send + unknown message' }).click(),
+    ]);
+    await expect(sign.getByText('Signed together: both happen, or neither does')).toBeVisible();
+    const cards = sign.locator('.bp-dapp-card');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toContainText('1 of 2');
+    await expect(cards.nth(1)).toContainText('2 of 2');
+    await expect(cards.nth(1)).toContainText("can't put this message in plain words");
+    await expect(cards.nth(1).locator('.bp-dapp-raw')).toContainText('/test.v1.MsgNothing');
+    await sign.getByRole('button', { name: 'Reject' }).click();
+    await expect(dapp.getByRole('status')).toHaveText('error rejected');
+  } finally {
+    stop();
+  }
+});

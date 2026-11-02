@@ -10,6 +10,8 @@
     <button id="get-key" type="button">Get key</button>
     <label>Recipient <input id="to" type="text" /></label>
     <button id="send" type="button">Send 1 BZE</button>
+    <button id="grant" type="button">Grant authz to address 2</button>
+    <button id="send-unknown" type="button">Send + unknown message</button>
     <p id="result" role="status"></p>
     <script>
       // A plain page that talks to the raw window.beepocket; the connector replaces it later.
@@ -55,10 +57,29 @@
       const any = (typeUrl, value) => cat(textField(1, typeUrl), bytesField(2, value));
       const fromBase64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
-      function sendDoc(key, to) {
+      const sendMsg = (key, to) => {
         const coin = cat(textField(1, 'ubze'), textField(2, '1000000'));
         const msg = cat(textField(1, key.address), textField(2, to), bytesField(3, coin));
-        const bodyBytes = bytesField(1, any('/cosmos.bank.v1beta1.MsgSend', msg));
+        return any('/cosmos.bank.v1beta1.MsgSend', msg);
+      };
+      // A generic authorization to send on the signer's behalf: a dangerous message.
+      const grantMsg = (key, grantee) => {
+        const authorization = any(
+          '/cosmos.authz.v1beta1.GenericAuthorization',
+          textField(1, '/cosmos.bank.v1beta1.MsgSend'),
+        );
+        const msg = cat(
+          textField(1, key.address),
+          textField(2, grantee),
+          bytesField(3, bytesField(1, authorization)),
+        );
+        return any('/cosmos.authz.v1beta1.MsgGrant', msg);
+      };
+      // A message type the wallet has never heard of, with arbitrary bytes.
+      const nothingMsg = () => any('/test.v1.MsgNothing', Uint8Array.from([1, 2, 3, 250]));
+
+      function sendDoc(key, messages) {
+        const bodyBytes = cat(...messages.map((m) => bytesField(1, m)));
         const pubKey = any('/cosmos.crypto.secp256k1.PubKey', bytesField(1, key.pubKey));
         const signerInfo = cat(
           bytesField(1, pubKey),
@@ -70,7 +91,7 @@
         return { bodyBytes, authInfoBytes, chainId: CHAIN_ID, accountNumber: 7n };
       }
 
-      document.getElementById('send').addEventListener('click', () => {
+      const signAndSend = (messagesOf) => {
         void (async () => {
           try {
             const key = await window.beepocket.getKey(CHAIN_ID);
@@ -78,7 +99,7 @@
             const { signed, signature } = await window.beepocket.signDirect(
               CHAIN_ID,
               key.address,
-              sendDoc(key, to),
+              sendDoc(key, messagesOf(key, to)),
             );
             const txRaw = cat(
               bytesField(1, signed.bodyBytes),
@@ -92,6 +113,15 @@
             result.textContent = 'error ' + (error.code ?? error.message);
           }
         })();
+      };
+      document.getElementById('send').addEventListener('click', () => {
+        signAndSend((key, to) => [sendMsg(key, to)]);
+      });
+      document.getElementById('grant').addEventListener('click', () => {
+        signAndSend((key, to) => [grantMsg(key, to)]);
+      });
+      document.getElementById('send-unknown').addEventListener('click', () => {
+        signAndSend((key, to) => [sendMsg(key, to), nothingMsg()]);
       });
 
       document.getElementById('get-key').addEventListener('click', () => {

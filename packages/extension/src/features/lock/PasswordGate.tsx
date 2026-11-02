@@ -9,10 +9,13 @@ export interface PasswordGateProps {
   submitLabel?: string;
   /** The weak lock is lifted: continue with the action that asked for it. */
   onUnlocked: () => void;
+  /** Keep the button disabled until something else is done. */
+  hold?: boolean;
+  variant?: 'primary' | 'danger';
 }
 
 /** "Unlock and approve" in place: asks the password, calls `wallet.reauth`, no navigation. */
-export function PasswordGate({ label, submitLabel, onUnlocked }: PasswordGateProps) {
+export function PasswordGate({ label, submitLabel, onUnlocked, hold, variant }: PasswordGateProps) {
   const client = useClient();
   return (
     <PasswordForm
@@ -20,6 +23,8 @@ export function PasswordGate({ label, submitLabel, onUnlocked }: PasswordGatePro
       submitLabel={submitLabel ?? t('lock.gate.approve')}
       check={(password) => client.call('wallet.reauth', { password })}
       onSuccess={onUnlocked}
+      {...(hold === undefined ? {} : { hold })}
+      {...(variant === undefined ? {} : { variant })}
     />
   );
 }

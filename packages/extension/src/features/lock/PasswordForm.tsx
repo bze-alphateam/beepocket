@@ -13,6 +13,9 @@ export interface PasswordFormProps {
   onSuccess: () => void;
   /** Epoch ms the service is already blocking until (e.g. from `wallet.state`). */
   retryAt?: number | null;
+  /** The submit button waits for something else (e.g. a tick) and takes this style. */
+  hold?: boolean;
+  variant?: 'primary' | 'danger';
 }
 
 /** Password field + submit with the wrong-password error and the throttle countdown. */
@@ -77,7 +80,11 @@ export function PasswordForm(props: PasswordFormProps) {
           </div>
         </>
       )}
-      <Button type="submit" disabled={blocked || busy || password === ''}>
+      <Button
+        type="submit"
+        variant={props.variant ?? 'primary'}
+        disabled={blocked || busy || password === '' || props.hold === true}
+      >
         {busy ? t('lock.unlocking') : props.submitLabel}
       </Button>
     </form>

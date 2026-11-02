@@ -39,10 +39,12 @@ export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
         return fail(WalletErrorCodes.needsPassword, 'Enter your password to approve this.');
       }
       const p = prep.prepared;
-      // Hiding the button is not enough: anything but a plainly summarised request is refused
-      // here, and the page is told so instead of waiting.
-      if (p.summary.level !== 'normal') {
-        return ok(refuse(DappErrorCodes.invalidRequest, "BeePocket can't show this request yet."));
+      // Hiding the button is not enough: a dangerous request needs the tick, checked here too,
+      // and the page is told so instead of waiting.
+      if (p.summary.level === 'dangerous' && user.trusted !== true) {
+        return ok(
+          refuse(DappErrorCodes.invalidRequest, 'The request was not confirmed as trusted.'),
+        );
       }
       const reviewed = user.fee;
       if (!reviewed) return fail(ErrorCodes.badRequest, 'dapp.answer needs the reviewed fee.');
