@@ -1,0 +1,21 @@
+/* Tag: the small uppercase status label next to a row title (OPEN, FAILED). */
+.bp-tag {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: normal;
+  text-transform: uppercase;
+}
+
+.bp-tag-accent {
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+}
+
+.bp-tag-bad {
+  background: var(--bp-bad-soft);
+  color: var(--bp-bad-text);
+}

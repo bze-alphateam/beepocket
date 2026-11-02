@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityAmount } from '../../protocol';
-import { amountParts, amountText } from './format';
+import { amountParts, amountText, whenText } from './format';
 
 const amt = (amount: string, over: Partial<ActivityAmount> = {}): ActivityAmount => ({
   denom: 'ubze',
@@ -68,5 +68,19 @@ describe('amountParts', () => {
     const known = [{ denom: 'uoth', symbol: 'OTH', decimals: 2 }];
     const unscanned = amt('500', { denom: 'uoth', symbol: null, exponent: null });
     expect(amountParts(unscanned, known)).toMatchObject({ symbol: 'OTH', unknown: false });
+  });
+});
+
+describe('whenText', () => {
+  const at = new Date(2026, 9, 31, 20, 54).toISOString();
+
+  it('reads 24-hour time, then day and short month', () => {
+    expect(whenText(at, 'en-US')).toBe('20:54 · 31 Oct');
+    expect(whenText(at, 'en-GB')).toBe('20:54 · 31 Oct');
+    expect(whenText(new Date(2026, 10, 2, 8, 5).toISOString(), 'en-US')).toBe('08:05 · 2 Nov');
+  });
+
+  it('is empty for a time it cannot read', () => {
+    expect(whenText('not a time')).toBe('');
   });
 });

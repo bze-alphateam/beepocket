@@ -8,13 +8,22 @@ export function signedAmount(base: string, decimals: number): string {
   return `${n < 0n ? '−' : '+'}${formatAmount(n < 0n ? -n : n, decimals)}`;
 }
 
-/** "14:05 · 31 Oct", in the browser's local time and language. */
+/** "14:05 · 31 Oct": 24-hour time, then day and short month, in the browser's local time. */
 export function whenText(iso: string, locale?: string | string[]): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return '';
-  const hour = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(at);
-  const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(at);
-  return `${hour} · ${date}`;
+  const hour = new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(at);
+  // Day before month whatever the language's own order ("31 Oct", never "Oct 31").
+  const parts = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).formatToParts(
+    at,
+  );
+  const day = parts.find((p) => p.type === 'day')?.value ?? '';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '';
+  return `${hour} · ${day} ${month}`;
 }
 
 /** The unknown-token forms: `ibc/6490…9E0F`, `factory/…/name`; any other denom stays whole. */

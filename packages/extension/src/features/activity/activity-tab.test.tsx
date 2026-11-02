@@ -1,5 +1,7 @@
 import { render as preactRender } from 'preact';
 import { act } from 'preact/test-utils';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Client } from '../../protocol/client';
 import {
@@ -8,6 +10,8 @@ import {
   type ActivityAmount,
   type ActivityItem,
   type ActivityPageResult,
+  type Contact,
+  type OwnAddress,
   type ListedToken,
   type Method,
   type RequestOf,
@@ -18,7 +22,8 @@ import {
 import { applyTheme } from '../../theme';
 import { ClientProvider } from '../../popup/client-context';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
-import { ActivityTab } from './ActivityTab';
+import { ActivityFilterChip, ActivityTab } from './ActivityTab';
+import { createAddressFilter, type AddressFilter } from './filter';
 
 afterEach(cleanup);
 
@@ -45,16 +50,20 @@ const amt = (amount: string, over: Partial<ActivityAmount> = {}): ActivityAmount
   ...over,
 });
 
+/** A transaction hash the way CometBFT writes it: 64 hex characters. */
+const hash = (n: number) => n.toString(16).toUpperCase().padStart(64, '0');
+
 const item = (n: number, over: Partial<ActivityItem> = {}): ActivityItem => ({
   addressIndex: 0,
   addressLabel: 'Main',
   time: '2026-10-31T13:39:14Z',
-  txHash: `TX${String(n)}`,
+  txHash: hash(n),
   kind: 'send',
   category: 'received',
   isSigner: false,
   success: true,
   counterparty: null,
+  counterpartyAddress: null,
   amounts: [amt('150')],
   feeOnly: false,
   ...over,
@@ -74,17 +83,21 @@ function setup(
   addresses = [addr(0, 'Main')],
   balances: TokenBalances | null = null,
   tokens: ListedToken[] = [PAGE],
+  filter: AddressFilter = createAddressFilter(),
+  book: { contacts: Contact[]; own: OwnAddress[] } = { contacts: [], own: [] },
 ) {
   const calls: RequestOf<'activity.page'>[] = [];
   const client: Client = {
     call: vi.fn(<M extends Method>(method: M, req: RequestOf<M>) => {
+      if (method === 'book.list') return Promise.resolve(ok(book) as never);
       calls.push(req as RequestOf<'activity.page'>);
       return Promise.resolve(pages(req as RequestOf<'activity.page'>) as never);
     }),
   };
-  const view = (b: TokenBalances | null) => (
+  const view = (b: TokenBalances | null, list = addresses) => (
     <ClientProvider client={client}>
-      <ActivityTab tokens={tokens} addresses={addresses} balances={b} />
+      <ActivityFilterChip addresses={list} filter={filter} />
+      <ActivityTab tokens={tokens} addresses={list} balances={b} filter={filter} />
     </ClientProvider>
   );
   const { host } = render(view(balances));
@@ -99,9 +112,9 @@ function setup(
     host,
     calls,
     tick,
-    update: (b: TokenBalances | null) => {
+    update: (b: TokenBalances | null, list = addresses) => {
       void act(() => {
-        preactRender(view(b), host);
+        preactRender(view(b, list), host);
       });
     },
   };
@@ -135,11 +148,11 @@ describe('ActivityTab card', () => {
       .map((a, i) => ({ ...a, denom: `${a.denom}${String(i)}` }));
     const host = await cards([item(1, { kind: 'dex_swap', counterparty: 'BZE/PAGE', amounts })]);
     const card = host.querySelector('a.bp-act-card');
-    expect(card?.querySelector('.bp-act-summary')?.textContent).toContain('Swapped');
+    expect(card?.querySelector('.bp-act-what')?.textContent).toBe('Swap');
     expect(card?.querySelector('.bp-act-address')?.textContent).toContain('Main');
     expect(card?.querySelector('.bp-act-address')?.textContent).toContain('BZE/PAGE');
     expect(host.querySelectorAll('a.bp-act-card .bp-act-asset')).toHaveLength(n);
-    expect(card?.getAttribute('href')).toBe('https://explorer.example/txs/TX1');
+    expect(card?.getAttribute('href')).toBe(`https://explorer.example/txs/${hash(1)}`);
   });
 
   it('renders a 25-digit raw amount of an unknown token in full, with a short muted symbol', async () => {
@@ -221,8 +234,9 @@ describe('ActivityTab card', () => {
     ]);
     const card = host.querySelector('a.bp-act-card');
     expect(card?.hasAttribute('data-failed')).toBe(true);
-    expect(card?.querySelector('.bp-act-tag')?.textContent).toBe('Failed');
-    expect(card?.querySelector('.bp-act-what')?.textContent).toContain('Sent');
+    expect(card?.querySelector('.bp-tag-bad')?.textContent).toBe('Failed');
+    expect(card?.querySelector('.bp-icon-tile-bad')).not.toBeNull();
+    expect(card?.querySelector('.bp-act-what')?.textContent).toContain('Send');
     expect(card?.getAttribute('aria-label')).toContain('Failed');
     expect(card?.getAttribute('aria-label')).toContain('Opens on Explorer');
   });
@@ -253,11 +267,11 @@ describe('ActivityTab', () => {
     await tick();
     expect(calls[0]).toEqual({});
     const rows = [...host.querySelectorAll('li')].map((li) => li.textContent);
-    expect(rows[0]).toContain('Received');
+    expect(rows[0]).toContain('Receive');
     expect(rows[0]).toContain('+1.50');
     expect(rows[0]).toContain('PAGE');
     expect(rows[0]).toContain('Exchange');
-    expect(rows[1]).toContain('Swapped');
+    expect(rows[1]).toContain('Swap');
     expect(rows[1]).toContain('Failed');
     expect(rows[1]).toContain('−25');
     expect(rows[2]).toContain('Network fee');
@@ -297,7 +311,7 @@ describe('ActivityTab', () => {
     expect(first).toContain('+42');
     expect(first).toContain('factory/…/zzz');
     expect(first.indexOf('−2.00')).toBeLessThan(first.indexOf('+5.00'));
-    expect(rows[1]?.textContent).toContain('Swapped');
+    expect(rows[1]?.textContent).toContain('Swap');
     expect(rows[1]?.textContent).not.toMatch(/\b0\b/);
   });
 
@@ -334,7 +348,7 @@ describe('ActivityTab', () => {
     expect(host.textContent).toContain("Couldn't load activity");
     expect(host.textContent).not.toContain('No activity in the last 30 days');
     down = false;
-    click(host, 'Retry');
+    click(host, 'Try again');
     await tick();
     expect(host.querySelectorAll('li')).toHaveLength(1);
     expect(host.textContent).not.toContain("Couldn't load activity");
@@ -356,13 +370,13 @@ describe('ActivityTab', () => {
     expect(host.querySelectorAll('li')).toHaveLength(1);
     expect(host.textContent).toContain("Couldn't load activity");
     down = false;
-    click(host, 'Retry');
+    click(host, 'Try again');
     await tick();
     expect(calls.at(-1)).toEqual({ cursor: 'c1' });
     expect(host.querySelectorAll('li')).toHaveLength(2);
   });
 
-  it('filters by address and labels rows when several addresses are merged', async () => {
+  it('filters by address from the chip sheet and labels rows when several addresses are merged', async () => {
     const { host, tick, calls } = setup(
       (req) =>
         reply({
@@ -371,15 +385,52 @@ describe('ActivityTab', () => {
       [addr(0, 'Main'), addr(1, 'Savings')],
     );
     await tick();
+    expect(host.querySelector('select')).toBeNull();
     expect(host.querySelector('li')?.textContent).toContain('Savings');
-    const select = host.querySelector('select');
-    if (!select) throw new Error('no address filter');
-    select.value = '0';
-    fireEvent(select, 'change');
+    const chip = host.querySelector('button.bp-dropdown');
+    expect(chip?.getAttribute('aria-label')).toBe('Filter activity by address, now All addresses');
+    fireEvent(chip, 'click');
+    const sheet = host.querySelector('[role="dialog"]');
+    expect(sheet?.getAttribute('aria-label')).toBe('Show activity for');
+    const options = [...(sheet?.querySelectorAll('[role="radio"]') ?? [])];
+    expect(options.map((o) => o.querySelector('.bp-choice-label')?.textContent)).toEqual([
+      'All addresses',
+      'Main',
+      'Savings',
+    ]);
+    expect(options[0]?.textContent).toContain('2 addresses');
+    fireEvent(options[1], 'click');
     await tick();
     expect(calls.at(-1)).toEqual({ addressIndex: 0 });
+    expect(host.querySelector('button.bp-dropdown')?.getAttribute('aria-label')).toBe(
+      'Filter activity by address, now Main',
+    );
+    expect(host.querySelector('.bp-filter-chip')?.hasAttribute('data-on')).toBe(true);
     // The card names its address whatever the filter says (the stub answers with Savings).
     expect(host.querySelector('.bp-act-addr-label')?.textContent).toBe('Savings');
+  });
+
+  it('has no chip for a single address', async () => {
+    const { host, tick } = setup(() => reply({ items: [item(1)] }));
+    await tick();
+    expect(host.querySelector('.bp-dropdown')).toBeNull();
+  });
+
+  it('reads a filter on an address the wallet no longer has as all addresses', async () => {
+    const filter = createAddressFilter();
+    filter.set(2);
+    const { host, tick, calls } = setup(
+      () => reply({ items: [item(1)] }),
+      [addr(0, 'Main'), addr(1, 'Savings')],
+      null,
+      [PAGE],
+      filter,
+    );
+    await tick();
+    expect(calls[0]).toEqual({});
+    expect(host.querySelector('button.bp-dropdown')?.getAttribute('aria-label')).toBe(
+      'Filter activity by address, now All addresses',
+    );
   });
 
   it('starts over when the balance total changes', async () => {
@@ -441,5 +492,257 @@ describe('ActivityTab', () => {
     // The tab draws only with those variables: no scheme-specific markup to differ.
     expect(host.querySelectorAll('li')).toHaveLength(2);
     expect(host.querySelectorAll('.bp-act-card')).toHaveLength(2);
+  });
+});
+
+/** Scan's documented kinds (the words test's fixture): every one needs an icon and an arrow. */
+const KINDS = (
+  JSON.parse(
+    readFileSync(join(import.meta.dirname, '../../../test/fixtures/scan-kinds.json'), 'utf8'),
+  ) as { kinds: string[] }
+).kinds;
+
+describe('ActivityTab kinds', () => {
+  const render1 = async (over: Partial<ActivityItem>) => {
+    const { host, tick } = setup(() =>
+      reply({ items: [item(1, { counterparty: 'Alex', ...over })] }),
+    );
+    await tick();
+    const card = host.querySelector('a.bp-act-card');
+    if (!card) throw new Error('no card');
+    return card;
+  };
+  const iconOf = (card: Element) =>
+    card.querySelector('.bp-icon-tile [data-icon]')?.getAttribute('data-icon');
+  const arrowOf = (card: Element) => card.querySelector('.bp-act-arrow')?.textContent ?? null;
+
+  it.each(KINDS.flatMap((kind) => [true, false].map((isSigner) => [kind, isSigner] as const)))(
+    '%s (signer %s) has a kind icon on the soft disc and an arrow',
+    async (kind, isSigner) => {
+      const card = await render1({ kind, isSigner, category: 'other' });
+      expect(iconOf(card)).toBeDefined();
+      expect(iconOf(card)).not.toBe('dot');
+      expect(card.querySelector('.bp-icon-tile-soft')).not.toBeNull();
+      expect(['→', '←', '·']).toContain(arrowOf(card));
+    },
+  );
+
+  it.each([
+    ['sent', 'send', '→', 'Send'],
+    ['received', 'receive', '←', 'Receive'],
+  ])('reads a send by its %s category', async (category, icon, arrow, words) => {
+    const card = await render1({ kind: 'send', category });
+    expect(iconOf(card)).toBe(icon);
+    expect(arrowOf(card)).toBe(arrow);
+    expect(card.querySelector('.bp-act-what')?.textContent).toBe(words);
+  });
+
+  it('draws a swap with the swap icon and a dot between address and pair', async () => {
+    const card = await render1({ kind: 'dex_swap', counterparty: 'BZE/USDC' });
+    expect(iconOf(card)).toBe('swap');
+    expect(card.querySelector('.bp-act-address')?.textContent).toBe('Main·BZE/USDC');
+  });
+
+  it('gives an unknown kind a neutral dot icon and no arrow', async () => {
+    const card = await render1({ kind: 'brand_new_kind' });
+    expect(iconOf(card)).toBe('dot');
+    expect(card.querySelector('.bp-icon-tile-inset')).not.toBeNull();
+    expect(card.querySelector('.bp-act-arrow')).toBeNull();
+    expect(card.querySelector('.bp-act-what')?.textContent).toBe('Transaction');
+    expect(card.querySelector('.bp-act-cp')?.textContent).toBe('Alex');
+    expect(card.querySelector('.bp-act-amount')?.textContent).toBe('1.50');
+  });
+
+  it('keeps the sign of a known kind', async () => {
+    const card = await render1({ kind: 'dex_swap', amounts: [amt('150'), amt('-25')] });
+    expect([...card.querySelectorAll('.bp-act-amount')].map((a) => a.textContent)).toEqual([
+      '+1.50',
+      '−0.25',
+    ]);
+  });
+
+  it('shows the time under the amounts and colours them by sign', async () => {
+    const card = await render1({ amounts: [amt('-2500'), amt('700', { denom: 'ubze' })] });
+    expect(card.querySelector('.bp-feed-row-caption')?.textContent).toMatch(/·/);
+    const amounts = [...card.querySelectorAll('.bp-feed-row-value .bp-act-amount')];
+    expect(amounts.map((a) => a.textContent)).toEqual(['−25.00', '+7.00']);
+    expect(amounts.map((a) => a.hasAttribute('data-negative'))).toEqual([true, false]);
+  });
+});
+
+describe('ActivityTab states', () => {
+  it('shows the empty state with its icon, words and the Explorer link', async () => {
+    const { host, tick } = setup(() => reply({}));
+    await tick();
+    expect(host.querySelector('.bp-empty [data-icon="activity"]')).not.toBeNull();
+    expect(host.querySelector('.bp-empty-sub')?.textContent).toBe(
+      'Sends, swaps and orders show up here.',
+    );
+    expect(host.textContent).not.toContain("That's everything");
+    expect(host.querySelector('.bp-act-end a')?.getAttribute('href')).toBe(
+      'https://explorer.example/accounts/bze1a',
+    );
+  });
+
+  it('says how many rows show while more can load', async () => {
+    const { host, tick } = setup(() =>
+      reply({ items: [item(1), item(2)], cursor: 'c1', done: false }),
+    );
+    await tick();
+    expect(host.querySelector('.bp-act-foot')?.textContent).toBe('Showing 2 · last 30 days');
+    expect(host.querySelector('.bp-act-end')).toBeNull();
+  });
+
+  it('shows the error as an empty state with a ghost Try again', async () => {
+    const { host, tick } = setup(() => fail('activity-unavailable', 'down'));
+    await tick();
+    expect(host.querySelector('[role="alert"] .bp-empty-title')?.textContent).toBe(
+      "Couldn't load activity",
+    );
+    const retry = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Try again');
+    expect(retry?.className).toContain('bp-btn-ghost');
+  });
+});
+
+describe('ActivityTab links', () => {
+  it('links a real transaction hash and leaves any other hash unlinked', async () => {
+    const { host, tick } = setup(() =>
+      reply({
+        items: [
+          item(1),
+          item(2, { txHash: '../../evil?x=1' }),
+          item(3, { txHash: 'ab'.repeat(31) }),
+          item(4, { txHash: null }),
+        ],
+      }),
+    );
+    await tick();
+    const rows = [...host.querySelectorAll('.bp-act-card')];
+    expect(rows.map((r) => r.tagName)).toEqual(['A', 'DIV', 'DIV', 'A']);
+    expect(rows[0]?.getAttribute('href')).toBe(`https://explorer.example/txs/${hash(1)}`);
+    expect(rows[1]?.getAttribute('aria-label')).not.toContain('Opens on Explorer');
+    // A block-level row has no transaction: it opens the account page.
+    expect(rows[3]?.getAttribute('href')).toBe('https://explorer.example/accounts/bze1a');
+    expect(host.querySelector('a[href*="evil"]')).toBeNull();
+  });
+});
+
+describe('ActivityTab names', () => {
+  const ALEX = 'bze1alexalexalexalexalexalexalexalexalexale';
+  const SAVINGS = 'bze1savingssavingssavingssavingssavingssav';
+  const OTHER = 'bze1otherotherotherotherotherotherotherothe';
+
+  it("names a counterparty from the address book or the wallet, else shows Scan's short form once", async () => {
+    const { host, tick } = setup(
+      () =>
+        reply({
+          items: [
+            item(1, { counterparty: 'bze1alex…xale', counterpartyAddress: ALEX }),
+            item(2, { counterparty: 'bze1savi…ssav', counterpartyAddress: SAVINGS }),
+            item(3, { counterparty: 'bze1othe…othe', counterpartyAddress: OTHER }),
+          ],
+        }),
+      undefined,
+      null,
+      [PAGE],
+      undefined,
+      {
+        contacts: [{ name: 'Alex', address: ALEX }],
+        own: [{ label: 'Savings', address: SAVINGS }],
+      },
+    );
+    await tick();
+    const cps = [...host.querySelectorAll('.bp-act-cp')];
+    expect(cps.map((c) => c.textContent)).toEqual(['Alex', 'Savings', 'bze1oth…rothe']);
+    expect(cps.map((c) => c.hasAttribute('data-mono'))).toEqual([false, false, true]);
+    expect(host.querySelector('a.bp-act-card')?.getAttribute('aria-label')).toContain('Main Alex');
+  });
+});
+
+describe('ActivityTab paging', () => {
+  it('reads one page per Load more, however often it is pressed', async () => {
+    const { host, tick, calls } = setup((req) =>
+      req.cursor === undefined
+        ? reply({ items: [item(1)], cursor: 'c1', done: false })
+        : reply({ items: [item(2)] }),
+    );
+    await tick();
+    const more = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Load more');
+    if (!more) throw new Error('no Load more');
+    // A double click: both presses land before the button re-renders.
+    void act(() => {
+      more.click();
+      more.click();
+    });
+    await tick();
+    expect(calls).toEqual([{}, { cursor: 'c1' }]);
+    expect(host.querySelectorAll('li')).toHaveLength(2);
+  });
+
+  it('reads on past an empty first page that still has older pages', async () => {
+    const { host, tick, calls } = setup((req) =>
+      req.cursor === undefined
+        ? reply({ items: [], cursor: 'c1', done: false })
+        : reply({ items: [item(1)] }),
+    );
+    await tick();
+    expect(calls).toEqual([{}, { cursor: 'c1' }]);
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+  });
+
+  it('shows the empty state, not a bare Load more, after three empty pages', async () => {
+    const { host, tick, calls } = setup(() => reply({ items: [], cursor: 'c', done: false }));
+    await tick();
+    await tick();
+    expect(calls).toHaveLength(3);
+    expect(host.querySelector('.bp-empty-title')?.textContent).toBe(
+      'No activity in the last 30 days',
+    );
+    expect(host.textContent).toContain('Load more');
+  });
+});
+
+describe('ActivityTab filter by keyboard', () => {
+  it('opens from the focused chip, moves focus into the sheet and picks with the keyboard', async () => {
+    const { host, tick, calls } = setup(
+      () => reply({ items: [item(1)] }),
+      [addr(0, 'Main'), addr(1, 'Savings')],
+    );
+    await tick();
+    const chip = host.querySelector<HTMLButtonElement>('button.bp-dropdown');
+    if (!chip) throw new Error('no chip');
+    expect(chip.tagName).toBe('BUTTON');
+    chip.focus();
+    // Enter or Space on a focused button is a click.
+    fireEvent(chip, 'click');
+    const sheet = host.querySelector('[role="dialog"]');
+    expect(document.activeElement).toBe(sheet);
+    const tab = () => {
+      fireEvent(document.body, 'keydown', { key: 'Tab' });
+    };
+    tab();
+    const radios = [...(sheet?.querySelectorAll('[role="radio"]') ?? [])];
+    expect(document.activeElement).toBe(radios[0]);
+    // Shift+Tab from the first option wraps to the last one (Savings).
+    fireEvent(document.body, 'keydown', { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(radios[2]);
+    fireEvent(document.activeElement, 'click');
+    await tick();
+    expect(calls.at(-1)).toEqual({ addressIndex: 1 });
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(host.querySelector('button.bp-dropdown'));
+  });
+
+  it('closes on Escape without changing the filter', async () => {
+    const { host, tick, calls } = setup(
+      () => reply({ items: [item(1)] }),
+      [addr(0, 'Main'), addr(1, 'Savings')],
+    );
+    await tick();
+    fireEvent(host.querySelector('button.bp-dropdown'), 'click');
+    fireEvent(document.body, 'keydown', { key: 'Escape' });
+    await tick();
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(calls).toEqual([{}]);
   });
 });

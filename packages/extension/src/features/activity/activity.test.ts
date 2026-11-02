@@ -296,6 +296,9 @@ describe('activity.page', () => {
       expect.stringContaining('…'),
       null,
     ]);
+    // The full address travels too, so the popup can name it from the address book.
+    const full = 'bze1counterpartyaddressxxxxxxxxxxxxxxxxxxxxx';
+    expect(v.items.map((i) => i.counterpartyAddress)).toEqual([full, full, full, null]);
   });
 
   it('rejects a cursor that is not its own and a bad payload', async () => {

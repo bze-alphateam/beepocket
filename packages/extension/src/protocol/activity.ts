@@ -21,6 +21,8 @@ export interface ActivityItem {
   success: boolean;
   /** Label, else moniker, else the short address; null when Scan names no single other party. */
   counterparty: string | null;
+  /** The other party's full address, for the wallet's own names (contacts, its addresses). */
+  counterpartyAddress: string | null;
   /** Every non-zero change of this address in the transaction, largest absolute value first; minus the fee on a fee-only row. */
   amounts: ActivityAmount[];
   /** The row's only effect is a fee paid by this address. */

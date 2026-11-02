@@ -1,10 +1,12 @@
+import { shortAddress } from '@beepocket/core';
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { ActivityItem, ListedToken, TokenBalances, WalletAddress } from '../../protocol';
 import { useClient } from '../../popup/client-context';
-import { Banner, Button, Spinner } from '../../ui';
+import { Button, EmptyState, FeedRow, FilterChip, Spinner, Tag } from '../../ui';
+import { useAddressFilter, type AddressFilter } from './filter';
 import { amountParts, whenText } from './format';
-import { wordsFor } from './words';
+import { lookFor } from './words';
 
 export interface ActivityTabProps {
   /** The wallet's tokens: a row's token Scan has no symbol for still reads as the wallet knows it. */
@@ -12,6 +14,8 @@ export interface ActivityTabProps {
   addresses: WalletAddress[];
   /** A change of the total means a transaction landed: the feed starts over. */
   balances: TokenBalances | null;
+  /** Which address the list shows; the chip in the tabs row sets it. */
+  filter: AddressFilter;
 }
 
 interface Feed {
@@ -22,6 +26,8 @@ interface Feed {
   /** The last read failed; `items` and `cursor` are still good for a retry. */
   error: boolean;
   busy: boolean;
+  /** Pages in a row that came back empty while the list is still empty. */
+  empties: number;
 }
 
 const FRESH: Feed = {
@@ -31,134 +37,154 @@ const FRESH: Feed = {
   explorer: '',
   error: false,
   busy: true,
+  empties: 0,
 };
 
-const ICONS = {
-  out: 'M7 17L17 7M9 7h8v8',
-  in: 'M17 7L7 17M15 17H7V9',
-  swap: 'M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7',
-  other: 'M12 8v8M8 12h8',
-} as const;
+/** How many empty pages in a row the tab reads on its own before it shows the empty state. */
+const AUTO_PAGES = 3;
 
-type Direction = 'out' | 'in' | 'both';
+/** A CometBFT transaction hash: 32 bytes in hex. */
+const TX_HASH = /^[0-9A-Fa-f]{64}$/;
 
-/** Which way value moved for this address: from the sign of its changes. */
-function directionOf(item: ActivityItem): Direction {
-  const signs = new Set(item.amounts.map((a) => (a.amount.startsWith('-') ? 'out' : 'in')));
-  if (signs.size === 1) return signs.has('out') ? 'out' : 'in';
-  return 'both';
+/**
+ * The explorer page of a transaction, next to the account page the service points at; the
+ * account page for a block-level row, and no link at all for a hash that isn't one.
+ */
+function txUrl(explorer: string, hash: string | null): string | undefined {
+  if (hash === null) return explorer;
+  if (!TX_HASH.test(hash)) return undefined;
+  return `${explorer.replace(/\/accounts\/[^/]*$/, '')}/txs/${hash}`;
 }
 
-const ARROW: Record<Direction, string> = { out: '→', in: '←', both: '·' };
+/** The wallet's own names for addresses: contacts first, then its own labels. */
+type Names = ReadonlyMap<string, string>;
 
-/** The explorer page of a transaction, next to the account page the service points at. */
-function txUrl(explorer: string, hash: string | null): string {
-  const base = explorer.replace(/\/accounts\/[^/]*$/, '');
-  return hash === null ? explorer : `${base}/txs/${hash}`;
-}
+/** "bze1q7z…2l0yc": the board's form of an address, short enough to leave the label room. */
+const compact = (address: string) =>
+  address.length > 14 ? `${address.slice(0, 7)}…${address.slice(-5)}` : address;
+
+/** Strips the + or − of an amount whose direction the wallet can't vouch for. */
+const unsigned = (value: string) => value.replace(/^[+−]/, '');
 
 interface CardProps {
   item: ActivityItem;
   explorer: string;
   known: readonly ListedToken[];
+  names: Names;
 }
 
-/** One transaction: summary, address, then one row per asset; the whole card opens the Explorer. */
-function ActivityCard({ item, explorer, known }: CardProps) {
-  const title = item.feeOnly ? t('activity.fee') : wordsFor({ ...item, success: true });
-  const dir = directionOf(item);
+/** One transaction (`W-Activity`): disc, words over address and counterparty, amounts over time. */
+function ActivityCard({ item, explorer, known, names }: CardProps) {
+  const look = lookFor({ ...item, success: true });
+  const title = item.feeOnly ? t('activity.fee') : look.words;
   const when = whenText(item.time);
+  const href = txUrl(explorer, item.txHash);
   const failed = !item.success;
-  const parts = item.amounts.map((a) => amountParts(a, known));
-  const mono = item.counterparty !== null && /^bze1[0-9a-z…]+$/.test(item.counterparty);
+  // An unknown kind says nothing about which way value moved: its amounts carry no sign.
+  const parts = item.amounts
+    .map((a) => amountParts(a, known))
+    .map((p) => (look.dir === null ? { ...p, value: unsigned(p.value) } : p));
+  const full = item.counterpartyAddress;
+  const named = full === null ? undefined : names.get(full);
+  // Scan's short address, when it has no name for the party: shown in the board's compact form.
+  const mono =
+    named === undefined && item.counterparty !== null && /^bze1[0-9a-z…]+$/.test(item.counterparty);
+  const counterparty = named ?? (mono && full !== null ? compact(full) : item.counterparty);
   const label = [
     title,
     parts
       .map((p) => `${p.value} ${p.unknown ? `${t('activity.unknown')} ` : ''}${p.symbol}`)
       .join(', '),
-    `${item.addressLabel}${item.counterparty === null ? '' : ` ${item.counterparty}`}`,
+    `${item.addressLabel}${counterparty === null ? '' : ` ${counterparty}`}`,
     when,
     failed ? t('activity.tag.failed') : '',
   ]
     .filter((x) => x !== '')
     .join(', ');
   return (
-    <a
+    <FeedRow
       class="bp-act-card"
-      data-failed={failed ? '' : null}
-      href={txUrl(explorer, item.txHash)}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`${label}. ${t('activity.opens')}`}
-    >
-      <span class="bp-act-top">
-        <span class="bp-act-icon" aria-hidden="true" data-failed={failed ? '' : null}>
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path
-              d={
-                item.amounts.length > 1 && dir === 'both'
-                  ? ICONS.swap
-                  : dir === 'both'
-                    ? ICONS.other
-                    : ICONS[dir]
-              }
-            />
-          </svg>
-        </span>
-        <span class="bp-act-head">
-          <span class="bp-act-summary">
-            <span class="bp-act-what">
-              {title}
-              {failed && <span class="bp-act-tag">{t('activity.tag.failed')}</span>}
-            </span>
-            <span class="bp-act-when">{when}</span>
-          </span>
-          <span class="bp-act-address">
-            <span class="bp-act-addr-label">{item.addressLabel}</span>
-            {item.feeOnly && item.kind !== 'fee_only' && (
-              <span class="bp-act-arrow">· {wordsFor({ ...item, success: true })}</span>
-            )}
-            {item.counterparty !== null && (
-              <>
+      href={href}
+      label={href === undefined ? label : `${label}. ${t('activity.opens')}`}
+      icon={look.icon}
+      tone={failed ? 'bad' : look.dir === null ? 'inset' : 'soft'}
+      failed={failed}
+      title={<span class="bp-act-what">{title}</span>}
+      tag={failed ? <Tag tone="bad">{t('activity.tag.failed')}</Tag> : undefined}
+      sub={
+        <span class="bp-act-address">
+          <span class="bp-act-addr-label">{item.addressLabel}</span>
+          {item.feeOnly && item.kind !== 'fee_only' && (
+            <span class="bp-act-arrow">· {look.words}</span>
+          )}
+          {counterparty !== null && (
+            <>
+              {look.dir !== null && (
                 <span class="bp-act-arrow" aria-hidden="true">
-                  {ARROW[dir]}
+                  {look.dir}
                 </span>
-                <span class="bp-act-cp" data-mono={mono ? '' : null}>
-                  {item.counterparty}
+              )}
+              <span class="bp-act-cp" data-mono={mono ? '' : null}>
+                {counterparty}
+              </span>
+            </>
+          )}
+        </span>
+      }
+      value={
+        parts.length > 0 ? (
+          <>
+            {parts.map((p, n) => (
+              <span class="bp-act-asset" key={`${p.denom}-${String(n)}`}>
+                <span class="bp-act-amount" data-negative={p.value.startsWith('−') ? '' : null}>
+                  {p.value}
                 </span>
-              </>
-            )}
-          </span>
-        </span>
-      </span>
-      {parts.length > 0 && (
-        <span class="bp-act-assets">
-          {parts.map((p, n) => (
-            <span class="bp-act-asset" key={`${p.denom}-${String(n)}`}>
-              <span
-                class="bp-act-symbol"
-                data-unknown={p.unknown ? '' : null}
-                title={p.unknown ? p.denom : undefined}
-              >
-                {p.symbol}
+                <span
+                  class="bp-act-symbol"
+                  data-unknown={p.unknown ? '' : null}
+                  title={p.unknown ? p.denom : undefined}
+                >
+                  {p.symbol}
+                </span>
               </span>
-              <span class="bp-act-amount" data-negative={p.value.startsWith('−') ? '' : null}>
-                {p.value}
-              </span>
-            </span>
-          ))}
-        </span>
-      )}
-    </a>
+            ))}
+          </>
+        ) : undefined
+      }
+      caption={when}
+    />
+  );
+}
+
+/** Right of the Home tabs (`W-Activity-Filter`): which address the Activity list shows. */
+export function ActivityFilterChip(props: { addresses: WalletAddress[]; filter: AddressFilter }) {
+  const { addresses, filter } = props;
+  const value = useAddressFilter(filter, addresses);
+  if (addresses.length < 2) return null;
+  const all = t('activity.address.all');
+  const current = addresses.find((a) => a.index === value)?.label ?? all;
+  return (
+    <FilterChip
+      title={t('activity.filter.title')}
+      label={t('activity.filter', { value: current })}
+      all=""
+      value={value === null ? '' : String(value)}
+      options={[
+        {
+          value: '',
+          label: all,
+          sub: t('activity.filter.count', { count: String(addresses.length) }),
+        },
+        ...addresses.map((a) => ({
+          value: String(a.index),
+          label: a.label,
+          sub: shortAddress(a.address),
+        })),
+      ]}
+      onChange={(v) => {
+        filter.set(v === '' ? null : Number(v));
+      }}
+    />
   );
 }
 
@@ -166,14 +192,36 @@ function ActivityCard({ item, explorer, known }: CardProps) {
 export function ActivityTab(props: ActivityTabProps) {
   const client = useClient();
   const { tokens, addresses } = props;
-  const [filter, setFilter] = useState<number | null>(null);
+  const filter = useAddressFilter(props.filter, addresses);
   const [feed, setFeed] = useState<Feed>(FRESH);
+  const [names, setNames] = useState<Names>(new Map());
   const latest = useRef(0);
+  const loading = useRef(false);
   const cursor = useRef<string | null>(null);
   cursor.current = feed.cursor;
 
+  // Contacts and the wallet's own labels name a counterparty the way the address book does.
+  useEffect(() => {
+    let live = true;
+    void client.call('book.list', {}).then((res) => {
+      if (!live || !res.ok) return;
+      setNames(
+        new Map([
+          ...res.value.own.map((o) => [o.address, o.label] as const),
+          ...res.value.contacts.map((c) => [c.address, c.name] as const),
+        ]),
+      );
+    });
+    return () => {
+      live = false;
+    };
+  }, [client]);
+
   const read = useCallback(
     async (more: boolean) => {
+      // One page at a time: a second press while a page loads does nothing.
+      if (more && loading.current) return;
+      loading.current = true;
       const id = ++latest.current;
       setFeed((f) => ({ ...(more ? f : FRESH), error: false, busy: true }));
       const res = await client.call('activity.page', {
@@ -181,18 +229,20 @@ export function ActivityTab(props: ActivityTabProps) {
         ...(more && cursor.current !== null ? { cursor: cursor.current } : {}),
       });
       if (id !== latest.current) return;
-      setFeed((f) =>
-        res.ok
-          ? {
-              items: more ? [...f.items, ...res.value.items] : res.value.items,
-              cursor: res.value.cursor,
-              done: res.value.done,
-              explorer: res.value.explorer,
-              error: false,
-              busy: false,
-            }
-          : { ...f, error: true, busy: false },
-      );
+      loading.current = false;
+      setFeed((f) => {
+        if (!res.ok) return { ...f, error: true, busy: false };
+        const items = more ? [...f.items, ...res.value.items] : res.value.items;
+        return {
+          items,
+          cursor: res.value.cursor,
+          done: res.value.done,
+          explorer: res.value.explorer,
+          error: false,
+          busy: false,
+          empties: items.length > 0 ? 0 : (more ? f.empties : 0) + 1,
+        };
+      });
     },
     [client, filter],
   );
@@ -213,32 +263,21 @@ export function ActivityTab(props: ActivityTabProps) {
   }, [total, read]);
 
   const first = feed.items.length === 0;
+  const idle = !feed.busy && !feed.error;
+  // A first page can come back empty with older pages left: read on rather than show no rows.
+  const more = !feed.done && feed.cursor !== null;
+  const reading = idle && first && more && feed.empties < AUTO_PAGES;
+  useEffect(() => {
+    if (reading) void read(true);
+  }, [reading, read]);
 
   return (
     <div class="bp-act">
-      {addresses.length > 1 && (
-        <select
-          class="bp-act-filter"
-          aria-label={t('activity.address')}
-          value={filter === null ? '' : String(filter)}
-          onChange={(e) => {
-            const v = e.currentTarget.value;
-            setFilter(v === '' ? null : Number(v));
-          }}
-        >
-          <option value="">{t('activity.address.all')}</option>
-          {addresses.map((a) => (
-            <option key={a.index} value={String(a.index)}>
-              {a.label}
-            </option>
-          ))}
-        </select>
-      )}
       {!first && (
         <ul class="bp-act-list" aria-label={t('activity.list')}>
           {feed.items.map((item, i) => (
             <li key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}>
-              <ActivityCard item={item} explorer={feed.explorer} known={tokens} />
+              <ActivityCard item={item} explorer={feed.explorer} known={tokens} names={names} />
             </li>
           ))}
         </ul>
@@ -249,9 +288,10 @@ export function ActivityTab(props: ActivityTabProps) {
         </div>
       )}
       {feed.error && (
-        <div class="bp-act-error">
-          <Banner tone="red">{t('activity.error')}</Banner>
+        <div class="bp-act-error" role="alert">
+          <EmptyState icon="alert-circle" tone="inset" title={t('activity.error')} />
           <Button
+            variant="ghost"
             onClick={() => {
               void read(!first);
             }}
@@ -260,23 +300,34 @@ export function ActivityTab(props: ActivityTabProps) {
           </Button>
         </div>
       )}
-      {!feed.busy && !feed.error && !feed.done && feed.cursor !== null && (
-        <button
-          type="button"
-          class="bp-home-link"
-          onClick={() => {
-            void read(true);
-          }}
-        >
-          {t('activity.more')}
-        </button>
+      {idle && first && (feed.done || !reading) && (
+        <EmptyState
+          icon="activity"
+          tone="inset"
+          title={t('activity.empty')}
+          sub={t('activity.empty.sub')}
+        />
       )}
-      {!feed.busy && !feed.error && feed.done && (
+      {idle && more && !reading && (
+        <>
+          <Button
+            variant="secondary"
+            class="bp-act-more"
+            onClick={() => {
+              void read(true);
+            }}
+          >
+            {t('activity.more')}
+          </Button>
+          <p class="bp-act-foot">{t('activity.showing', { count: String(feed.items.length) })}</p>
+        </>
+      )}
+      {idle && feed.done && (
         <div class="bp-act-end">
-          <p class="bp-home-note">{first ? t('activity.empty') : t('activity.end')}</p>
-          <a class="bp-home-link" href={feed.explorer} target="_blank" rel="noreferrer">
+          {!first && <p class="bp-act-foot">{t('activity.end')}</p>}
+          <Button variant="ghost" tone="link" trailingIcon="external-link" href={feed.explorer}>
             {t('activity.older')}
-          </a>
+          </Button>
         </div>
       )}
     </div>

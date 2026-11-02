@@ -28,8 +28,8 @@ describe('wordsFor', () => {
   });
 
   it('reads a send from its category', () => {
-    expect(wordsFor(row('send', { category: 'sent' }))).toBe('Sent');
-    expect(wordsFor(row('send', { category: 'received', isSigner: false }))).toBe('Received');
+    expect(wordsFor(row('send', { category: 'sent' }))).toBe('Send');
+    expect(wordsFor(row('send', { category: 'received', isSigner: false }))).toBe('Receive');
   });
 
   it('reads the two sides of an NFT send, a vesting account, an article and respect', () => {
@@ -44,7 +44,7 @@ describe('wordsFor', () => {
   });
 
   it('says what a swap and an order are', () => {
-    expect(wordsFor(row('dex_swap'))).toBe('Swapped');
+    expect(wordsFor(row('dex_swap'))).toBe('Swap');
     expect(wordsFor(row('dex_order'))).toBe('Placed an order');
   });
 
@@ -55,7 +55,7 @@ describe('wordsFor', () => {
   });
 
   it('prefixes a failed row', () => {
-    expect(wordsFor(row('dex_swap', { success: false }))).toBe('Failed: Swapped');
+    expect(wordsFor(row('dex_swap', { success: false }))).toBe('Failed: Swap');
     expect(wordsFor(row('mystery', { success: false }))).toBe('Failed: Transaction');
   });
 });
