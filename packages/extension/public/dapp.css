@@ -1,0 +1,102 @@
+/* Dapp request window. Colours come from the --bp-* variables of the theme engine. */
+.bp-dapp,
+.bp-dapp-center {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 16px;
+  min-height: 100%;
+}
+
+.bp-dapp-center {
+  align-items: center;
+  justify-content: center;
+}
+
+.bp-dapp h1 {
+  font-size: 18px;
+}
+
+.bp-dapp-sub {
+  color: var(--bp-muted);
+  font-size: 13px;
+}
+
+.bp-dapp-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.bp-dapp-facts dt {
+  color: var(--bp-muted);
+}
+
+.bp-dapp-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bp-dapp-origin {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.bp-dapp-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.bp-dapp-picker legend {
+  margin-bottom: 6px;
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-dapp-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--bp-line);
+  border-radius: 10px;
+  background: var(--bp-card);
+  cursor: pointer;
+}
+
+.bp-dapp-option:has(input:checked) {
+  border-color: var(--bp-primary);
+}
+
+.bp-dapp-label {
+  font-weight: 600;
+}
+
+.bp-dapp-short,
+.bp-dapp-amount {
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-dapp-short {
+  grid-column: 2;
+}
+
+.bp-dapp-amount {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  text-align: right;
+}
+
+.bp-dapp-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: auto;
+}

@@ -9,15 +9,19 @@ import {
   SESSION_PROFILE,
   type WalletService,
 } from '../features/wallet';
+import {
+  createDappService,
+  dappSender,
+  type DappService,
+  type SenderLike,
+  type TabsLike,
+  type WindowsLike,
+} from '../dapp';
 import { registerHandlers } from './handlers';
 import { HandlerRegistry } from './registry';
 import { createServices } from './services';
 
-export interface MessageSender {
-  id?: string | undefined;
-  url?: string | undefined;
-  tab?: unknown;
-}
+export type MessageSender = SenderLike;
 
 export interface MessageEventLike {
   addListener(
@@ -38,6 +42,8 @@ export interface BackgroundEnv extends PlatformEnv {
       sendMessage?: (message: unknown) => Promise<unknown>;
     };
     alarms: AlarmsLike & { onAlarm: AlarmEventLike };
+    tabs: TabsLike & { onRemoved: { addListener(listener: (tabId: number) => void): void } };
+    windows: WindowsLike;
   };
 }
 
@@ -57,12 +63,35 @@ export function startBackground(env: BackgroundEnv): void {
     return pending;
   };
   env.chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!isOwnPage(sender, env.chrome.runtime.id)) return undefined;
+    // Two separate channels: own pages reach the popup registry, content scripts the dapp one.
+    if (isOwnPage(sender, env.chrome.runtime.id)) {
+      void registry()
+        .then((r) => r.registry.dispatch(message))
+        .catch(() => fail(ErrorCodes.internal, 'The wallet is not ready.'))
+        .then(sendResponse);
+      return true;
+    }
+    const dapp = dappMessage(message);
+    const from = dappSender(sender, env.chrome.runtime.id);
+    if (dapp === undefined || from === null) return undefined;
     void registry()
-      .then((r) => r.registry.dispatch(message))
-      .catch(() => fail(ErrorCodes.internal, 'The wallet is not ready.'))
-      .then(sendResponse);
+      .then((r) => r.dapp.receive(from, dapp))
+      .then(
+        ({ ack, after }) => {
+          sendResponse(ack);
+          return after();
+        },
+        () => {
+          sendResponse({ error: { code: 'invalid-request', message: 'The wallet is not ready.' } });
+        },
+      )
+      .catch(() => undefined);
     return true;
+  });
+  env.chrome.tabs.onRemoved.addListener((tabId) => {
+    void registry()
+      .then((r) => r.dapp.onTabRemoved(tabId))
+      .catch(() => undefined);
   });
   // Alarms wake a stopped worker, so the listener is attached synchronously too.
   env.chrome.alarms.onAlarm.addListener((alarm) => {
@@ -92,6 +121,14 @@ async function retryLock(env: BackgroundEnv, alarm: string): Promise<void> {
 interface Started {
   registry: HandlerRegistry;
   wallet: WalletService;
+  dapp: DappService;
+}
+
+/** The `dapp` field of a content-script message, if it has one. */
+function dappMessage(message: unknown): unknown {
+  return typeof message === 'object' && message !== null && Object.hasOwn(message, 'dapp')
+    ? (message as { dapp: unknown }).dapp
+    : undefined;
 }
 
 /**
@@ -117,7 +154,8 @@ async function createRegistry(env: BackgroundEnv): Promise<Started> {
       void sent?.catch(() => undefined);
     },
   );
+  const dapp = createDappService(platform, services, wallet, env.chrome);
   const registry = new HandlerRegistry();
-  registerHandlers(registry, { platform, services, wallet });
-  return { registry, wallet };
+  registerHandlers(registry, { platform, services, wallet, dapp });
+  return { registry, wallet, dapp };
 }

@@ -5,6 +5,7 @@ import { SystemClock } from '@beepocket/core';
 import { RuntimeClient } from '../protocol/client';
 import { applyTheme, systemScheme } from '../theme';
 import { LockEnvProvider, RuntimeStateEvents } from '../features/lock';
+import { initialRouteFor } from '../features';
 import { App } from './App';
 import { ClientProvider } from './client-context';
 
@@ -30,7 +31,7 @@ if (root) {
           clock={new SystemClock()}
           events={new RuntimeStateEvents(chrome.runtime.onMessage)}
         >
-          <App />
+          <App initial={initialRouteFor(window.location.search)} />
         </LockEnvProvider>
       </RandomProvider>
     </ClientProvider>,
