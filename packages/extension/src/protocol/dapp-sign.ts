@@ -27,4 +27,9 @@ export interface SignDetails {
   gasLimit: string;
 }
 
-export type SignView = { status: 'sign'; id: string; origin: string; network: NetworkId } & SignDetails;
+export type SignView = {
+  status: 'sign';
+  id: string;
+  origin: string;
+  network: NetworkId;
+} & SignDetails;

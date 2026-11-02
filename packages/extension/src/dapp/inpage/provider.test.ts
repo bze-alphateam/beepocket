@@ -156,7 +156,10 @@ describe('the provider', () => {
         },
       },
     });
-    const signature = { pub_key: { type: 'tendermint/PubKeySecp256k1', value: 'AAAA' }, signature: 'c2ln' };
+    const signature = {
+      pub_key: { type: 'tendermint/PubKeySecp256k1', value: 'AAAA' },
+      signature: 'c2ln',
+    };
     t.deliver({
       channel: WALLET_CHANNEL,
       id: request?.id,
@@ -183,7 +186,11 @@ describe('the provider', () => {
     const request = t.posted[0];
     expect(request).toMatchObject({
       method: 'sendTx',
-      params: { chainId: 'beezee-1', txBytes: bytesToWire(Uint8Array.from([7, 8, 9])), mode: 'sync' },
+      params: {
+        chainId: 'beezee-1',
+        txBytes: bytesToWire(Uint8Array.from([7, 8, 9])),
+        mode: 'sync',
+      },
     });
     const hash = Uint8Array.from({ length: 32 }, (_, i) => i);
     t.deliver({ channel: WALLET_CHANNEL, id: request?.id, result: bytesToWire(hash) });
@@ -193,7 +200,11 @@ describe('the provider', () => {
   it('rejects malformed signDirect and sendTx input without posting anything', async () => {
     const t = rig();
     await expect(
-      t.provider.signDirect('beezee-1', 'bze1', {} as unknown as Parameters<typeof t.provider.signDirect>[2]),
+      t.provider.signDirect(
+        'beezee-1',
+        'bze1',
+        {} as unknown as Parameters<typeof t.provider.signDirect>[2],
+      ),
     ).rejects.toMatchObject({ code: 'invalid-request' });
     await expect(
       t.provider.sendTx('beezee-1', 'abc' as unknown as Uint8Array, 'sync'),

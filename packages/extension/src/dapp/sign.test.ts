@@ -121,7 +121,8 @@ async function rig() {
     chain: {
       account: () => Promise.resolve(node.account),
       balances: () => Promise.resolve(new Map([['ubze', 100_000_000n]])),
-      broadcast: (bytes: Uint8Array) => node.broadcast(bytes) as ReturnType<ChainClient['broadcast']>,
+      broadcast: (bytes: Uint8Array) =>
+        node.broadcast(bytes) as ReturnType<ChainClient['broadcast']>,
       markets: () => Promise.resolve([]),
       liquidityPools: () => Promise.resolve([]),
       marketOrder: () => Promise.resolve(null),
@@ -183,11 +184,8 @@ async function rig() {
     return { id, ack: received.ack };
   };
   const answerOf = (id: string) =>
-    delivered
-      .map((d) => (d.message as { dapp: { id: string } }).dapp)
-      .find((m) => m.id === id) as
-      | { result?: unknown; error?: { code: string; message: string } }
-      | undefined;
+    delivered.map((d) => (d.message as { dapp: { id: string } }).dapp).find((m) => m.id === id) as
+      { result?: unknown; error?: { code: string; message: string } } | undefined;
   const signedOf = (id: string) => answerOf(id)?.result as SignedAnswer;
 
   await wallet.createWallet(PASSWORD, PHRASE);
@@ -227,7 +225,10 @@ function request(options: DocOptions = {}) {
   const authInfoBytes = buildAuthInfo({
     pubKey: MAIN.pubKey,
     sequence: options.sequence ?? SEQUENCE,
-    fee: { amount: [{ denom: 'ubze', amount: (options.requestFee ?? 1n).toString() }], gasLimit: 1n },
+    fee: {
+      amount: [{ denom: 'ubze', amount: (options.requestFee ?? 1n).toString() }],
+      gasLimit: 1n,
+    },
   });
   const chainId = options.chainId ?? CHAIN_ID;
   const accountNumber = options.accountNumber ?? ACCOUNT_NUMBER;
@@ -342,7 +343,7 @@ describe('signDirect review and approval', () => {
       fee: { denom: 'ubze', amount: '2000', symbol: 'BZE' },
       gasLimit: '200000',
     });
-    expect(r.view.summary.hero).toContain('1 BZE');
+    expect(r.view.summary.hero).toContain('1.00 BZE');
     expect(r.view.summary.memo).toBe('thanks');
     expect(r.view.options.map((o) => o.denom)).toEqual(['ubze', 'uother']);
     expect(JSON.parse(r.view.rawJson)).toHaveLength(1);
@@ -581,7 +582,13 @@ describe('sendTx', () => {
     expect(t.answerOf(garbage.id)).toMatchObject({ error: { code: 'invalid-request' } });
     const unsigned = await t.ask(
       'sendTx',
-      params(txRawBytes({ bodyBytes: Uint8Array.from([1]), authInfoBytes: Uint8Array.from([2]), signatures: [] })),
+      params(
+        txRawBytes({
+          bodyBytes: Uint8Array.from([1]),
+          authInfoBytes: Uint8Array.from([2]),
+          signatures: [],
+        }),
+      ),
     );
     expect(t.answerOf(unsigned.id)).toMatchObject({ error: { code: 'invalid-request' } });
     expect(t.node.broadcast).not.toHaveBeenCalled();

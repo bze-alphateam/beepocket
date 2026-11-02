@@ -6,7 +6,14 @@ import {
   type FeeEstimate,
   type TxSummary,
 } from '@beepocket/core';
-import { ErrorCodes, fail, ok, type FeeChoice, type Result, type SignDetails } from '../../protocol';
+import {
+  ErrorCodes,
+  fail,
+  ok,
+  type FeeChoice,
+  type Result,
+  type SignDetails,
+} from '../../protocol';
 import { validContact } from '../../features/address-book/contact';
 import type { ProfileAddress } from '../../features/wallet/profile';
 import { refuse, type Outcome, type PendingRequest } from '../types';
@@ -189,8 +196,7 @@ export async function prepareSign(
   }
 
   const estimated = await guarded(
-    () =>
-      env.fees.estimate({ bodyBytes, pubKey, sequence: account.sequence, balances }),
+    () => env.fees.estimate({ bodyBytes, pubKey, sequence: account.sequence, balances }),
     simulationMessage,
   );
   if (!estimated.ok) return { kind: 'refuse', outcome: estimated.outcome };
@@ -204,7 +210,12 @@ export async function prepareSign(
       () => null,
     );
     if (info) {
-      infos.set(o.denom, { denom: o.denom, amount: '0', symbol: info.symbol, decimals: info.decimals });
+      infos.set(o.denom, {
+        denom: o.denom,
+        amount: '0',
+        symbol: info.symbol,
+        decimals: info.decimals,
+      });
     }
   }
   const options = toChoices(estimate, infos);
