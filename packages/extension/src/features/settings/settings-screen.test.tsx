@@ -54,6 +54,9 @@ class FakeClient implements Client {
           return ok({ state: this.walletState, retryAt: null });
         case 'wallet.revealMnemonic':
           return this.reveal;
+        case 'wallet.lock':
+          this.walletState = 'locked';
+          return ok({});
         default:
           return fail('unexpected', method);
       }
@@ -83,13 +86,14 @@ const clock = {
 
 const manifest = { version: () => '1.2.3' };
 
-type TestRoute = SettingsRoute | { name: 'home.main' } | { name: 'book' };
+type TestRoute = SettingsRoute | { name: 'home.main' } | { name: 'book' } | { name: 'lock.unlock' };
 const Marker = (props: { route: { name: string } }) => <p>at:{props.route.name}</p>;
 const table = {
   ...settingsRoutes,
   'settings.main': () => <SettingsScreen manifest={manifest} />,
   'home.main': Marker,
   book: Marker,
+  'lock.unlock': Marker,
 } as RouteTable<TestRoute>;
 
 function must<T>(x: T | null | undefined): T {
@@ -157,6 +161,16 @@ describe('SettingsScreen', () => {
     const row = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Address book');
     fireEvent(row, 'click');
     expect(host.textContent).toBe('at:book');
+  });
+
+  it('locks the wallet and shows the unlock screen', async () => {
+    const client = new FakeClient();
+    const host = await open(client);
+    const lock = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Lock wallet');
+    fireEvent(lock, 'click');
+    await flush();
+    expect(client.calls.some((c) => c.method === 'wallet.lock')).toBe(true);
+    expect(host.textContent).toBe('at:lock.unlock');
   });
 
   it('the testnet toggle shows the pill and a network without tokens lands on pick tokens', async () => {

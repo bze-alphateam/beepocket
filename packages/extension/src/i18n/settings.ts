@@ -17,6 +17,7 @@ export const settings = {
   'settings.invalid':
     'The wallet lock must not come before the send lock, and both need at least 1 minute.',
   'settings.addressBook': 'Address book',
+  'settings.lock': 'Lock wallet',
   'settings.reveal': 'Show recovery phrase',
   'settings.reveal.hint': 'Asks for your password every time.',
   'settings.reveal.title': 'Recovery phrase',

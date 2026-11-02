@@ -8,6 +8,7 @@ import { useRoute, type RouteBase } from '../../popup/router';
 import { Banner, Button, Spinner } from '../../ui';
 import type { ManifestSource } from './manifest';
 import { homeTarget } from '../lock/targets';
+import { useLock } from '../lock/useLock';
 import { NetworkPill } from './NetworkPill';
 import { RevealPhrase } from './RevealPhrase';
 
@@ -76,6 +77,7 @@ function Switch(props: {
 
 export function SettingsScreen({ manifest }: { manifest: ManifestSource }) {
   const client = useClient();
+  const lockWallet = useLock();
   const { navigate } = useRoute<RouteBase>();
   const [settings, setSettings] = useState<WalletSettings | null>(null);
   const [network, setNetwork] = useState<NetworkId>('mainnet');
@@ -227,6 +229,15 @@ export function SettingsScreen({ manifest }: { manifest: ManifestSource }) {
             void toggleNetwork(on);
           }}
         />
+        <Button
+          variant="secondary"
+          icon="lock"
+          onClick={() => {
+            void lockWallet();
+          }}
+        >
+          {t('settings.lock')}
+        </Button>
         <section class="bp-row bp-about">
           <span class="bp-row-text">
             <span>{t('settings.about')}</span>

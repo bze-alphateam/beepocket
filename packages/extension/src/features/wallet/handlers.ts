@@ -80,9 +80,23 @@ export function registerWalletHandlers(registry: HandlerRegistry, wallet: Wallet
     handle: (r) => wallet.revealMnemonic(r.password),
   });
   reg('wallet.addresses', { validate: none('wallet.addresses'), handle: () => wallet.addresses() });
+  reg('wallet.previewNext', {
+    validate: none('wallet.previewNext'),
+    handle: () => wallet.previewNext(),
+  });
   reg('wallet.deriveNext', {
-    validate: none('wallet.deriveNext'),
-    handle: () => wallet.deriveNext(),
+    validate: fields<'wallet.deriveNext'>('wallet.deriveNext', (p) => {
+      const { index, label } = p;
+      if (index !== undefined && !(typeof index === 'number' && Number.isInteger(index))) {
+        return null;
+      }
+      if (label !== undefined && typeof label !== 'string') return null;
+      return {
+        ...(index === undefined ? {} : { index }),
+        ...(label === undefined ? {} : { label }),
+      };
+    }),
+    handle: (r) => wallet.deriveNext(r),
   });
   reg('wallet.renameAddress', {
     validate: fields<'wallet.renameAddress'>('wallet.renameAddress', (p) =>

@@ -26,6 +26,8 @@ export const WalletErrorCodes = {
   invalidMnemonic: 'invalid_mnemonic',
   invalidLabel: 'invalid_label',
   unknownAddress: 'unknown_address',
+  /** `wallet.deriveNext` was asked for an index that is no longer the next one. */
+  staleIndex: 'stale_index',
   invalidSettings: 'invalid_settings',
   vaultInvalid: 'vault_invalid',
   profileInvalid: 'profile_invalid',
@@ -58,7 +60,16 @@ export interface WalletProtocol {
     res: PasswordOutcome<{ mnemonic: string }>;
   };
   'wallet.addresses': { req: Record<string, never>; res: { addresses: WalletAddress[] } };
-  'wallet.deriveNext': { req: Record<string, never>; res: { address: WalletAddress } };
+  /** The address `wallet.deriveNext` would add, without storing it. Needs the unlocked wallet. */
+  'wallet.previewNext': { req: Record<string, never>; res: { index: number; address: string } };
+  /**
+   * Stores the next address. `index` pins it to a preview (refused with `stale_index` when it is
+   * no longer the next one); `label` names it in the same write.
+   */
+  'wallet.deriveNext': {
+    req: { index?: number; label?: string };
+    res: { address: WalletAddress };
+  };
   'wallet.renameAddress': {
     req: { index: number; label: string };
     res: { address: WalletAddress };

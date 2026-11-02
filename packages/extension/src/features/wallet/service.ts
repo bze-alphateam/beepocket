@@ -293,16 +293,40 @@ export class WalletService {
     return ok({ addresses: profile.addresses.map(toWalletAddress) });
   }
 
-  deriveNext(): Promise<Result<{ address: WalletAddress }>> {
+  /** The next address, derived but not stored, so the add sheet can show it first. */
+  previewNext(): Promise<Result<{ index: number; address: string }>> {
     return this.exclusive(async () => {
       const opened = await this.requireKey();
       if (!opened.ok) return opened;
       const { key, vault } = opened.value;
       const profile = await this.sessionProfile();
       if (profile === null) return fail(Codes.locked, 'The wallet is locked.');
-      const index = Math.max(...profile.addresses.map((a) => a.index)) + 1;
+      const index = nextIndex(profile);
       const mnemonic = await this.deps.vault.openMnemonic(key, vault);
-      const entry = this.profileAddress(mnemonic, index);
+      return ok({ index, address: this.profileAddress(mnemonic, index).address });
+    });
+  }
+
+  deriveNext(
+    request: { index?: number; label?: string } = {},
+  ): Promise<Result<{ address: WalletAddress }>> {
+    return this.exclusive(async () => {
+      const label = request.label?.trim();
+      if (label !== undefined && label.length > MAX_LABEL_LENGTH) {
+        return fail(Codes.invalidLabel, `A label has 1 to ${String(MAX_LABEL_LENGTH)} characters.`);
+      }
+      const opened = await this.requireKey();
+      if (!opened.ok) return opened;
+      const { key, vault } = opened.value;
+      const profile = await this.sessionProfile();
+      if (profile === null) return fail(Codes.locked, 'The wallet is locked.');
+      const index = nextIndex(profile);
+      if (request.index !== undefined && request.index !== index) {
+        return fail(Codes.staleIndex, 'Another address was added meanwhile.');
+      }
+      const mnemonic = await this.deps.vault.openMnemonic(key, vault);
+      const derived = this.profileAddress(mnemonic, index);
+      const entry = label ? { ...derived, label } : derived;
       const updated = await this.save(key, {
         ...profile,
         addresses: [...profile.addresses, entry],
@@ -616,4 +640,9 @@ async function hasActivity(chain: ChainClient, address: string): Promise<boolean
   } catch {
     return false;
   }
+}
+
+/** The index `deriveNext` adds: one past the highest, so gaps left by an import stay gaps. */
+function nextIndex(profile: Profile): number {
+  return Math.max(...profile.addresses.map((a) => a.index)) + 1;
 }
