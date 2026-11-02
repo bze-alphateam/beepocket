@@ -2,8 +2,7 @@
 export const addtoken = {
   'addtoken.title': 'Add a token',
   'addtoken.siteUnknown': 'A link sent you here',
-  'addtoken.unknown':
-    'First time on this site. Anyone can make a token. Add it only if you trust them.',
+  'addtoken.unknown': 'Anyone can make a token. Add it only if you trust them.',
   'addtoken.lookalike':
     'You already have a token called {symbol}, or it is the BeeZee coin. This one has a different code: check it.',
   'addtoken.copy': 'Copy code',
