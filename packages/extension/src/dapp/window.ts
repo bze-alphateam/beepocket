@@ -42,4 +42,11 @@ export class RequestWindow {
     });
     if (created?.id !== undefined) await this.session.set(WINDOW_KEY, created.id);
   }
+
+  /** The browser closed a window; says whether it was the request window (and forgets it). */
+  async closed(windowId: number): Promise<boolean> {
+    if ((await this.session.get(WINDOW_KEY)) !== windowId) return false;
+    await this.session.remove(WINDOW_KEY);
+    return true;
+  }
 }

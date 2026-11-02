@@ -16,11 +16,22 @@ function reviewedFee(x: unknown): ReviewedFee | null {
     : null;
 }
 
-/** The request window's two calls. They live in the popup registry: own pages only. */
+/** The request window's calls. They live in the popup registry: own pages only. */
 export function registerDappPopupHandlers(registry: HandlerRegistry, dapp: DappService): void {
   registry.register('dapp.current', {
     validate: () => ok({}),
     handle: async () => ok(await dapp.current()),
+  });
+  registry.register('dapp.queue', {
+    validate: () => ok({}),
+    handle: async () => ok(await dapp.queue()),
+  });
+  registry.register('dapp.open', {
+    validate: () => ok({}),
+    handle: async () => {
+      await dapp.openWindow();
+      return ok({});
+    },
   });
   registry.register('dapp.answer', {
     validate: (payload) => {

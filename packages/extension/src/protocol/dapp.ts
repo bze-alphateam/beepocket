@@ -31,10 +31,31 @@ export type RequestView =
   /** A site asks for a transaction to be signed: show it in plain words. */
   | SignView;
 
+/** The request window's view, with the queue behind it. */
+export type CurrentRequest = RequestView & {
+  /** Requests waiting in all, this one included (absent: just this one). */
+  count?: number;
+  /** Epoch ms at which the request expires. */
+  expiresAt?: number;
+};
+
+/** Who is waiting, for the unlock screen. */
+export interface QueueView {
+  /** The origin of the request at the head, or null when nothing waits. */
+  head: string | null;
+  count: number;
+  /** Distinct origins, oldest request first. */
+  origins: string[];
+}
+
 /** Methods the request window calls. Own pages only. */
 export interface DappProtocol {
-  /** The oldest waiting request; settles it first when the wallet can already answer. */
-  'dapp.current': { req: Record<string, never>; res: RequestView };
+  /** The head of the queue; settles it first when the wallet can already answer. */
+  'dapp.current': { req: Record<string, never>; res: CurrentRequest };
+  /** Who is waiting; allowed while the wallet is locked. */
+  'dapp.queue': { req: Record<string, never>; res: QueueView };
+  /** Opens (or focuses) the request window when something waits. */
+  'dapp.open': { req: Record<string, never>; res: Record<string, never> };
   /** The user's answer: Cancel (`approve: false`) or Connect with the picked address `index`. */
   'dapp.answer': {
     req: {

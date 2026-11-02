@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
-import type { RequestView } from '../../protocol';
+import type { CurrentRequest } from '../../protocol';
 import { Banner, Button, Spinner } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
+import { useHomeEnv } from '../home/env';
 import { useLockEnv } from '../lock/env';
 import { UnlockPanel } from '../lock/UnlockScreen';
 import { ConnectScreen } from './ConnectScreen';
@@ -15,7 +16,20 @@ export interface RequestScreenProps {
   close: () => void;
 }
 
-type Load = { status: 'loading' } | { status: 'failed' } | { status: 'ready'; view: RequestView };
+const NEXT_MS = 600;
+
+/** "1 of N" while more than one request waits; the head is always the first. */
+function QueuePill({ count }: { count: number | undefined }) {
+  if (count === undefined || count < 2) return null;
+  return (
+    <span class="bp-dapp-pill" aria-label={t('dapp.queue.pill', { n: '1', count: String(count) })}>
+      {t('dapp.queue.pill', { n: '1', count: String(count) })}
+    </span>
+  );
+}
+
+type Load =
+  { status: 'loading' } | { status: 'failed' } | { status: 'ready'; view: CurrentRequest };
 
 /**
  * The request window: shows the request that waits. The worker decides what that is, so a
@@ -23,7 +37,11 @@ type Load = { status: 'loading' } | { status: 'failed' } | { status: 'ready'; vi
  */
 export function RequestScreen({ close }: RequestScreenProps) {
   const client = useClient();
-  const { events } = useLockEnv();
+  const { events, clock } = useLockEnv();
+  const { scheduler } = useHomeEnv();
+  // The "Next request" state: how many wait behind the one just answered.
+  const [next, setNext] = useState<number | null>(null);
+  const cancelNext = useRef<() => void>(() => undefined);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const closed = useRef(false);
 
@@ -45,11 +63,44 @@ export function RequestScreen({ close }: RequestScreenProps) {
 
   useEffect(() => {
     void refresh();
-    return events.subscribe((e) => {
-      if (e.state === 'locked') void refresh();
+    // Any change of the lock (here or in the toolbar popup) can change what the head needs.
+    return events.subscribe(() => {
+      void refresh();
     });
   }, [events, refresh]);
 
+  const ready = load.status === 'ready' ? load.view : null;
+  const expiresAt = ready?.status === 'none' ? undefined : ready?.expiresAt;
+  // An expired request leaves the view by itself; the worker answers it `expired`.
+  useEffect(() => {
+    if (expiresAt === undefined) return undefined;
+    return scheduler.after(Math.max(expiresAt - clock.now(), 0) + 50, () => void refresh());
+  }, [expiresAt, scheduler, clock, refresh]);
+  useEffect(() => () => cancelNext.current(), []);
+
+  // After an answer: with more waiting, a short "Next request" state, then the next one.
+  const answered = () => {
+    const waiting = (ready?.status === 'none' ? 1 : ready?.count) ?? 1;
+    if (waiting <= 1) {
+      void refresh();
+      return;
+    }
+    setNext(waiting - 1);
+    cancelNext.current = scheduler.after(NEXT_MS, () => {
+      setNext(null);
+      void refresh();
+    });
+  };
+
+  if (next !== null) {
+    return (
+      <Layout>
+        <div class="bp-dapp-center">
+          <p role="status">{t('dapp.queue.next', { n: String(next) })}</p>
+        </div>
+      </Layout>
+    );
+  }
   if (load.status === 'loading') {
     return (
       <Layout>
@@ -97,9 +148,19 @@ export function RequestScreen({ close }: RequestScreenProps) {
         </Layout>
       );
     case 'connect':
-      return <ConnectScreen view={view} done={() => void refresh()} />;
+      return (
+        <>
+          <QueuePill count={view.count} />
+          <ConnectScreen view={view} done={answered} />
+        </>
+      );
     case 'sign':
-      return <SignScreen view={view} done={() => void refresh()} />;
+      return (
+        <>
+          <QueuePill count={view.count} />
+          <SignScreen view={view} done={answered} />
+        </>
+      );
     case 'none':
       return null;
   }

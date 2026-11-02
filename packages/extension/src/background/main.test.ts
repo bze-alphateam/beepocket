@@ -63,6 +63,7 @@ function start(session: FakeArea = new FakeArea()) {
         create: () => Promise.resolve({ id: 1 }),
         get: () => Promise.resolve({}),
         update: () => Promise.resolve({}),
+        onRemoved: { addListener: () => undefined },
       },
       alarms: {
         create: () => Promise.resolve(),

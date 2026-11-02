@@ -13,6 +13,7 @@
     <button id="grant" type="button">Grant authz to address 2</button>
     <button id="send-unknown" type="button">Send + unknown message</button>
     <p id="result" role="status"></p>
+    <ul id="log"></ul>
     <script>
       // A plain page that talks to the raw window.beepocket; the connector replaces it later.
       const CHAIN_ID = 'beezee-1';
@@ -112,6 +113,10 @@
           } catch (error) {
             result.textContent = 'error ' + (error.code ?? error.message);
           }
+          // Every outcome of a send, in the order the answers arrived.
+          const item = document.createElement('li');
+          item.textContent = result.textContent;
+          document.getElementById('log').append(item);
         })();
       };
       document.getElementById('send').addEventListener('click', () => {
