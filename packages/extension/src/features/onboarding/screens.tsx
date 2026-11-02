@@ -4,7 +4,7 @@ import type { DenomBranding } from '@beepocket/core';
 import { t } from '../../i18n';
 import { TokenErrorCodes, WalletErrorCodes, type ListedToken } from '../../protocol';
 import { useClient } from '../../popup/client-context';
-import { Banner, Button, Pill, Spinner, TextField } from '../../ui';
+import { Banner, Button, Card, Icon, Logo, Pill, Spinner, TextField } from '../../ui';
 import { themeVars } from '../../theme';
 import { useRandom } from './random';
 import { makeQuiz, type QuizQuestion } from './quiz';
@@ -57,17 +57,30 @@ export function Welcome(props: {
 }) {
   return (
     <section class="ob-welcome">
-      {props.strip !== undefined && <p class="ob-link-strip">{props.strip}</p>}
-      <img src="icons/icon-128.png" width="72" height="72" alt="" />
-      <h1>{t('onboarding.welcome.title')}</h1>
-      <p class="ob-hint">{t('onboarding.welcome.tagline')}</p>
-      <div class="ob-actions">
-        <Button onClick={props.onCreate}>{t('onboarding.welcome.create')}</Button>
-        <Button variant="quiet" onClick={props.onImport}>
+      <div class="ob-welcome-hero">
+        <h1 class="bp-sr-only">{t('onboarding.welcome.title')}</h1>
+        <span class="ob-welcome-mark">
+          <Logo variant="lockup" />
+        </span>
+        <p class="ob-welcome-tagline">{t('onboarding.welcome.tagline')}</p>
+      </div>
+      {props.strip !== undefined && (
+        <Card>
+          <p class="ob-link-strip">
+            <Icon name="link" size={16} />
+            {props.strip}
+          </p>
+        </Card>
+      )}
+      <div class="ob-welcome-actions">
+        <Button size="lg" onClick={props.onCreate}>
+          {t('onboarding.welcome.create')}
+        </Button>
+        <Button variant="secondary" size="lg" onClick={props.onImport}>
           {t('onboarding.welcome.import')}
         </Button>
+        <small class="ob-welcome-note">{t('onboarding.welcome.selfCustody')}</small>
       </div>
-      <small class="ob-note">{t('onboarding.welcome.selfCustody')}</small>
     </section>
   );
 }

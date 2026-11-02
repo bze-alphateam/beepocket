@@ -1,0 +1,65 @@
+/* Reset, page, type helpers. */
+:root {
+  color-scheme: dark light;
+  --bp-bg: #0a0c10;
+  --bp-text: #e8ecf2;
+  --bp-font: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* JetBrains Mono when installed; nothing is fetched (the CSP forbids remote fonts). */
+  --bp-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bp-bg);
+  color: var(--bp-text);
+}
+
+body {
+  width: 360px;
+  height: 600px;
+  overflow: hidden;
+  font-family: var(--bp-font);
+  font-size: 14px;
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease;
+}
+
+/* Set by the popup until the stored appearance is applied: the first paint does not fade. */
+:root[data-booting] body,
+:root[data-booting] * {
+  transition: none !important;
+}
+
+#root {
+  width: 360px;
+  height: 600px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.bp-mono {
+  font-family: var(--bp-font-mono);
+}
+
+.bp-muted {
+  color: var(--bp-faint);
+}
+
+.bp-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

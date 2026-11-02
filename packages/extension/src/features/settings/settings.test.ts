@@ -144,3 +144,44 @@ describe('network handlers', () => {
     expect(code(await t.call('network.set', { id: 'devnet' }))).toBe('bad_request');
   });
 });
+
+describe('appearance handlers', () => {
+  it('defaults to dark without a wallet and stores the choice in plain storage', async () => {
+    const t = await rig();
+    expect(await t.call('appearance.get', {})).toEqual({
+      ok: true,
+      value: { appearance: 'dark' },
+    });
+    for (const appearance of ['light', 'system', 'dark'] as const) {
+      expect(await t.call('appearance.set', { appearance })).toEqual({
+        ok: true,
+        value: { appearance },
+      });
+      expect(await t.storage.get('appearance')).toBe(appearance);
+      expect(await t.call('appearance.get', {})).toEqual({ ok: true, value: { appearance } });
+    }
+  });
+
+  it('answers while the wallet is fully locked', async () => {
+    const t = await unlocked();
+    await t.wallet.lock();
+    expect((await t.call('appearance.set', { appearance: 'light' })).ok).toBe(true);
+    expect(await t.call('appearance.get', {})).toEqual({
+      ok: true,
+      value: { appearance: 'light' },
+    });
+  });
+
+  it('ignores a garbage stored value and refuses unknown settings', async () => {
+    const t = await rig();
+    await t.storage.set('appearance', 'sepia');
+    expect(await t.call('appearance.get', {})).toEqual({
+      ok: true,
+      value: { appearance: 'dark' },
+    });
+    for (const payload of [{ appearance: 'sepia' }, { appearance: 1 }, {}, null, []]) {
+      expect(code(await t.call('appearance.set', payload))).toBe('bad_request');
+    }
+    expect(await t.storage.get('appearance')).toBe('sepia');
+  });
+});

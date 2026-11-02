@@ -1,0 +1,59 @@
+/* Layout: the 360 × 600 frame, glow, header row, scrolling body, pinned footer. */
+.bp-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  height: 600px;
+  overflow: hidden;
+}
+
+.bp-glow {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 320px;
+  background: var(--bp-glow);
+  pointer-events: none;
+  transition: background 0.35s ease;
+}
+
+.bp-glow-tall {
+  height: 340px;
+}
+
+.bp-corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}
+
+.bp-header {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 6px 0 12px;
+}
+
+/* A kit header brings its own height and padding. */
+.bp-header:has(> .bp-screen-header, > .bp-ob-header, > .bp-home-header) {
+  display: block;
+  height: auto;
+  padding: 0;
+}
+
+.bp-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.bp-footer {
+  position: relative;
+  flex: none;
+}

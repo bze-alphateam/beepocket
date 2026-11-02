@@ -1,5 +1,6 @@
 import { ErrorCodes, fail, ok, type Result, type WalletSettings } from '../../protocol';
 import type { HandlerRegistry } from '../../background/registry';
+import { isAppearance } from '../../theme/appearance';
 import { isNetworkId, type SettingsService } from './service';
 
 type Payload = Record<string, unknown>;
@@ -51,5 +52,18 @@ export function registerSettingsHandlers(
       return isNetworkId(id) ? ok({ id }) : bad('network.set needs a known network id.');
     },
     handle: ({ id }) => service.setNetwork(id),
+  });
+  registry.register('appearance.get', {
+    validate: noArgs,
+    handle: async () => ok(await service.appearance()),
+  });
+  registry.register('appearance.set', {
+    validate: (payload) => {
+      const appearance = asObject(payload)?.appearance;
+      return isAppearance(appearance)
+        ? ok({ appearance })
+        : bad('appearance.set needs dark, light or system.');
+    },
+    handle: ({ appearance }) => service.setAppearance(appearance),
   });
 }

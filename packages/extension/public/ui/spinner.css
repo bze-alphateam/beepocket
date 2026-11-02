@@ -1,0 +1,22 @@
+/* Spinner */
+.bp-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--bp-line-strong);
+  border-top-color: var(--bp-primary);
+  animation: bp-spin 0.8s linear infinite;
+}
+
+@keyframes bp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bp-spinner {
+    animation-duration: 3s;
+  }
+}

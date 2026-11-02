@@ -4,6 +4,19 @@ import { buildCssVars, type CssVars } from './theme';
 export { isHexColor } from './color';
 export { BZE_DENOM, resolveKit, type Kit, type KitInput, type Scheme } from './kits';
 export { buildCssVars, type CssVars } from './theme';
+export {
+  AppearanceState,
+  DEFAULT_APPEARANCE,
+  LocalAppearanceCache,
+  isAppearance,
+  resolveScheme,
+  type Appearance,
+  type AppearanceCache,
+  type AppearanceOptions,
+  type SchemeQuery,
+  type SchemeSource,
+  type SyncStore,
+} from './appearance';
 
 export interface ThemeInput extends KitInput {
   scheme: Scheme;

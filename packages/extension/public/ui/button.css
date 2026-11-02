@@ -1,0 +1,104 @@
+/* Button: primary, secondary, ghost, chip, icon (+ the old quiet and danger). */
+.bp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bp-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bp-btn:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+.bp-btn-lg {
+  height: 48px;
+  min-height: 48px;
+}
+
+.bp-btn-primary {
+  background: var(--bp-grad);
+  color: var(--bp-btn-text);
+  box-shadow: var(--bp-btn-glow);
+}
+
+.bp-btn-secondary,
+.bp-btn-quiet {
+  border: 1px solid var(--bp-line-strong);
+  background: var(--bp-secondary-fill);
+  color: var(--bp-text);
+}
+
+.bp-btn-danger {
+  background: var(--bp-bad);
+  color: var(--bp-btn-text);
+}
+
+.bp-btn-ghost {
+  align-self: center;
+  gap: 6px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.bp-tone-accent {
+  color: var(--bp-accent-text);
+}
+
+.bp-tone-muted {
+  color: var(--bp-muted);
+}
+
+.bp-tone-link {
+  color: var(--bp-link);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.bp-btn-chip {
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--bp-soft-line);
+  border-radius: 8px;
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bp-btn-icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--bp-muted);
+}
+
+.bp-btn-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--bp-soft-line);
+  border-radius: 999px;
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+}

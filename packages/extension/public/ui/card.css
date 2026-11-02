@@ -1,0 +1,207 @@
+/* Card, DetailRow, ListRow. */
+.bp-card {
+  border-radius: 16px;
+  transition: background 0.35s ease;
+}
+
+.bp-card-plain {
+  padding: 10px 12px;
+  border: 1px solid var(--bp-line);
+  background: var(--bp-card);
+}
+
+.bp-card-edge {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: var(--bp-edge);
+}
+
+.bp-card-rows {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.bp-detail {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.bp-detail + .bp-detail {
+  border-top: 1px solid var(--bp-line);
+}
+
+.bp-detail-label {
+  color: var(--bp-muted);
+}
+
+.bp-detail-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-detail-strong {
+  font-size: 14px;
+}
+
+.bp-detail-strong .bp-detail-label {
+  color: var(--bp-text);
+  font-weight: 600;
+}
+
+.bp-detail-strong .bp-detail-value {
+  font-weight: 700;
+}
+
+.bp-list-row {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--bp-line);
+  border-radius: 16px;
+  background: var(--bp-card);
+  transition: background 0.35s ease;
+}
+
+.bp-list-row-card {
+  min-height: 78px;
+  padding: 12px 14px 12px 16px;
+}
+
+.bp-list-row-option {
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: transparent;
+}
+
+.bp-list-row-on {
+  border-color: var(--bp-soft-line);
+  background: var(--bp-soft);
+}
+
+.bp-list-row-off {
+  opacity: 0.45;
+}
+
+.bp-list-row-hit {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bp-list-row-hit:disabled {
+  cursor: default;
+}
+
+.bp-list-row-hit:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+/* The row's content lets taps through to the row button; its own buttons take them back. */
+.bp-list-row > :not(.bp-list-row-hit) {
+  position: relative;
+  pointer-events: none;
+}
+
+.bp-list-row button:not(.bp-list-row-hit) {
+  pointer-events: auto;
+}
+
+.bp-list-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bp-list-row-option .bp-list-row-text {
+  gap: 2px;
+}
+
+.bp-list-row-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bp-list-row-title {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bp-list-row-option .bp-list-row-title {
+  font-size: 14px;
+}
+
+.bp-list-row-sub {
+  overflow: hidden;
+  color: var(--bp-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Pencil and copy: 30 px buttons that sit on the text line without growing it. */
+.bp-list-row-line .bp-btn-icon {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  margin: -6px 0;
+  border-radius: 8px;
+  color: var(--bp-faint);
+}
+
+.bp-list-row-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bp-list-row-end > .bp-icon {
+  color: var(--bp-faint);
+}
+
+.bp-list-row-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.bp-list-row-amount {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-list-row-option .bp-list-row-amount {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bp-list-row-unit {
+  color: var(--bp-faint);
+  font-size: 11px;
+  font-weight: 500;
+}

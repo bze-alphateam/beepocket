@@ -17,6 +17,7 @@ describe('Button', () => {
       </>,
     );
     const buttons = host.querySelectorAll('button');
+    // The pre-canvas variants keep their classes until every screen has moved.
     expect([...buttons].map((b) => b.className)).toEqual([
       'bp-btn bp-btn-primary',
       'bp-btn bp-btn-quiet',

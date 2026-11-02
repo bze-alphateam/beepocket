@@ -1,0 +1,59 @@
+/* WordGrid: numbered recovery-phrase cells, three columns. */
+.bp-words {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bp-word {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--bp-line);
+  border-radius: 8px;
+  background: var(--bp-card);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.bp-words-edit .bp-word {
+  gap: 4px;
+  height: 36px;
+  background: var(--bp-inset);
+}
+
+.bp-word-n {
+  flex: none;
+  width: 16px;
+  color: var(--bp-faint);
+  font-family: var(--bp-font-mono);
+  font-size: 11px;
+}
+
+.bp-word input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--bp-text);
+  font: inherit;
+  outline: none;
+}
+
+.bp-word:focus-within {
+  border-color: var(--bp-soft-line);
+}
+
+.bp-word-bad,
+.bp-word-bad:focus-within {
+  border-color: var(--bp-bad-line);
+}
+
+.bp-word-bad input {
+  color: var(--bp-bad-text);
+}

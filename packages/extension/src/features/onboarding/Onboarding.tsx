@@ -3,6 +3,7 @@ import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
 import { homeTarget } from '../lock/targets';
+import { AppearanceToggle } from '../../popup/appearance';
 import { Layout } from '../../popup/Layout';
 import {
   Confirm,
@@ -237,5 +238,9 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
       );
       break;
   }
-  return <Layout>{body}</Layout>;
+  return (
+    <Layout glow="tall" corner={step === 'welcome' ? <AppearanceToggle /> : undefined}>
+      {body}
+    </Layout>
+  );
 }

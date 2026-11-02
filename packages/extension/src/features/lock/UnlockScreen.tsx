@@ -3,7 +3,8 @@ import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
-import { Banner, Spinner } from '../../ui';
+import { Banner, Button, Logo, Spinner } from '../../ui';
+import { AppearanceToggle } from '../../popup/appearance';
 import { PasswordForm } from './PasswordForm';
 import { WaitingRequests } from './WaitingRequests';
 import { homeTarget, importTarget } from './targets';
@@ -40,16 +41,21 @@ export function UnlockPanel(props: UnlockPanelProps) {
   }, [client]);
 
   return (
-    <Layout>
+    <Layout glow="tall" corner={<AppearanceToggle />}>
       <main class="bp-lock">
-        <img src="icons/icon-48.png" width="48" height="48" alt="" />
-        <h1>{t('lock.title')}</h1>
-        <p class="bp-lock-sub">{props.subtitle ?? t('lock.subtitle')}</p>
+        <div class="bp-lock-hero">
+          <span class="bp-lock-mark">
+            <Logo variant="mark" />
+          </span>
+          <h1>{t('lock.title')}</h1>
+          <p class="bp-lock-sub">{props.subtitle ?? t('lock.subtitle')}</p>
+        </div>
         {props.waiting === true && <WaitingRequests />}
         {load.status === 'loading' && <Spinner />}
         {load.status === 'failed' && <Banner tone="red">{t('lock.loadFailed')}</Banner>}
         {load.status === 'ready' && (
           <PasswordForm
+            large
             label={t('lock.password')}
             submitLabel={t('lock.unlock')}
             retryAt={load.retryAt}
@@ -62,15 +68,15 @@ export function UnlockPanel(props: UnlockPanelProps) {
         )}
         {props.noImport !== true && (
           <>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               class="bp-lock-forgot"
               onClick={() => {
                 navigate(importTarget);
               }}
             >
               {t('lock.forgot')}
-            </button>
+            </Button>
             <small class="bp-lock-warning">{t('lock.forgotWarning')}</small>
           </>
         )}

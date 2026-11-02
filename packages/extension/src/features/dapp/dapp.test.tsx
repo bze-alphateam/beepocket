@@ -175,7 +175,7 @@ describe('the request window', () => {
     await settle();
     expect(t.host.textContent).toContain('Welcome back');
     expect(t.host.textContent).toContain('https://dex.getbze.com is waiting');
-    expect(t.host.textContent).not.toContain('Forgot your password');
+    expect(t.host.textContent).not.toContain('Forgot it');
   });
 
   it('closes the window when nothing waits', async () => {
