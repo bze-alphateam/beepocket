@@ -10,7 +10,8 @@
     "https://explorer.getbze.com/*",
     "https://testnet.getbze.com/*",
     "https://testnet-rpc.getbze.com/*",
-    "https://testnet-explorer.getbze.com/*"
+    "https://testnet-explorer.getbze.com/*",
+    "https://getbze.com/wallet/add/*"
   ],
   "content_scripts": [
     {
@@ -24,6 +25,12 @@
       "matches": ["https://*/*", "http://localhost/*"],
       "js": ["relay.js"],
       "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://getbze.com/wallet/add/*"],
+      "js": ["addtoken.js"],
+      "run_at": "document_idle",
       "all_frames": false
     }
   ],

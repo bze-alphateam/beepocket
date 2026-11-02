@@ -49,9 +49,15 @@ export function Step(props: {
   );
 }
 
-export function Welcome(props: { onCreate: () => void; onImport: () => void }) {
+export function Welcome(props: {
+  onCreate: () => void;
+  onImport: () => void;
+  /** "Setting up for GOLD · Link from …" when an add-a-token link started the flow. */
+  strip?: string | undefined;
+}) {
   return (
     <section class="ob-welcome">
+      {props.strip !== undefined && <p class="ob-link-strip">{props.strip}</p>}
       <img src="icons/icon-128.png" width="72" height="72" alt="" />
       <h1>{t('onboarding.welcome.title')}</h1>
       <p class="ob-hint">{t('onboarding.welcome.tagline')}</p>
@@ -360,6 +366,8 @@ const START_ERRORS = {
 
 export function Start(props: {
   prefillCode: string | undefined;
+  /** The code came from a link whose site is not a known one. */
+  warn?: boolean;
   onOpen: (denom: string) => Promise<boolean>;
   onPick: () => void;
 }) {
@@ -425,6 +433,7 @@ export function Start(props: {
           {props.prefillCode !== undefined && code === props.prefillCode && (
             <small class="ob-note">{t('onboarding.start.prefilled')}</small>
           )}
+          {props.warn === true && <Banner tone="amber">{t('addtoken.unknown')}</Banner>}
           {error !== null && (
             <Banner tone="red">
               {t(START_ERRORS[error])}

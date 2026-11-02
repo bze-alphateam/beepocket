@@ -5,6 +5,7 @@ import type { HomeProtocol } from './home';
 import type { SendProtocol } from './send';
 import type { ActivityProtocol } from './activity';
 import type { DappProtocol, SitesProtocol } from './dapp';
+import type { AddTokenProtocol } from './addtoken';
 import type { TokensProtocol } from './tokens';
 import type { WalletProtocol } from './wallet';
 import type { FeatureProtocol } from './types';
@@ -17,6 +18,7 @@ export type { HomeProtocol } from './home';
 export * from './send';
 export * from './activity';
 export * from './dapp';
+export * from './addtoken';
 export * from './tokens';
 export * from './wallet';
 export * from './lock';
@@ -34,7 +36,8 @@ export type Protocol = FeatureProtocol<AppProtocol> &
   FeatureProtocol<SendProtocol> &
   FeatureProtocol<ActivityProtocol> &
   FeatureProtocol<DappProtocol> &
-  FeatureProtocol<SitesProtocol>;
+  FeatureProtocol<SitesProtocol> &
+  FeatureProtocol<AddTokenProtocol>;
 
 export type Method = keyof Protocol;
 export type RequestOf<M extends Method> = Protocol[M]['req'];

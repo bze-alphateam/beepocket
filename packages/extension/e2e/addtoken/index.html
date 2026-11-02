@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Add a token (test page)</title>
+  </head>
+  <body>
+    <h1>Add a token</h1>
+    <p id="state" role="status">waiting</p>
+    <script>
+      window.addEventListener('beepocket#add-token-opened', () => {
+        document.getElementById('state').textContent = 'opened';
+      });
+    </script>
+  </body>
+</html>

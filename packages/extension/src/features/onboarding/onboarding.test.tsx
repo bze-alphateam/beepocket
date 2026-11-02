@@ -355,6 +355,34 @@ describe('start with a token code', () => {
     expect(client.calls).toContainEqual(['tokens.lookup', { code: GOLD.denom }]);
     expect(host.textContent).toContain(en['onboarding.start.prefilled']);
     expect(button(host, 'Open wallet with GOLD')).toBeDefined();
+    // A code typed or opened without a link never shows the link warning.
+    expect(host.textContent).not.toContain(en['addtoken.unknown']);
+  });
+
+  it('names the link on Welcome and warns about an unknown site on the code step', async () => {
+    const client = mockClient(baseHandlers);
+    const route: OnboardingRoute = {
+      name: 'onboarding.welcome',
+      prefillCode: GOLD.denom,
+      link: { host: 'evil.example', known: false },
+    };
+    const view = mount(client, route);
+    await flush();
+    expect(view.host.textContent).toContain('Setting up for GOLD · Link from evil.example');
+    cleanup();
+    const { host } = await createdWallet(client, route);
+    expect(host.textContent).toContain(en['onboarding.start.prefilled']);
+    expect(host.textContent).toContain(en['addtoken.unknown']);
+  });
+
+  it('does not warn about a known site', async () => {
+    const { host } = await createdWallet(mockClient(baseHandlers), {
+      name: 'onboarding.welcome',
+      prefillCode: GOLD.denom,
+      link: { host: 'dex.getbze.com', known: true },
+    });
+    expect(host.textContent).toContain(en['onboarding.start.prefilled']);
+    expect(host.textContent).not.toContain(en['addtoken.unknown']);
   });
 });
 

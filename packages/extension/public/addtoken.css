@@ -1,0 +1,33 @@
+/* Add-a-token window; the colours come from the --bp-* variables of the token's kit. */
+.bp-add-token {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bp-raised);
+}
+
+.bp-add-copy {
+  border: 0;
+  background: none;
+  color: var(--bp-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bp-add-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.bp-add-actions > * {
+  flex: 1;
+}
+
+.ob-link-strip {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bp-raised);
+  font-size: 12px;
+}

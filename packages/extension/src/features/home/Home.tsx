@@ -18,6 +18,10 @@ import { homeTabs } from './tabs';
 
 export interface HomeRoute {
   name: 'home.main';
+  /** Opens on this token when it is in the list (the add-a-token link). */
+  denom?: string;
+  /** A short confirmation shown once on arrival. */
+  toast?: string;
 }
 
 export interface SettingsTarget {
@@ -43,11 +47,13 @@ const COPIED_MS = 1800;
 export function Home() {
   const client = useClient();
   const env = useHomeEnv();
-  const { navigate } = useRoute<HomeRoute | SettingsTarget | SendTarget>();
+  const { route, navigate } = useRoute<HomeRoute | SettingsTarget | SendTarget>();
+  const arrival = route.name === 'home.main' ? route : undefined;
   const lockWallet = useLock();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
-  const [denom, setDenom] = useState<string | null>(null);
+  const [denom, setDenom] = useState<string | null>(arrival?.denom ?? null);
+  const [toast, setToast] = useState(arrival?.toast ?? '');
   // The kit on screen: set once per token, after its brand data arrived, so colours never flash.
   const [kit, setKit] = useState<{ denom: string; branding: DenomBranding | null } | null>(null);
   const [tab, setTab] = useState(ADDRESSES);
@@ -125,6 +131,15 @@ export function Home() {
       });
     }
   }, [env, kit, brandThemes, scheme]);
+
+  // Counted from the first render of the screen, not from the spinner before it.
+  const shown = loaded !== null;
+  useEffect(() => {
+    if (toast === '' || !shown) return;
+    return env.scheduler.after(COPIED_MS, () => {
+      setToast('');
+    });
+  }, [toast, shown, env]);
 
   useEffect(() => {
     if (copiedAt === 0) return;
@@ -317,6 +332,11 @@ export function Home() {
             />
             {addFailed && <p role="alert">{t('home.address.error')}</p>}
           </>
+        )}
+        {toast !== '' && (
+          <div class="bp-home-toast" role="status">
+            {toast}
+          </div>
         )}
         {copiedAt > 0 && (
           <div class="bp-home-toast" role="status">
