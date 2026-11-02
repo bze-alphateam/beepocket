@@ -150,6 +150,8 @@ test('Settings › Connected sites: Change pushes accountChanged, Disconnect mak
     await expect
       .poll(() => dapp.evaluate(() => (window as unknown as { changes: number }).changes))
       .toBe(1);
+    // interchain-kit's wallet saw it too.
+    await expect(dapp.locator('#account-changes')).toHaveText('1');
     await dapp.getByRole('button', { name: 'Get key' }).click();
     await expect(dapp.getByRole('status')).toHaveText(`address ${THIRD} name Address 3`);
 
@@ -157,6 +159,7 @@ test('Settings › Connected sites: Change pushes accountChanged, Disconnect mak
     await expect
       .poll(() => dapp.evaluate(() => (window as unknown as { changes: number }).changes))
       .toBe(2);
+    await expect(dapp.locator('#account-changes')).toHaveText('2');
     await dapp.getByRole('button', { name: 'Get key' }).click();
     await expect(dapp.getByRole('status')).toHaveText('error not-connected');
   } finally {

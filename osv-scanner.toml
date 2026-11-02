@@ -1,0 +1,14 @@
+# Only advisories with no upstream fix are listed. Both are dev/test-only
+# transitive dependencies of @interchain-kit/core (the connector's test peer);
+# nothing from them ships in the npm package or the extension. Re-evaluate
+# before the dates below.
+
+[[IgnoredVulns]]
+id = "GHSA-848j-6mx2-7j84"
+ignoreUntil = 2026-12-31
+reason = "elliptic 6.6.1: no upstream fix exists. Flaw is in elliptic's ECDSA handling of crafted input. Present only in the dev/test tree via @interchain-kit/core; neither the npm package nor the extension ships or imports it (the wallet signs with @noble/curves), and no attacker-chosen data is signed."
+
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2026-12-31
+reason = "deepmerge 4.2.2: no upstream fix exists. Flaw concerns merging attacker-controlled objects. Present only in the dev/test tree via @interchain-kit/core; nothing from it ships in the npm package or the extension, and no untrusted input is merged."

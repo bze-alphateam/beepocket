@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createServer, type Server } from 'node:http';
+import { build, type Plugin } from 'esbuild';
 
 export interface MockReply {
   status: number;
@@ -130,13 +131,65 @@ export function startMockServer(port = 0): Promise<{ server: Server; url: string
   });
 }
 
-/** Serves the plain test dapp page at `http://localhost:<port>/dapp/`. */
-export function startDappServer(): Promise<{ server: Server; url: string }> {
+let dappScript: Promise<string> | undefined;
+
+/**
+ * interchain-kit also carries Node-only code for the Solana and Ethereum wallets (`stream`,
+ * `crypto`), which a dapp's bundler stubs out and so does this one, and an `@noble/hashes/sha3`
+ * import without the `.js` its package exports map wants.
+ */
+const fixInterchainKit: Plugin = {
+  name: 'fix-interchain-kit',
+  setup(esbuild) {
+    esbuild.onResolve({ filter: /^(stream|crypto)$/ }, (args) => ({
+      path: args.path,
+      namespace: 'stub',
+    }));
+    esbuild.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({
+      contents: 'exports.Transform = class {}; exports.Stream = class {};',
+      loader: 'js',
+    }));
+    esbuild.onResolve({ filter: /^@noble\/hashes\/sha3$/ }, (args) =>
+      esbuild.resolve('@noble/hashes/sha3.js', { resolveDir: args.resolveDir, kind: args.kind }),
+    );
+  },
+};
+
+/**
+ * The test dapp's script bundled once per run, with the connector taken from its sources and
+ * interchain-kit from node_modules, exactly as a dapp's bundler would.
+ */
+function bundleDapp(): Promise<string> {
+  dappScript ??= build({
+    entryPoints: [resolve(import.meta.dirname, 'dapp/main.ts')],
+    alias: {
+      '@bze/beepocket-connector': resolve(import.meta.dirname, '../../connector/src/index.ts'),
+    },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    platform: 'browser',
+    define: { global: 'globalThis', 'process.env.NODE_ENV': '"test"' },
+    banner: { js: 'globalThis.process ??= { env: {}, versions: {}, browser: true };' },
+    plugins: [fixInterchainKit],
+    logLevel: 'error',
+  }).then((out) => out.outputFiles[0]?.text ?? '');
+  return dappScript;
+}
+
+/** Serves the test dapp (a page plus its bundled script) at `http://localhost:<port>/dapp/`. */
+export async function startDappServer(): Promise<{ server: Server; url: string }> {
   const page = readFileSync(resolve(import.meta.dirname, 'dapp/index.html'));
+  const script = await bundleDapp();
   const server = createServer((req, res) => {
     if (req.url === '/dapp/') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(page);
+      return;
+    }
+    if (req.url === '/dapp/main.js') {
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+      res.end(script);
       return;
     }
     res.writeHead(404);

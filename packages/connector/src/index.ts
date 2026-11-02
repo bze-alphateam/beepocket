@@ -1,1 +1,7 @@
-export const connectorName = '@bze/beepocket-connector';
+export * from './provider.js';
+export {
+  BeePocketCosmosWallet,
+  beePocketInfo,
+  beePocketWallet,
+  createBeePocketWallet,
+} from './interchain-kit.js';

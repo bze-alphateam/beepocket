@@ -24,6 +24,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Pack the connector
+        run: |
+          pnpm --filter @bze/beepocket-connector pack --pack-destination "$RUNNER_TEMP/connector"
+          tar -tzf "$RUNNER_TEMP"/connector/*.tgz | sort | tee "$RUNNER_TEMP/pack.txt"
+          # Only dist/, README.md, LICENSE and package.json may be published, and all of them must be there.
+          if grep -vE '^package/(dist/[^/]+\.(js|d\.ts)|README\.md|LICENSE|package\.json)$' "$RUNNER_TEMP/pack.txt"; then
+            echo 'unexpected files in the connector tarball' >&2
+            exit 1
+          fi
+          for f in package/README.md package/LICENSE package/package.json package/dist/index.js package/dist/index.d.ts; do
+            grep -qx "$f" "$RUNNER_TEMP/pack.txt" || { echo "missing $f in the connector tarball" >&2; exit 1; }
+          done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: beepocket-extension

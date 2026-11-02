@@ -72,6 +72,29 @@ describe('check-deps CLI', () => {
     expect(result.stderr).toContain('connector');
   });
 
+  it('allows the connector to peer on interchain-kit, and nothing else', () => {
+    write('connector', {
+      name: 'c',
+      peerDependencies: { '@interchain-kit/core': '0.11.x' },
+      devDependencies: { '@interchain-kit/core': '0.11.0' },
+    });
+    expect(run().status).toBe(0);
+    write('connector', { name: 'c', peerDependencies: { react: '19.0.0' } });
+    expect(run().status).toBe(1);
+    write('connector', { name: 'c', dependencies: { '@interchain-kit/core': '0.11.0' } });
+    expect(run().status).toBe(1);
+  });
+
+  it('allows the extension to use the connector from the workspace as a dev dependency', () => {
+    write('extension', {
+      name: 'e',
+      devDependencies: { '@bze/beepocket-connector': 'workspace:*' },
+    });
+    expect(run().status).toBe(0);
+    write('extension', { name: 'e', devDependencies: { '@bze/beepocket-connector': '^1.0.0' } });
+    expect(run().status).toBe(1);
+  });
+
   it('allows @beepocket/core only as workspace:*', () => {
     write('extension', { name: 'e', dependencies: { '@beepocket/core': 'workspace:*' } });
     expect(run().status).toBe(0);
