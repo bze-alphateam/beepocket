@@ -2,12 +2,20 @@ import type { Random } from '@beepocket/core';
 import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { en } from '../../i18n';
+import { AppearanceProvider } from '../../popup/appearance';
 import { Router } from '../../popup/router';
+import { AppearanceState, type Scheme } from '../../theme';
 import { ClientProvider } from '../../popup/client-context';
 import { fail, ok, type Method, type RequestOf, type Result } from '../../protocol';
 import type { Client } from '../../protocol/client';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
-import { onboardingRoutes, RandomProvider, type OnboardingRoute } from '.';
+import {
+  onboardingRoutes,
+  OnboardingEnvProvider,
+  RandomProvider,
+  type OnboardingEnv,
+  type OnboardingRoute,
+} from '.';
 
 afterEach(() => {
   cleanup();
@@ -17,6 +25,8 @@ afterEach(() => {
 const PHRASE = Array.from({ length: 24 }, (_, i) => `term${String.fromCharCode(97 + i)}`).join(' ');
 const PHRASE_12 =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+/** A real 24-word phrase (the BIP-39 vector of all-zero entropy). */
+const PHRASE_24 = `${'abandon '.repeat(23)}art`;
 const GOLD = {
   denom: 'factory/bze1x/gold',
   symbol: 'GOLD',
@@ -67,7 +77,34 @@ function mockRandom(): Random {
   };
 }
 
-function mount(client: Client, route: OnboardingRoute = { name: 'onboarding.welcome' }) {
+function mockEnv(clipboard = ''): OnboardingEnv & {
+  readText: ReturnType<typeof vi.fn>;
+  writeText: ReturnType<typeof vi.fn>;
+} {
+  const readText = vi.fn(() => Promise.resolve(clipboard));
+  const writeText = vi.fn(() => Promise.resolve());
+  return {
+    readText,
+    writeText,
+    clipboard: { readText, writeText },
+    // Runs on the next macrotask, which `flush` waits for.
+    scheduler: {
+      after: (_ms, fn) => {
+        const id = setTimeout(fn, 0);
+        return () => {
+          clearTimeout(id);
+        };
+      },
+    },
+  };
+}
+
+function mount(
+  client: Client,
+  route: OnboardingRoute = { name: 'onboarding.welcome' },
+  env: OnboardingEnv = mockEnv(),
+  scheme: Scheme = 'dark',
+) {
   const seen: unknown[] = [];
   const table = {
     ...onboardingRoutes,
@@ -78,9 +115,20 @@ function mount(client: Client, route: OnboardingRoute = { name: 'onboarding.welc
   };
   const view = render(
     <ClientProvider client={client}>
-      <RandomProvider random={mockRandom()}>
-        <Router table={table} initial={route} />
-      </RandomProvider>
+      <AppearanceProvider
+        state={
+          new AppearanceState(
+            { matches: true, addEventListener: () => undefined },
+            { initial: scheme },
+          )
+        }
+      >
+        <OnboardingEnvProvider env={env}>
+          <RandomProvider random={mockRandom()}>
+            <Router table={table} initial={route} />
+          </RandomProvider>
+        </OnboardingEnvProvider>
+      </AppearanceProvider>
     </ClientProvider>,
   );
   return { ...view, seen };
@@ -103,8 +151,7 @@ async function click(host: HTMLElement, text: string) {
 }
 
 function type(el: Element | null | undefined, value: string) {
-  if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement))
-    throw new Error('no field');
+  if (!(el instanceof HTMLInputElement)) throw new Error('no field');
   el.value = value;
   fireEvent(el, 'input');
 }
@@ -129,10 +176,14 @@ const baseHandlers = {
         : fail('no-such-token', 'x'),
 } as Partial<Record<Method, Handler>>;
 
+const savedCheck = (host: HTMLElement) => host.querySelector('[role="checkbox"]');
+const backButton = (host: HTMLElement) => host.querySelector('.bp-ob-header [aria-label="Back"]');
+const progress = (host: HTMLElement) => host.querySelector('.bp-progress-short')?.textContent;
+
 async function toPassword(host: HTMLElement) {
   await click(host, 'Create a new wallet');
   await click(host, 'Reveal phrase');
-  fireEvent(host.querySelector('input[type="checkbox"]'), 'click');
+  fireEvent(savedCheck(host), 'click');
   await click(host, 'Continue');
 }
 
@@ -178,8 +229,42 @@ describe('create flow', () => {
     await click(host, 'Reveal phrase');
     expect(host.textContent).toContain(PHRASE.split(' ')[0]);
     expect(button(host, 'Continue')?.disabled).toBe(true);
-    fireEvent(host.querySelector('input[type="checkbox"]'), 'click');
+    fireEvent(savedCheck(host), 'click');
     expect(button(host, 'Continue')?.disabled).toBe(false);
+  });
+
+  it('creates 24 words only: no length control, 24 cells, "1 of 5"', async () => {
+    const { host } = mount(mockClient(baseHandlers));
+    await click(host, 'Create a new wallet');
+    expect(progress(host)).toBe('1 of 5');
+    expect(host.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(host.querySelector('.bp-seg')).toBeNull();
+    expect(host.querySelectorAll('.bp-word')).toHaveLength(24);
+    await click(host, 'Reveal phrase');
+    expect(host.querySelectorAll('.bp-word')).toHaveLength(24);
+    expect(host.querySelector('.bp-seg')).toBeNull();
+  });
+
+  it('hides the phrase again when the user comes back from the check step', async () => {
+    const { host } = mount(mockClient(baseHandlers));
+    await toPassword(host);
+    expect(host.textContent).toContain(en['onboarding.confirm.title']);
+    fireEvent(backButton(host), 'click');
+    expect(host.textContent).toContain(en['onboarding.phrase.reveal']);
+    for (const w of PHRASE.split(' ')) expect(host.textContent).not.toContain(w);
+  });
+
+  it('copies the phrase only from the Copy button and never reads the clipboard', async () => {
+    const env = mockEnv();
+    const { host } = mount(mockClient(baseHandlers), undefined, env);
+    await click(host, 'Create a new wallet');
+    expect(button(host, en['onboarding.phrase.copy'])).toBeUndefined();
+    await click(host, 'Reveal phrase');
+    expect(env.writeText).not.toHaveBeenCalled();
+    await click(host, en['onboarding.phrase.copy']);
+    expect(env.writeText).toHaveBeenCalledExactlyOnceWith(PHRASE);
+    expect(host.textContent).toContain(en['onboarding.phrase.copied']);
+    expect(env.readText).not.toHaveBeenCalled();
   });
 
   it('enforces password rules, calls createWallet and lands on the token step', async () => {
@@ -244,38 +329,181 @@ describe('import entry route', () => {
   });
 });
 
+const cells = (host: HTMLElement) => [...host.querySelectorAll<HTMLInputElement>('.bp-word input')];
+
+function typeWords(host: HTMLElement, words: string) {
+  words.split(' ').forEach((w, i) => {
+    type(cells(host)[i], w);
+  });
+}
+
+function paste(el: Element | undefined, text: string) {
+  fireEvent(el, 'paste', { clipboardData: { getData: () => text } });
+}
+
+async function submitPassword(host: HTMLElement) {
+  type(field(host, en['onboarding.password.label']), 'longenough1');
+  type(field(host, en['onboarding.password.repeat']), 'longenough1');
+  fireEvent(host.querySelector('form'), 'submit');
+  await flush();
+}
+
 describe('import flow', () => {
-  async function toImport(client: Client) {
-    const view = mount(client);
+  async function toImport(client: Client, env?: OnboardingEnv) {
+    const view = mount(client, undefined, env);
     await click(view.host, 'Import a recovery phrase');
     return view;
   }
 
-  it.each([
-    ['12', PHRASE_12, 12],
-    ['24', PHRASE, 24],
-  ])('accepts %s words, normalising whitespace and case', async (_, words, count) => {
+  it('opens on 12 cells, "1 of 4", and switches to 24 and back', async () => {
+    const { host } = await toImport(mockClient(baseHandlers));
+    expect(progress(host)).toBe('1 of 4');
+    expect(cells(host)).toHaveLength(12);
+    expect(host.querySelector('textarea')).toBeNull();
+    await click(host, '24 words');
+    expect(cells(host)).toHaveLength(24);
+    typeWords(host, PHRASE_24);
+    await click(host, '12 words');
+    expect(cells(host)).toHaveLength(12);
+    // Back on 24, the words typed into cells 13–24 are still there.
+    await click(host, '24 words');
+    expect(cells(host).map((c) => c.value)).toEqual(PHRASE_24.split(' '));
+  });
+
+  it('on 12, imports only the first 12 words even with 13–24 kept for later', async () => {
     const client = mockClient(baseHandlers);
     const { host } = await toImport(client);
-    expect(button(host, 'Continue')?.disabled).toBe(true);
-    type(host.querySelector('textarea'), `  ${words.toUpperCase().replaceAll(' ', '\n ')}  `);
-    expect(host.textContent).toContain(`${String(count)} words`);
+    await click(host, '24 words');
+    typeWords(host, `${PHRASE_12} ${'zoo '.repeat(11)}zoo`);
+    await click(host, '12 words');
     await click(host, 'Continue');
-    type(field(host, en['onboarding.password.label']), 'longenough1');
-    type(field(host, en['onboarding.password.repeat']), 'longenough1');
-    fireEvent(host.querySelector('form'), 'submit');
-    await flush();
+    await submitPassword(host);
     expect(client.calls.find(([m]) => m === 'wallet.importWallet')?.[1]).toEqual({
       password: 'longenough1',
-      mnemonic: words,
+      mnemonic: PHRASE_12,
     });
   });
 
-  it('blocks other word counts', async () => {
+  it.each([
+    ['13 words on 12 cells', 12, 13],
+    ['25 words on 24 cells', 24, 25],
+  ])('a paste of %s writes nothing and gives the count', async (_, length, count) => {
     const { host } = await toImport(mockClient(baseHandlers));
-    type(host.querySelector('textarea'), 'one two three');
-    expect(host.textContent).toContain('a phrase has 12 or 24');
+    if (length === 24) await click(host, '24 words');
+    type(cells(host)[0], 'marble');
+    paste(cells(host)[3], Array.from({ length: count }, () => 'abandon').join(' '));
+    expect(cells(host)).toHaveLength(length);
+    expect(cells(host).map((c) => c.value)).toEqual([
+      'marble',
+      ...Array.from({ length: length - 1 }, () => ''),
+    ]);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      `${String(count)} words: a phrase has 12 or 24`,
+    );
+    // The next edit clears the line.
+    type(cells(host)[1], 'echo');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('a short paste that runs past the last cell writes nothing', async () => {
+    const { host } = await toImport(mockClient(baseHandlers));
+    paste(cells(host)[10], 'marble echo tribe');
+    expect(cells(host).every((c) => c.value === '')).toBe(true);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      '3 words: a phrase has 12 or 24',
+    );
+  });
+
+  it('the Paste button refuses a phrase that does not fit, too', async () => {
+    const env = mockEnv(Array.from({ length: 13 }, () => 'abandon').join(' '));
+    const { host } = await toImport(mockClient(baseHandlers), env);
+    await click(host, en['onboarding.import.paste']);
+    expect(cells(host).every((c) => c.value === '')).toBe(true);
+    expect(host.textContent).toContain('13 words: a phrase has 12 or 24');
+  });
+
+  it.each([
+    ['12', PHRASE_12, 12],
+    ['24', PHRASE_24, 24],
+  ])(
+    'pastes %s words into any cell: fills them all, sets the length, imports',
+    async (_, words, count) => {
+      const client = mockClient(baseHandlers);
+      const { host } = await toImport(client);
+      expect(button(host, 'Continue')?.disabled).toBe(true);
+      paste(cells(host)[5], `  ${words.toUpperCase().replaceAll(' ', '\n ')}  `);
+      expect(cells(host)).toHaveLength(count);
+      expect(cells(host).map((c) => c.value)).toEqual(words.split(' '));
+      await click(host, 'Continue');
+      await submitPassword(host);
+      expect(client.calls.find(([m]) => m === 'wallet.importWallet')?.[1]).toEqual({
+        password: 'longenough1',
+        mnemonic: words,
+      });
+    },
+  );
+
+  it('a short paste fills the cells from the one pasted into', async () => {
+    const { host } = await toImport(mockClient(baseHandlers));
+    paste(cells(host)[2], 'marble echo tribe');
+    expect(
+      cells(host)
+        .map((c) => c.value)
+        .slice(0, 6),
+    ).toEqual(['', '', 'marble', 'echo', 'tribe', '']);
+  });
+
+  it('reads the clipboard only when Paste is tapped, once per tap', async () => {
+    const env = mockEnv(PHRASE_12);
+    const { host } = await toImport(mockClient(baseHandlers), env);
+    expect(env.readText).not.toHaveBeenCalled();
+    await click(host, en['onboarding.import.paste']);
+    expect(env.readText).toHaveBeenCalledOnce();
+    expect(
+      cells(host)
+        .map((c) => c.value)
+        .join(' '),
+    ).toBe(PHRASE_12);
+    await click(host, en['onboarding.import.paste']);
+    expect(env.readText).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks a word no list word starts with and suggests the closest one', async () => {
+    const { host } = await toImport(mockClient(baseHandlers));
+    typeWords(host, 'marble echo tribe velvet pioneer gho');
+    // Still being typed: "gho" can become "ghost".
+    expect(host.querySelector('.bp-word-bad')).toBeNull();
+    type(cells(host)[5], 'gost');
+    const bad = host.querySelectorAll('.bp-word-bad');
+    expect(bad).toHaveLength(1);
+    expect(bad[0]?.querySelector('input')?.getAttribute('aria-invalid')).toBe('true');
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      'Word 6 "gost" isn\'t a recovery phrase word. Did you mean "ghost"?',
+    );
     expect(button(host, 'Continue')?.disabled).toBe(true);
+    type(cells(host)[5], 'ghost');
+    expect(host.querySelector('.bp-word-bad')).toBeNull();
+  });
+
+  it('refuses a phrase with a bad checksum on Continue, before the password', async () => {
+    const client = mockClient(baseHandlers);
+    const { host } = await toImport(client);
+    typeWords(host, `${'abandon '.repeat(11)}abandon`);
+    await click(host, 'Continue');
+    expect(host.textContent).toContain(en['onboarding.import.invalid']);
+    expect(host.textContent).toContain(en['onboarding.import.title']);
+    // Editing clears the error.
+    type(cells(host)[11], 'about');
+    expect(host.textContent).not.toContain(en['onboarding.import.invalid']);
+  });
+
+  it('marks complete words that are only prefixes once Continue is tried', async () => {
+    const { host } = await toImport(mockClient(baseHandlers));
+    typeWords(host, `${'abandon '.repeat(11)}ab`);
+    expect(host.querySelector('.bp-word-bad')).toBeNull();
+    await click(host, 'Continue');
+    expect(host.querySelectorAll('.bp-word-bad')).toHaveLength(1);
+    expect(host.textContent).toContain('Word 12 "ab"');
   });
 
   it('returns to the phrase with an inline error when the service refuses it', async () => {
@@ -284,19 +512,69 @@ describe('import flow', () => {
       'wallet.importWallet': () => fail('invalid_mnemonic', 'This recovery phrase is not valid.'),
     });
     const { host } = await toImport(client);
-    type(host.querySelector('textarea'), PHRASE_12);
+    paste(cells(host)[0], PHRASE_12);
     await click(host, 'Continue');
-    type(field(host, en['onboarding.password.label']), 'longenough1');
-    type(field(host, en['onboarding.password.repeat']), 'longenough1');
-    fireEvent(host.querySelector('form'), 'submit');
-    await flush();
+    await submitPassword(host);
     expect(host.textContent).toContain(en['onboarding.import.invalid']);
-    expect(host.querySelector('textarea')?.value).toBe(PHRASE_12);
+    expect(
+      cells(host)
+        .map((c) => c.value)
+        .join(' '),
+    ).toBe(PHRASE_12);
+  });
+
+  it('drops the typed words when going back to Welcome', async () => {
+    const { host } = await toImport(mockClient(baseHandlers));
+    paste(cells(host)[0], PHRASE_24);
+    // On 12, cells 13–24 are out of sight but still held: going back must drop them too.
+    await click(host, '12 words');
+    fireEvent(backButton(host), 'click');
+    expect(host.textContent).toContain(en['onboarding.welcome.create']);
+    await click(host, 'Import a recovery phrase');
+    expect(cells(host)).toHaveLength(12);
+    expect(cells(host).every((c) => c.value === '')).toBe(true);
+    await click(host, '24 words');
+    expect(cells(host).every((c) => c.value === '')).toBe(true);
+  });
+
+  it('keeps nothing of the words once unmounted', async () => {
+    const client = mockClient(baseHandlers);
+    const { host } = await toImport(client);
+    paste(cells(host)[0], PHRASE_12);
+    cleanup();
+    const again = await toImport(client);
+    expect(cells(again.host).every((c) => c.value === '')).toBe(true);
+  });
+
+  it('never writes typed or pasted words to storage, the URL or the console', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const log = vi.spyOn(console, 'log');
+    const warn = vi.spyOn(console, 'warn');
+    const chromeStorage = { local: { set: vi.fn() }, session: { set: vi.fn() } };
+    vi.stubGlobal('chrome', { storage: chromeStorage });
+    const before = location.href;
+    const env = mockEnv(PHRASE_12);
+    const { host } = await toImport(mockClient(baseHandlers), env);
+    typeWords(host, 'marble echo gost');
+    await click(host, en['onboarding.import.paste']);
+    await click(host, 'Continue');
+    expect(setItem).not.toHaveBeenCalled();
+    expect(chromeStorage.local.set).not.toHaveBeenCalled();
+    expect(chromeStorage.session.set).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(location.href).toBe(before);
+    vi.unstubAllGlobals();
   });
 });
 
-async function createdWallet(client: Client, route?: OnboardingRoute) {
-  const view = mount(client, route);
+async function createdWallet(
+  client: Client,
+  route?: OnboardingRoute,
+  env?: OnboardingEnv,
+  scheme?: Scheme,
+) {
+  const view = mount(client, route, env, scheme);
   await toPassword(view.host);
   answerQuiz(view.host, true);
   await click(view.host, 'Continue');
@@ -311,18 +589,23 @@ describe('start with a token code', () => {
   async function look(host: HTMLElement, code: string) {
     await click(host, en['onboarding.start.haveCode']);
     type(field(host, en['onboarding.start.codeLabel']), code);
-    fireEvent(host.querySelector('form'), 'submit');
+    // The lookup runs once typing pauses.
+    await flush();
     await flush();
   }
 
   it('shows a found token in its brand colours and opens the wallet on it', async () => {
     const client = mockClient(baseHandlers);
     const { host, seen } = await createdWallet(client);
+    expect(progress(host)).toBe('4 of 5');
+    expect(host.querySelector('[role="radio"]')?.getAttribute('aria-checked')).toBe('false');
     await look(host, GOLD.denom);
-    const card = host.querySelector<HTMLElement>('.ob-token');
+    const card = host.querySelector<HTMLElement>('.bp-token-row-card');
     expect(card?.textContent).toContain('GOLD');
     expect(card?.textContent).toContain('Gold Coin');
-    expect(card?.getAttribute('style')).toContain('--bp-primary');
+    expect(card?.textContent).toContain(en['onboarding.start.kit']);
+    // A found code makes the token step unnecessary: the flow is one step shorter.
+    expect(progress(host)).toBe('4 of 4');
     await click(host, 'Open wallet with GOLD');
     expect(client.calls.filter(([m]) => m === 'tokens.add')).toEqual([
       ['tokens.add', { denom: GOLD.denom }],
@@ -333,14 +616,72 @@ describe('start with a token code', () => {
   it('says so when no token has the code', async () => {
     const { host } = await createdWallet(mockClient(baseHandlers));
     await look(host, 'factory/bze1x/ghost');
-    expect(host.textContent).toContain('No token with this code on BeeZee');
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      'No token uses this code. Check it with whoever shared it.',
+    );
     expect(button(host, 'Open wallet')).toBeUndefined();
+    expect(button(host, 'Continue')?.disabled).toBe(true);
+    expect(progress(host)).toBe('4 of 5');
   });
 
   it('shows a syntax error for an invalid code', async () => {
     const { host } = await createdWallet(mockClient(baseHandlers));
     await look(host, 'bad code');
     expect(host.textContent).toContain(en['onboarding.start.invalid']);
+  });
+
+  it('looks up once typing pauses, and only the latest code lands', async () => {
+    let releaseOld: (r: Result<unknown>) => void = () => undefined;
+    const lookup = vi.fn(({ code }: { code: string }) =>
+      code === 'factory/bze1x/old'
+        ? new Promise<Result<unknown>>((r) => (releaseOld = r))
+        : code === GOLD.denom
+          ? ok(GOLD)
+          : fail('no-such-token', 'x'),
+    );
+    const client = mockClient({ ...baseHandlers, 'tokens.lookup': lookup });
+    const { host } = await createdWallet(client);
+    await click(host, en['onboarding.start.haveCode']);
+    const input = field(host, en['onboarding.start.codeLabel']);
+    type(input, 'fact');
+    type(input, 'factory/bze1x/old');
+    expect(lookup).not.toHaveBeenCalled();
+    await flush();
+    expect(lookup).toHaveBeenCalledExactlyOnceWith({ code: 'factory/bze1x/old' });
+    type(input, GOLD.denom);
+    await flush();
+    await flush();
+    expect(button(host, 'Open wallet with GOLD')).toBeDefined();
+    // The slow answer for the old code comes back last and changes nothing.
+    releaseOld(fail('no-such-token', 'x'));
+    await flush();
+    expect(button(host, 'Open wallet with GOLD')).toBeDefined();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('reads the clipboard only when Paste is tapped and looks the code up', async () => {
+    const env = mockEnv(` ${GOLD.denom} `);
+    const { host } = await createdWallet(mockClient(baseHandlers), undefined, env);
+    await click(host, en['onboarding.start.haveCode']);
+    expect(env.readText).not.toHaveBeenCalled();
+    await click(host, en['onboarding.start.paste']);
+    await flush();
+    expect(env.readText).toHaveBeenCalledOnce();
+    expect((field(host, en['onboarding.start.codeLabel']) as HTMLInputElement).value).toBe(
+      GOLD.denom,
+    );
+    expect(button(host, 'Open wallet with GOLD')).toBeDefined();
+  });
+
+  it('switching to the manual card drops the code shortcut', async () => {
+    const { host } = await createdWallet(mockClient(baseHandlers));
+    await look(host, GOLD.denom);
+    expect(progress(host)).toBe('4 of 4');
+    await click(host, en['onboarding.start.choose']);
+    expect(progress(host)).toBe('4 of 5');
+    expect(button(host, 'Open wallet')).toBeUndefined();
+    await click(host, 'Continue');
+    expect(host.textContent).toContain(en['onboarding.tokens.title']);
   });
 
   it('pre-fills and looks up the code of a link', async () => {
@@ -368,10 +709,11 @@ describe('start with a token code', () => {
     };
     const view = mount(client, route);
     await flush();
-    expect(view.host.textContent).toContain('Setting up for GOLD · Link from evil.example');
+    expect(view.host.querySelector('.bp-notice-title')?.textContent).toBe('Setting up for GOLD');
+    expect(view.host.querySelector('.bp-notice-sub')?.textContent).toBe('Link from evil.example');
     cleanup();
     const { host } = await createdWallet(client, route);
-    expect(host.textContent).toContain(en['onboarding.start.prefilled']);
+    expect(host.textContent).toContain('Filled in from evil.example');
     expect(host.textContent).toContain(en['addtoken.unknown']);
   });
 
@@ -381,7 +723,7 @@ describe('start with a token code', () => {
       prefillCode: GOLD.denom,
       link: { host: 'dex.getbze.com', known: true },
     });
-    expect(host.textContent).toContain(en['onboarding.start.prefilled']);
+    expect(host.textContent).toContain('Filled in from dex.getbze.com');
     expect(host.textContent).not.toContain(en['addtoken.unknown']);
   });
 });
@@ -406,7 +748,7 @@ describe('retries and navigation', () => {
     const { host } = mount(client);
     await click(host, 'Create a new wallet');
     await click(host, 'Reveal phrase');
-    fireEvent(host.querySelector('.ob-back'), 'click');
+    fireEvent(backButton(host), 'click');
     expect(host.textContent).not.toContain(PHRASE.split(' ')[0]);
     await click(host, 'Create a new wallet');
     expect(client.calls.filter(([m]) => m === 'wallet.generateMnemonic')).toHaveLength(2);
@@ -414,7 +756,7 @@ describe('retries and navigation', () => {
 
   it('has no back button on the start step', async () => {
     const { host } = await createdWallet(mockClient(baseHandlers));
-    expect(host.querySelector('.ob-back')).toBeNull();
+    expect(backButton(host)).toBeNull();
   });
 
   it('a retry after a partial add only adds what is missing', async () => {
@@ -431,8 +773,8 @@ describe('retries and navigation', () => {
     });
     const { host, seen } = await createdWallet(client);
     await click(host, en['onboarding.start.choose']);
-    await flush();
-    const boxes = host.querySelectorAll('input[type="checkbox"]');
+    await click(host, 'Continue');
+    const boxes = host.querySelectorAll('.bp-token-row');
     fireEvent(boxes[0], 'click'); // BZE
     fireEvent(boxes[1], 'click'); // GOLD
     await click(host, 'Finish');
@@ -452,7 +794,7 @@ describe('pick tokens', () => {
   async function toPick(client: Client) {
     const view = await createdWallet(client);
     await click(view.host, en['onboarding.start.choose']);
-    await flush();
+    await click(view.host, 'Continue');
     return view;
   }
 
@@ -462,21 +804,23 @@ describe('pick tokens', () => {
     );
     const client = mockClient({ ...baseHandlers, 'tokens.search': search });
     const { host, seen } = await toPick(client);
-    expect(host.querySelectorAll('.ob-row')).toHaveLength(2);
+    expect(host.querySelectorAll('.bp-token-row')).toHaveLength(2);
     expect(button(host, 'Finish')?.disabled).toBe(true);
 
     type(field(host, en['onboarding.tokens.search']), 'gol');
     await flush();
     expect(search).toHaveBeenLastCalledWith({ query: 'gol' });
-    expect(host.querySelectorAll('.ob-row')).toHaveLength(1);
+    expect(host.querySelectorAll('.bp-token-row')).toHaveLength(1);
 
-    fireEvent(host.querySelector('input[type="checkbox"]'), 'click');
+    expect(progress(host)).toBe('5 of 5');
+    fireEvent(host.querySelector('[role="checkbox"]'), 'click');
+    expect(host.querySelector('[role="checkbox"]')?.getAttribute('aria-checked')).toBe('true');
     expect(host.textContent).toContain(en['onboarding.tokens.selectedOne']);
     expect(button(host, 'Finish')?.disabled).toBe(false);
 
     type(field(host, en['onboarding.tokens.search']), '');
     await flush();
-    const boxes = host.querySelectorAll('input[type="checkbox"]');
+    const boxes = host.querySelectorAll('[role="checkbox"]');
     fireEvent(boxes[0], 'click'); // BZE after GOLD
     expect(host.textContent).toContain('2 selected');
     await click(host, 'Finish');
@@ -490,7 +834,7 @@ describe('pick tokens', () => {
   it('can leave BZE out and unselect', async () => {
     const client = mockClient(baseHandlers);
     const { host } = await toPick(client);
-    const boxes = host.querySelectorAll('input[type="checkbox"]');
+    const boxes = host.querySelectorAll('[role="checkbox"]');
     fireEvent(boxes[1], 'click');
     fireEvent(boxes[1], 'click');
     expect(button(host, 'Finish')?.disabled).toBe(true);
@@ -517,15 +861,19 @@ describe('secrets and themes', () => {
     vi.unstubAllGlobals();
   });
 
-  it.each(['dark', 'light'] as const)('renders the token card with the %s kit', async (scheme) => {
-    document.documentElement.dataset.scheme = scheme;
-    const { host } = await createdWallet(mockClient(baseHandlers));
+  it.each([
+    ['dark', 'rgb(255, 176, 0)'],
+    ['light', 'rgb(122, 79, 0)'],
+  ] as const)('shows the found token with its %s kit swatches', async (scheme, primary) => {
+    const { host } = await createdWallet(mockClient(baseHandlers), undefined, undefined, scheme);
     await click(host, en['onboarding.start.haveCode']);
     type(field(host, en['onboarding.start.codeLabel']), GOLD.denom);
     fireEvent(host.querySelector('form'), 'submit');
     await flush();
-    const style = host.querySelector<HTMLElement>('.ob-token')?.getAttribute('style') ?? '';
-    expect(style.toLowerCase()).toContain(scheme === 'dark' ? '#ffb000' : '#7a4f00');
-    delete document.documentElement.dataset.scheme;
+    const swatches = [...host.querySelectorAll<HTMLElement>('.bp-swatches > span')].map(
+      (e) => e.style.background,
+    );
+    expect(swatches).toHaveLength(3);
+    expect(swatches[1]).toBe(primary);
   });
 });

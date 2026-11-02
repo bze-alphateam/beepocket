@@ -52,3 +52,12 @@ export {
 export { StarButton, type StarButtonProps } from './StarButton';
 export { TextField, type TextFieldProps } from './TextField';
 export { WordGrid, type WordGridProps } from './WordGrid';
+export { BottomBar, type BottomBarProps } from './BottomBar';
+export { ChoiceGrid, type ChoiceGridProps } from './ChoiceGrid';
+export { NoticeCard, type NoticeCardProps } from './NoticeCard';
+export { PasswordField, type PasswordFieldProps } from './PasswordField';
+export { PhraseReveal, type PhraseRevealProps } from './PhraseReveal';
+export { StrengthMeter, type StrengthMeterProps } from './StrengthMeter';
+export { Swatches, type SwatchesProps } from './Swatches';
+export { TokenRow, type TokenRowProps } from './TokenRow';
+export { InlineNote, type InlineNoteProps } from './InlineNote';
