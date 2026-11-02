@@ -120,6 +120,9 @@ test('home shows balances, derives, renames and re-themes per token', async ({
   await expect.poll(primary).not.toBe(before);
 
   // A row opens Send with that address as the sender.
-  await page.getByRole('button', { name: 'Send GOLD from Daily' }).click();
+  // Tap the amount side of the row, clear of the copy and rename buttons.
+  await page
+    .getByRole('button', { name: 'Send GOLD from Daily' })
+    .click({ position: { x: 290, y: 30 } });
   await expect(page.getByRole('button', { name: 'Send GOLD from Daily' })).toBeHidden();
 });

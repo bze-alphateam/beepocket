@@ -643,7 +643,7 @@ describe('unreadable addresses', () => {
 });
 
 describe('races and guards', () => {
-  it('keeps a rename that lands while an address is being derived', async () => {
+  it('adds the address once a slow add answers, then closes the sheet', async () => {
     const s = setup();
     await s.tick();
     const release = s.hold('wallet.deriveNext');
@@ -651,8 +651,9 @@ describe('races and guards', () => {
     await s.tick();
     fireEvent(s.host.querySelector('[role="dialog"] form'), 'submit');
     await s.tick();
-    // The add sheet waits; meanwhile the label of Main changes elsewhere.
-    s.w.addresses = s.w.addresses.map((a) => (a.index === 0 ? { ...a, label: 'Daily' } : a));
+    // Still waiting: the sheet stays open and nothing is listed yet.
+    expect(s.host.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(text(s.host)).toContain('Show 1 empty address');
     release();
     await s.tick();
     expect(s.w.addresses).toHaveLength(3);
