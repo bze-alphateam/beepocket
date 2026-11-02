@@ -294,7 +294,11 @@ describe('the sign screen', () => {
 const ME = ADDRESSES[0]?.address ?? '';
 const OTHER = ADDRESSES[1]?.address ?? '';
 const sendMsg = (): AnyMsg =>
-  encodeMsgSend({ fromAddress: ME, toAddress: OTHER, amount: [{ denom: 'ubze', amount: '1000000' }] });
+  encodeMsgSend({
+    fromAddress: ME,
+    toAddress: OTHER,
+    amount: [{ denom: 'ubze', amount: '1000000' }],
+  });
 const grant = (): AnyMsg => grantMsg(ME, OTHER, '/cosmos.bank.v1beta1.MsgSend');
 
 /** A sign view for the messages, summarised by core exactly as the worker does. */
@@ -375,7 +379,9 @@ describe('the sign screen: risk levels', () => {
     );
     await settle();
     fireEvent(
-      [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('OTH')) as Element,
+      [...document.querySelectorAll('button')].find((b) =>
+        b.textContent.startsWith('OTH'),
+      ) as Element,
       'click',
     );
     await settle();
@@ -401,7 +407,7 @@ describe('the sign screen: risk levels', () => {
       'Amount',
     ]);
     expect(cards[0]?.textContent).toContain(OTHER);
-    expect(cards[0]?.textContent).toContain('1 BZE');
+    expect(cards[0]?.textContent).toContain('1.00 BZE');
     expect(cards[1]?.querySelectorAll('dt')).toHaveLength(0);
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
   });

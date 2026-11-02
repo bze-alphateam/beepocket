@@ -356,7 +356,9 @@ describe('signDirect review and approval', () => {
     expect(r.view.options.map((o) => o.denom)).toEqual(['ubze', 'uother']);
     expect(JSON.parse(r.view.rawJson)).toHaveLength(1);
     expect(r.view.messageJson).toHaveLength(1);
-    expect(JSON.parse(r.view.messageJson[0] ?? '')).toMatchObject({ toAddress: OTHER.address });
+    expect(JSON.parse(r.view.messageJson[0] ?? '')).toMatchObject({
+      value: { toAddress: OTHER.address },
+    });
   });
 
   it('signs the requests body untouched with the wallets own fee', async () => {

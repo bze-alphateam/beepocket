@@ -33,10 +33,7 @@ const any = (typeUrl: string, value: Uint8Array): Uint8Array =>
 
 /** An authz `MsgGrant` of a generic authorization for `msgTypeUrl`: always dangerous. */
 export function grantMsg(granter: string, grantee: string, msgTypeUrl: string): AnyMsg {
-  const authorization = any(
-    '/cosmos.authz.v1beta1.GenericAuthorization',
-    textField(1, msgTypeUrl),
-  );
+  const authorization = any('/cosmos.authz.v1beta1.GenericAuthorization', textField(1, msgTypeUrl));
   const grant = bytesField(1, authorization);
   return {
     typeUrl: '/cosmos.authz.v1beta1.MsgGrant',
