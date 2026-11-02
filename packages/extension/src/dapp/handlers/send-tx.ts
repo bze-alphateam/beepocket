@@ -39,6 +39,8 @@ function validate(params: unknown): Result<SendTxParams> {
   return ok({ chainId, txBytes });
 }
 
+const TX_HASH = /^[0-9A-Fa-f]{64}$/;
+
 function hashBytes(hex: string): Uint8Array {
   return Uint8Array.from(hex.match(/../g) ?? [], (pair) => parseInt(pair, 16));
 }
@@ -88,6 +90,10 @@ export function sendTxHandler(deps: TxDeps): DappHandler<SendTxParams> {
         (e) => (e instanceof BroadcastError ? e.rawLog || e.message : null),
       );
       if (!sent.ok) return done(sent.outcome);
+      // A reply without a proper hash is not a success the page can follow up.
+      if (!TX_HASH.test(sent.value.txHash)) {
+        return done(invalid('The node returned an unusable transaction hash.'));
+      }
       return done(answer(bytesToWire(hashBytes(sent.value.txHash))));
     },
 

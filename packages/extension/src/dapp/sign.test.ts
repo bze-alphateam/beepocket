@@ -437,14 +437,16 @@ describe('signDirect review and approval', () => {
     expect(t.alarms).toEqual(expect.arrayContaining([WEAK_LOCK_ALARM, FULL_LOCK_ALARM]));
   });
 
-  it('shows a request it cannot put in plain words, and never signs it', async () => {
+  it('shows a request it cannot put in plain words, and answers the page instead of signing it', async () => {
     const t = await rig();
     await t.connect();
     const r = await review(t, { messages: [{ typeUrl: '/foo.v1.MsgBar', value: new Uint8Array() }] });
     expect(r.view.approvable).toBe(false);
     const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
-    expect(res).toMatchObject({ ok: false });
-    expect(t.answerOf(r.id)).toBeUndefined();
+    expect(res.ok).toBe(true);
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
+    expect((await t.dapp.current()).status).toBe('none');
   });
 
   it('refuses to sign once the site is no longer connected', async () => {
@@ -546,6 +548,16 @@ describe('sendTx', () => {
     expect(t.answerOf(a.id)).toMatchObject({
       error: { code: 'invalid-request', message: 'insufficient fee' },
     });
+  });
+
+  it('refuses a node reply without a proper 32-byte hash', async () => {
+    const t = await rig();
+    await t.connect();
+    for (const txHash of ['', 'zz', 'AB'.repeat(31), `${'AB'.repeat(31)}ZZ`]) {
+      t.node.broadcast.mockResolvedValueOnce({ txHash });
+      const a = await t.ask('sendTx', params());
+      expect(t.answerOf(a.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    }
   });
 
   it('refuses a site that is not connected, and the wrong chain', async () => {

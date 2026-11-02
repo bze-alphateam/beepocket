@@ -39,9 +39,10 @@ export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
         return fail(WalletErrorCodes.needsPassword, 'Enter your password to approve this.');
       }
       const p = prep.prepared;
-      // Hiding the button is not enough: anything but a plainly summarised request is refused here.
+      // Hiding the button is not enough: anything but a plainly summarised request is refused
+      // here, and the page is told so instead of waiting.
       if (p.summary.level !== 'normal') {
-        return fail(ErrorCodes.badRequest, "BeePocket can't show this request yet.");
+        return ok(refuse(DappErrorCodes.invalidRequest, "BeePocket can't show this request yet."));
       }
       const reviewed = user.fee;
       if (!reviewed) return fail(ErrorCodes.badRequest, 'dapp.answer needs the reviewed fee.');
