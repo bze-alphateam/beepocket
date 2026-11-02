@@ -1,17 +1,30 @@
 import type { DenomBranding } from '@beepocket/core';
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { ListedToken, WalletAddress } from '../../protocol';
 import { useClient } from '../../popup/client-context';
+import { AppearanceToggle } from '../../popup/appearance';
 import { Layout } from '../../popup/Layout';
 import { useRoute } from '../../popup/router';
 import { applyTheme } from '../../theme';
-import { Banner, Button, Pill, Spinner } from '../../ui';
-import { useLock } from '../lock/useLock';
+import {
+  Banner,
+  Button,
+  Card,
+  HomeHeader,
+  Pill,
+  Segmented,
+  SettingsButton,
+  Spinner,
+  Toast,
+  TokenPill,
+  TokenTitle,
+} from '../../ui';
+import { AddAddressSheet } from './AddAddressSheet';
 import { AddressesTab } from './AddressesTab';
 import { useBalances } from './data';
 import { useHomeEnv } from './env';
-import { amountText, subline } from './format';
+import { amountText, subline, tokenColor } from './format';
 import { RenameSheet } from './RenameSheet';
 import { Switcher } from './Switcher';
 import { homeTabs } from './tabs';
@@ -32,6 +45,8 @@ export interface SettingsTarget {
 export interface SendTarget {
   name: 'send';
   denom: string;
+  /** The address a row was tapped on: Send opens with it as From. */
+  fromIndex?: number;
 }
 
 interface Loaded {
@@ -49,21 +64,17 @@ export function Home() {
   const env = useHomeEnv();
   const { route, navigate } = useRoute<HomeRoute | SettingsTarget | SendTarget>();
   const arrival = route.name === 'home.main' ? route : undefined;
-  const lockWallet = useLock();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
   const [denom, setDenom] = useState<string | null>(arrival?.denom ?? null);
   const [toast, setToast] = useState(arrival?.toast ?? '');
-  // The kit on screen: set once per token, after its brand data arrived, so colours never flash.
+  // The token's brand data, fetched once per token so colours never flash.
   const [kit, setKit] = useState<{ denom: string; branding: DenomBranding | null } | null>(null);
   const [tab, setTab] = useState(ADDRESSES);
   const [switcher, setSwitcher] = useState(false);
   const [renaming, setRenaming] = useState<WalletAddress | null>(null);
-  const [added, setAdded] = useState<WalletAddress | null>(null);
-  const [addFailed, setAddFailed] = useState(false);
-  const [copiedAt, setCopiedAt] = useState(0);
   const [adding, setAdding] = useState(false);
-  const addingRef = useRef(false);
+  const [copied, setCopied] = useState<{ index: number; at: number } | null>(null);
   const [scheme, setScheme] = useState(env.scheme.current());
   const { balances, refresh } = useBalances(denom);
 
@@ -107,20 +118,19 @@ export function Home() {
     [env],
   );
 
-  const brandThemes = loaded?.brandThemes ?? true;
+  // Read even with brand themes off: the token avatar keeps the token's own colour.
   useEffect(() => {
     if (denom === null) return;
     let live = true;
-    if (brandThemes) {
-      void client.call('tokens.theme', { denom }).then((res) => {
-        if (live) setKit({ denom, branding: res.ok ? res.value : null });
-      });
-    } else setKit({ denom, branding: null });
+    void client.call('tokens.theme', { denom }).then((res) => {
+      if (live) setKit({ denom, branding: res.ok ? res.value : null });
+    });
     return () => {
       live = false;
     };
-  }, [client, denom, brandThemes]);
+  }, [client, denom]);
 
+  const brandThemes = loaded?.brandThemes ?? true;
   useEffect(() => {
     if (kit) {
       applyTheme(env.themeTarget, {
@@ -142,11 +152,11 @@ export function Home() {
   }, [toast, shown, env]);
 
   useEffect(() => {
-    if (copiedAt === 0) return;
+    if (copied === null) return;
     return env.scheduler.after(COPIED_MS, () => {
-      setCopiedAt(0);
+      setCopied(null);
     });
-  }, [copiedAt, env]);
+  }, [copied, env]);
 
   if (failed) {
     return (
@@ -169,40 +179,24 @@ export function Home() {
     );
   }
 
-  const copy = (address: string) => {
-    env.clipboard.writeText(address).then(
+  const copy = (address: WalletAddress) => {
+    env.clipboard.writeText(address.address).then(
       () => {
-        setCopiedAt((n) => n + 1);
+        setCopied((c) => ({ index: address.index, at: (c?.at ?? 0) + 1 }));
       },
       () => undefined,
     );
   };
-  const lock = () => {
-    void lockWallet();
-  };
-  const addAddress = async () => {
-    if (addingRef.current) return;
-    addingRef.current = true;
-    setAdding(true);
-    setAddFailed(false);
-    const res = await client.call('wallet.deriveNext', {});
-    addingRef.current = false;
-    setAdding(false);
-    if (!res.ok) {
-      setAddFailed(true);
-      return;
-    }
-    const created = res.value.address;
+  const added = (address: WalletAddress) => {
     setLoaded(
       (cur) =>
         cur && {
           ...cur,
-          addresses: cur.addresses.some((a) => a.index === created.index)
+          addresses: cur.addresses.some((a) => a.index === address.index)
             ? cur.addresses
-            : [...cur.addresses, created],
+            : [...cur.addresses, address],
         },
     );
-    setAdded(created);
     void refresh();
   };
   const rename = async (address: WalletAddress, label: string) => {
@@ -229,80 +223,147 @@ export function Home() {
     balances.addresses.every((a) => BigInt(a.amount) === 0n);
   const extra = homeTabs();
   const active = extra.find((x) => x.id === tab);
+  const color = tokenColor(token, kit?.denom === token.denom ? kit.branding : undefined);
 
   const header = (
+    <HomeHeader
+      token={
+        loaded.tokens.length > 1 ? (
+          <TokenPill
+            symbol={token.symbol}
+            color={color}
+            label={t('home.token.switch', { symbol: token.symbol })}
+            onClick={() => {
+              setSwitcher(true);
+            }}
+          />
+        ) : (
+          <TokenTitle
+            symbol={token.symbol}
+            color={color}
+            caption={t('home.token.wallet', { name: token.name })}
+          />
+        )
+      }
+      actions={
+        <>
+          {loaded.network === 'testnet' && <Pill>{t('home.network.testnet')}</Pill>}
+          <AppearanceToggle />
+          <SettingsButton
+            onClick={() => {
+              navigate({ name: 'settings.main' });
+            }}
+          />
+        </>
+      }
+    />
+  );
+
+  // The footer row has no height: a toast floats 20 px above the frame's bottom edge.
+  const toasts =
+    toast !== '' || copied !== null ? (
+      <>
+        {toast !== '' && <Toast message={toast} />}
+        {copied !== null && <Toast key={copied.at} message={t('home.copied')} />}
+      </>
+    ) : undefined;
+  // Direct children of the body, so an open sheet covers the whole frame (frame.css).
+  const sheets = (
     <>
-      {loaded.tokens.length > 1 ? (
-        <button
-          type="button"
-          class="bp-home-token"
-          aria-label={t('home.token.select')}
-          onClick={() => {
-            setSwitcher(true);
+      <Switcher
+        open={switcher}
+        tokens={loaded.tokens}
+        selected={token.denom}
+        onSelect={(d) => {
+          setDenom(d);
+          setTab(ADDRESSES);
+        }}
+        onTokens={(tokens) => {
+          setLoaded((cur) => cur && { ...cur, tokens });
+          if (!tokens.some((x) => x.denom === denom) && tokens[0]) setDenom(tokens[0].denom);
+        }}
+        onClose={() => {
+          setSwitcher(false);
+        }}
+      />
+      {renaming && (
+        <RenameSheet
+          key={renaming.index}
+          address={renaming}
+          onSave={(label) => rename(renaming, label)}
+          onClose={() => {
+            setRenaming(null);
           }}
-        >
-          {token.symbol} ▾
-        </button>
-      ) : (
-        <span class="bp-home-token">{token.symbol}</span>
+        />
       )}
-      <span class="bp-home-actions">
-        {loaded.network === 'testnet' && <Pill>{t('home.network.testnet')}</Pill>}
-        <button type="button" class="bp-home-icon" aria-label={t('home.lock')} onClick={lock}>
-          🔒
-        </button>
-        <button
-          type="button"
-          class="bp-home-icon"
-          aria-label={t('home.settings')}
-          onClick={() => {
-            navigate({ name: 'settings.main' });
+      {adding && (
+        <AddAddressSheet
+          onAdded={added}
+          onClose={() => {
+            setAdding(false);
           }}
-        >
-          ⚙
-        </button>
-      </span>
+        />
+      )}
     </>
   );
 
   return (
-    <Layout header={header}>
+    <Layout header={header} footer={toasts}>
       <main class="bp-home">
-        <section
-          class="bp-home-balance"
-          aria-label={t('home.balance.label', { symbol: token.symbol })}
-        >
-          <h1>
-            {total} <small>{token.symbol}</small>
-          </h1>
-          {balances && !allFailed && <p>{subline(balances.addresses)}</p>}
-          {allFailed && <p role="status">{t('home.balance.unavailable')}</p>}
+        <Card variant="edge">
+          <section
+            class="bp-home-balance"
+            aria-label={t('home.balance.label', { symbol: token.symbol })}
+          >
+            <span class="bp-home-caption">{t('home.balance.caption', { name: token.name })}</span>
+            <h1>
+              <span class="bp-home-total">{total}</span>
+              <small>{token.symbol}</small>
+            </h1>
+            {balances && !allFailed && <p>{subline(balances.addresses)}</p>}
+            {allFailed && <p role="status">{t('home.balance.unavailable')}</p>}
+            {balances?.partial === true && !allFailed && (
+              <p role="status">{t('home.balance.partial')}</p>
+            )}
+          </section>
           <Button
+            icon="send"
+            iconSize={18}
             disabled={balances === null || allFailed || BigInt(balances.total) === 0n}
             onClick={() => {
               navigate({ name: 'send', denom: token.denom });
             }}
           >
-            {t('send.title', { symbol: token.symbol })}
+            {t('home.send', { symbol: token.symbol })}
           </Button>
-          {balances?.partial === true && !allFailed && (
-            <p role="status">{t('home.balance.partial')}</p>
-          )}
-        </section>
-        <div class="bp-home-tabs" role="tablist" aria-label={t('home.tabs')}>
-          {[{ id: ADDRESSES, label: t('home.tab.addresses') }, ...extra].map((x) => (
-            <button
-              key={x.id}
-              type="button"
-              role="tab"
-              aria-selected={x.id === tab}
+        </Card>
+        <div class="bp-home-tabs">
+          <Segmented
+            label={t('home.tabs')}
+            value={tab}
+            onChange={setTab}
+            options={[
+              {
+                value: ADDRESSES,
+                label: t('home.tab.addresses'),
+                count: loaded.addresses.length,
+              },
+              ...extra.map((x) => ({ value: x.id, label: x.label })),
+            ]}
+          />
+          {!active && (
+            <Button
+              variant="icon"
+              icon="plus"
+              iconSize={16}
+              round
+              label={t('home.address.add')}
+              disabled={adding}
               onClick={() => {
-                setTab(x.id);
+                setAdding(true);
               }}
-            >
-              {x.label}
-            </button>
-          ))}
+            />
+          )}
         </div>
         {active ? (
           active.render({
@@ -325,68 +386,17 @@ export function Home() {
               symbol={token.symbol}
               balances={balances}
               addresses={loaded.addresses}
+              copied={copied?.index ?? null}
               onCopy={copy}
               onRename={setRenaming}
-              adding={adding}
-              onAdd={() => void addAddress()}
+              onSend={(address) => {
+                navigate({ name: 'send', denom: token.denom, fromIndex: address.index });
+              }}
             />
-            {addFailed && <p role="alert">{t('home.address.error')}</p>}
           </>
         )}
-        {toast !== '' && (
-          <div class="bp-home-toast" role="status">
-            {toast}
-          </div>
-        )}
-        {copiedAt > 0 && (
-          <div class="bp-home-toast" role="status">
-            {t('home.copied')}
-          </div>
-        )}
       </main>
-      <Switcher
-        open={switcher}
-        tokens={loaded.tokens}
-        selected={token.denom}
-        onSelect={(d) => {
-          setDenom(d);
-          setTab(ADDRESSES);
-        }}
-        onTokens={(tokens) => {
-          setLoaded((cur) => cur && { ...cur, tokens });
-          if (!tokens.some((x) => x.denom === denom) && tokens[0]) setDenom(tokens[0].denom);
-        }}
-        onClose={() => {
-          setSwitcher(false);
-        }}
-      />
-      {renaming && (
-        <RenameSheet
-          open
-          key={renaming.index}
-          title={t('home.rename.title')}
-          initial={renaming.label}
-          saveLabel="home.rename.save"
-          onSave={(label) => rename(renaming, label)}
-          onClose={() => {
-            setRenaming(null);
-          }}
-        />
-      )}
-      {added && (
-        <RenameSheet
-          open
-          key={`add-${String(added.index)}`}
-          title={t('home.add.title')}
-          intro={t('home.add.body')}
-          initial={added.label}
-          saveLabel="home.add.done"
-          onSave={(label) => rename(added, label)}
-          onClose={() => {
-            setAdded(null);
-          }}
-        />
-      )}
+      {sheets}
     </Layout>
   );
 }

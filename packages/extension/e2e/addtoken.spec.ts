@@ -63,7 +63,7 @@ test('the link opens the Add screen, Add selects the token, a second link says O
   await expect(first.page.locator('#state')).toHaveText('opened');
   await first.win.getByRole('button', { name: 'Add GOLD' }).click();
   await expect(first.win.getByText('GOLD added')).toBeVisible();
-  await expect(first.win.locator('.bp-home-token')).toContainText('GOLD');
+  await expect(first.win.locator('.bp-token-pill, .bp-token-title')).toContainText('GOLD');
 
   await first.win.close();
   await first.page.close();
@@ -71,7 +71,7 @@ test('the link opens the Add screen, Add selects the token, a second link says O
   await expect(second.win.getByRole('button', { name: 'Open GOLD' })).toBeVisible();
   await expect(second.page.locator('#state')).toHaveText('opened');
   await second.win.getByRole('button', { name: 'Open GOLD' }).click();
-  await expect(second.win.locator('.bp-home-token')).toContainText('GOLD');
+  await expect(second.win.locator('.bp-token-pill, .bp-token-title')).toContainText('GOLD');
   await expect(second.win.getByText('GOLD added')).toHaveCount(0);
 });
 

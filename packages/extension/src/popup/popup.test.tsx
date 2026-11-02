@@ -132,7 +132,7 @@ describe('App', () => {
         await new Promise((r) => setTimeout(r, 0));
       });
     }
-    expect(host.querySelector('.bp-home-token')?.textContent).toContain('BZE');
+    expect(host.querySelector('.bp-token-pill, .bp-token-title')?.textContent).toContain('BZE');
     vi.unstubAllGlobals();
   });
 });

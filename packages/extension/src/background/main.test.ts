@@ -233,10 +233,23 @@ describe('dapp channel', () => {
   it('never lets a content script reach the popup registry', async () => {
     const { send } = start();
     expect((await send(ping, PAGE)).reply).toBeUndefined();
-    for (const method of ['app.ping', 'wallet.unlock', 'dapp.answer']) {
+    for (const method of ['app.ping', 'wallet.unlock', 'wallet.previewNext', 'dapp.answer']) {
       const { reply } = await send({ dapp: { id: ID, method, params: {} } }, PAGE);
       expect(reply).toEqual({ error: { code: 'invalid-request', message: 'Unknown method.' } });
     }
+  });
+
+  it('answers the next-address preview to own pages only, and only when unlocked', async () => {
+    const { send } = start();
+    const preview = { method: 'wallet.previewNext', payload: {} };
+    for (const sender of [PAGE, { ...PAGE, url: 'https://evil.example/' }]) {
+      const { async, reply } = await send(preview, sender);
+      expect(async).toBeUndefined();
+      expect(reply).toBeUndefined();
+    }
+    // No unlocked wallet: the own page gets a typed refusal, never an address.
+    const { reply } = await send(preview, OWN);
+    expect(reply).toMatchObject({ ok: false, error: { code: 'wallet_locked' } });
   });
 
   it('never lets an own page reach the dapp registry', async () => {
