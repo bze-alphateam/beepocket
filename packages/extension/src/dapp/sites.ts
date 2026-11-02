@@ -54,36 +54,35 @@ export class SitesService {
 
   async change(origin: string, index: number): Promise<Result<Record<string, never>>> {
     const network = (await this.deps.services.activeNetwork()).id;
-    let missing = false;
-    let unknownAddress = false;
+    const outcome = { missing: false, unknownAddress: false };
     const saved = await this.deps.wallet.updateProfile((profile) => {
       const sites = profile.sites[network];
       const current = Object.hasOwn(sites, origin) ? sites[origin] : undefined;
       const entry = profile.addresses.find((a) => a.index === index);
-      if (!current) missing = true;
-      else if (!entry) unknownAddress = true;
+      if (!current) outcome.missing = true;
+      else if (!entry) outcome.unknownAddress = true;
       else sites[origin] = { ...current, address: entry.address };
       return profile;
     });
     if (!saved.ok) return saved;
-    if (missing) return fail(DappProtocolCodes.unknownSite, 'This site is not connected.');
-    if (unknownAddress) return fail(WalletErrorCodes.unknownAddress, 'No such address.');
+    if (outcome.missing) return fail(DappProtocolCodes.unknownSite, 'This site is not connected.');
+    if (outcome.unknownAddress) return fail(WalletErrorCodes.unknownAddress, 'No such address.');
     await this.deps.changes.notify({ origin, network });
     return ok({});
   }
 
   async disconnect(origin: string): Promise<Result<Record<string, never>>> {
     const network = (await this.deps.services.activeNetwork()).id;
-    let missing = false;
+    const outcome = { missing: false };
     const saved = await this.deps.wallet.updateProfile((profile) => {
       if (Object.hasOwn(profile.sites[network], origin)) {
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete profile.sites[network][origin];
-      } else missing = true;
+      } else outcome.missing = true;
       return profile;
     });
     if (!saved.ok) return saved;
-    if (missing) return fail(DappProtocolCodes.unknownSite, 'This site is not connected.');
+    if (outcome.missing) return fail(DappProtocolCodes.unknownSite, 'This site is not connected.');
     await this.deps.changes.notify({ origin, network });
     return ok({});
   }
