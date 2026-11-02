@@ -18,7 +18,7 @@ export function WaitingRequests() {
     };
   }, [client]);
 
-  if (queue?.head == null || !(queue.count > 0)) return null;
+  if (!queue?.head || !(queue.count > 0)) return null;
   const more = queue.origins.length - 1;
   return (
     <aside class="bp-lock-waiting" role="note">
