@@ -9,7 +9,7 @@ describe('wire encoding', () => {
   });
 
   it('round-trips bigints through decimal strings, beyond 2^64', () => {
-    for (const n of [0n, 1n, 2n ** 64n, 123456789012345678901234567890n]) {
+    for (const n of [0n, 1n, 2n ** 64n, 2n ** 256n - 1n, 123456789012345678901234567890n]) {
       expect(bigintFromWire(bigintToWire(n))).toBe(n);
     }
   });
@@ -21,5 +21,13 @@ describe('wire encoding', () => {
     for (const bad of ['', '-1', '1.5', '0x10', '01', ' 1']) {
       expect(() => bigintFromWire(bad)).toThrow();
     }
+  });
+
+  it('refuses a huge digit string without parsing it, but still parses uint256 max', () => {
+    const started = performance.now();
+    expect(() => bigintFromWire('9'.repeat(1_000_000))).toThrow();
+    expect(() => bigintFromWire('1'.repeat(79))).toThrow();
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(bigintFromWire((2n ** 256n - 1n).toString())).toBe(2n ** 256n - 1n);
   });
 });
