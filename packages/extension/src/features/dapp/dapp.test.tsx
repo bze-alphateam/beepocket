@@ -312,7 +312,10 @@ async function signView(
   options: { locked?: boolean } = {},
 ): Promise<Extract<RequestView, { status: 'sign' }>> {
   const summary = await summarise(messages, {
-    tokens: { resolve: () => Promise.resolve({ ...BZE, kind: 'native' as const }) },
+    tokens: {
+      resolve: () =>
+        Promise.resolve({ ...BZE, kind: 'native' as const, source: 'builtin' as const }),
+    },
     markets: { markets: () => Promise.resolve([]), liquidityPools: () => Promise.resolve([]) },
     orders: { marketOrder: () => Promise.resolve(null) },
     addressBook: () => null,
