@@ -22,4 +22,18 @@ export class Deliverer {
       // nobody is listening any more
     }
   }
+
+  /** Pushes an event to one document; says whether it arrived (false: the page is gone). */
+  async push(target: { tabId: number; documentId: string }, event: 'accountChanged') {
+    try {
+      await this.tabs.sendMessage(
+        target.tabId,
+        { dapp: { event } },
+        { documentId: target.documentId },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }

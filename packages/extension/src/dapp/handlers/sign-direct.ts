@@ -50,11 +50,9 @@ export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
       if (!reviewed) return fail(ErrorCodes.badRequest, 'dapp.answer needs the reviewed fee.');
       const chosen = p.options.find((o) => o.denom === reviewed.denom);
       // What was reviewed is what gets signed: any other fee goes back to the review.
-      if (
-        !chosen ||
-        chosen.amount !== reviewed.amount ||
-        p.gasLimit.toString() !== reviewed.gasLimit
-      ) {
+      const moved =
+        chosen?.amount !== reviewed.amount || p.gasLimit.toString() !== reviewed.gasLimit;
+      if (!chosen || moved) {
         return fail(SendErrorCodes.reviewChanged, 'The network fee changed. Review it again.');
       }
       const authInfoBytes = withWalletFee(
