@@ -1,5 +1,6 @@
 import { useMemo } from 'preact/hooks';
 import type { RouteTable } from '../../popup/router';
+import { useAppearance } from '../../popup/appearance';
 import { browserHomeEnv, HomeEnvProvider } from '../home/env';
 import { ConnectedSitesScreen } from './ConnectedSitesScreen';
 import { RequestScreen } from './RequestScreen';
@@ -9,7 +10,8 @@ export interface DappRoute {
 }
 
 function RequestRoute() {
-  const env = useMemo(browserHomeEnv, []);
+  const scheme = useAppearance();
+  const env = useMemo(() => browserHomeEnv(scheme), [scheme]);
   return (
     <HomeEnvProvider env={env}>
       <RequestScreen

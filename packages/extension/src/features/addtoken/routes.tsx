@@ -1,5 +1,6 @@
 import { useMemo } from 'preact/hooks';
 import type { RouteTable } from '../../popup/router';
+import { useAppearance } from '../../popup/appearance';
 import { browserHomeEnv, HomeEnvProvider } from '../home/env';
 import { AddTokenScreen } from './AddTokenScreen';
 
@@ -8,7 +9,8 @@ export interface AddTokenRoute {
 }
 
 function AddTokenRoot() {
-  const env = useMemo(browserHomeEnv, []);
+  const scheme = useAppearance();
+  const env = useMemo(() => browserHomeEnv(scheme), [scheme]);
   return (
     <HomeEnvProvider env={env}>
       <AddTokenScreen

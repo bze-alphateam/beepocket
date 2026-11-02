@@ -1,0 +1,170 @@
+/* EmptyState, ResultLayout, Toast, BottomActions. */
+.bp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 16px;
+  text-align: center;
+}
+
+.bp-empty-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.bp-empty-sub {
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-result {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 0 16px 16px;
+}
+
+.bp-result > :not(.bp-result-glow) {
+  position: relative;
+}
+
+.bp-result-glow {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 300px;
+  pointer-events: none;
+}
+
+.bp-result-ok {
+  --bp-result: var(--bp-ok);
+}
+
+.bp-result-bad {
+  --bp-result: var(--bp-bad);
+}
+
+.bp-result-glow {
+  background: radial-gradient(
+    90% 60% at 50% 0%,
+    color-mix(in srgb, var(--bp-result) 16%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+.bp-result-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 0 16px;
+  text-align: center;
+}
+
+.bp-result-head h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.bp-result-head p {
+  max-width: 290px;
+  color: var(--bp-muted);
+  font-size: 14px;
+}
+
+.bp-result-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border: 1px solid color-mix(in srgb, var(--bp-result) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bp-result) 12%, transparent);
+  color: var(--bp-result);
+  box-shadow: 0 0 40px -6px color-mix(in srgb, var(--bp-result) 55%, transparent);
+}
+
+.bp-result-link {
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+}
+
+.bp-result > .bp-bottom {
+  margin-top: auto;
+  padding: 16px 0 0;
+}
+
+.bp-result-pending {
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+}
+
+.bp-result-pending .bp-result-head {
+  gap: 6px;
+  padding: 0;
+}
+
+.bp-result-pending .bp-result-head h1 {
+  font-size: 20px;
+}
+
+.bp-result-pending .bp-result-head p {
+  font-size: 13px;
+}
+
+.bp-result-ring circle {
+  fill: none;
+  stroke: var(--bp-line-strong);
+  stroke-width: 5;
+}
+
+.bp-result-ring circle + circle {
+  stroke: var(--bp-primary);
+  stroke-linecap: round;
+  transform-origin: 36px 36px;
+  animation: bp-spin 1s linear infinite;
+}
+
+.bp-toast {
+  position: absolute;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--bp-line-strong);
+  border-radius: 999px;
+  background: var(--bp-raised);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.7);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.bp-toast > .bp-icon {
+  color: var(--bp-ok);
+}
+
+.bp-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bp-result-ring circle + circle {
+    animation-duration: 3s;
+  }
+}

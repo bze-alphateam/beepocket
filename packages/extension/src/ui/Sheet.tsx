@@ -1,21 +1,33 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
+import { t } from '../i18n';
+import { Button } from './Button';
 
 export interface SheetProps {
   open: boolean;
   title: string;
   onClose: () => void;
   children: ComponentChildren;
+  /** Next to the title, muted ("Connected sites 3"). */
+  count?: number | string | undefined;
+  /** Shows a close (×) button in the title row; Escape and the backdrop always close. */
+  closeButton?: boolean | undefined;
+  /** The sticky bottom stack: primary over secondary. The body scrolls above it. */
+  actions?: ComponentChildren;
+  /** `auto` fits the content; `tall` takes the full height a sheet may have (lists, search). */
+  height?: 'auto' | 'tall' | undefined;
 }
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * Bottom sheet over the popup. While open it owns the keyboard: focus moves into the dialog,
- * Tab stays inside it, Escape closes it, and focus returns to what had it before.
+ * Bottom sheet over the popup: backdrop, handle, title row, scrolling body, sticky actions.
+ * While open it owns the keyboard: focus moves into the dialog, Tab stays inside it, Escape
+ * closes it, and focus returns to what had it before.
  */
-export function Sheet({ open, title, onClose, children }: SheetProps) {
+export function Sheet(props: SheetProps) {
+  const { open, title, onClose, children } = props;
   const dialog = useRef<HTMLElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -62,14 +74,28 @@ export function Sheet({ open, title, onClose, children }: SheetProps) {
       <div class="bp-sheet-backdrop" aria-hidden="true" onClick={onClose} />
       <section
         ref={dialog}
-        class="bp-sheet"
+        class={props.height === 'tall' ? 'bp-sheet bp-sheet-tall' : 'bp-sheet'}
         role="dialog"
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
       >
-        <h2>{title}</h2>
-        {children}
+        <span class="bp-sheet-handle" aria-hidden="true" />
+        <div class="bp-sheet-head">
+          <h2>{title}</h2>
+          {props.count !== undefined && <span class="bp-sheet-count">{props.count}</span>}
+          {props.closeButton === true && (
+            <Button
+              variant="icon"
+              icon="x"
+              iconSize={18}
+              label={t('app.sheet.close')}
+              onClick={onClose}
+            />
+          )}
+        </div>
+        <div class="bp-sheet-body">{children}</div>
+        {props.actions !== undefined && <div class="bp-sheet-actions">{props.actions}</div>}
       </section>
     </div>
   );

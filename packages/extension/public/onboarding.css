@@ -1,6 +1,5 @@
 /* First-run flow. Colours come from the --bp-* variables set by the theme engine. */
-.ob-step,
-.ob-welcome {
+.ob-step {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -9,22 +8,64 @@
   padding: 16px 20px 20px;
 }
 
+/* Welcome (Ob-Welcome): the lockup and tagline centred, the actions at the bottom. */
 .ob-welcome {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0 20px 20px;
+}
+
+.ob-welcome-hero {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
   text-align: center;
 }
 
-.ob-welcome h1 {
-  font-size: 26px;
+.ob-welcome-mark {
+  display: flex;
+  filter: drop-shadow(var(--bp-mark-shadow));
 }
 
-.ob-actions {
+.ob-welcome-tagline {
+  max-width: 270px;
+  color: var(--bp-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.ob-welcome > .bp-card {
+  margin-bottom: 16px;
+}
+
+.ob-link-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ob-link-strip > .bp-icon {
+  color: var(--bp-accent-text);
+}
+
+.ob-welcome-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  margin-top: 12px;
+  gap: 8px;
+}
+
+.ob-welcome-note {
+  padding-top: 8px;
+  color: var(--bp-faint);
+  font-size: 12px;
+  text-align: center;
 }
 
 .ob-step h1 {

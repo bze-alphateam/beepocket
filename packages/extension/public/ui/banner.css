@@ -1,0 +1,20 @@
+/* Banner */
+.bp-banner {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--bp-soft-line);
+  background: var(--bp-soft);
+  font-size: 13px;
+}
+
+.bp-banner-amber {
+  border-color: var(--bp-warn-line);
+  background: var(--bp-warn-soft);
+  color: var(--bp-warn-text);
+}
+
+.bp-banner-red {
+  border-color: var(--bp-bad-line);
+  background: var(--bp-bad-soft);
+  color: var(--bp-bad-text);
+}

@@ -3,13 +3,17 @@ import { ok, type Result, type WalletSettings } from '../../protocol';
 import type { Storage } from '../../platform/ports';
 import { DEFAULT_NETWORK, NETWORK_KEY } from '../../background/services';
 import type { WalletService } from '../wallet';
+import { DEFAULT_APPEARANCE, isAppearance, type Appearance } from '../../theme/appearance';
+
+/** Unencrypted storage key of the appearance setting. */
+export const APPEARANCE_KEY = 'appearance';
 
 /** The slice of the wallet service the settings need. */
 export type SettingsWallet = Pick<WalletService, 'getProfile' | 'updateProfile' | 'rearm'>;
 
 export interface SettingsDeps {
   wallet: SettingsWallet;
-  /** The unencrypted store holding the `network` key. */
+  /** The unencrypted store holding the `network` and `appearance` keys. */
   storage: Pick<Storage, 'get' | 'set'>;
   /** Told after the active network changed (open dapp pages must ask again). Failures are ignored. */
   onNetworkChanged?(): Promise<void>;
@@ -48,5 +52,16 @@ export class SettingsService {
     await this.deps.storage.set(NETWORK_KEY, id);
     if (before.id !== id) await this.deps.onNetworkChanged?.().catch(() => undefined);
     return ok({ id });
+  }
+
+  /** Readable without a wallet and while locked; a missing or garbage value is the default. */
+  async appearance(): Promise<{ appearance: Appearance }> {
+    const stored = await this.deps.storage.get(APPEARANCE_KEY);
+    return { appearance: isAppearance(stored) ? stored : DEFAULT_APPEARANCE };
+  }
+
+  async setAppearance(appearance: Appearance): Promise<Result<{ appearance: Appearance }>> {
+    await this.deps.storage.set(APPEARANCE_KEY, appearance);
+    return ok({ appearance });
   }
 }

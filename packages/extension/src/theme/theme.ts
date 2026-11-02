@@ -36,6 +36,18 @@ export function buildCssVars(k: Kit, scheme: Scheme): CssVars {
     '--bp-edge': `linear-gradient(${card},${card}) padding-box, linear-gradient(160deg,${alpha(k.primary, light ? 0.6 : 0.75)},${alpha(k.secondary, light ? 0.16 : 0.22)} 45%,${alpha(k.text, 0.06)}) border-box`,
     '--bp-glow': `radial-gradient(120% 75% at 50% -10%,${alpha(k.primary, light ? 0.16 : 0.24)} 0%,${alpha(k.end, light ? 0.05 : 0.07)} 45%,transparent 75%)`,
     '--bp-switch-off': light ? '#D5DAE1' : mix(k.bg, k.text, 0.12),
+    // Progress bars and strength meters share the switch's off colour.
+    '--bp-track': light ? '#D5DAE1' : mix(k.bg, k.text, 0.12),
+    '--bp-seg-on': light ? '#FFFFFF' : mix(k.bg, k.text, 0.12),
+    '--bp-secondary-fill': light ? '#FFFFFF' : alpha(k.text, 0.04),
+    '--bp-box-off': alpha(k.text, light ? 0.28 : 0.22),
+    '--bp-pick-line': alpha(k.primary, 0.6),
+    '--bp-row-on': alpha(k.text, 0.03),
+    '--bp-swatch-line': alpha(k.text, 0.2),
+    '--bp-veil': alpha(k.bg, 0.35),
+    '--bp-mark-shadow': light
+      ? `0 14px 22px ${alpha(k.primary, 0.22)}`
+      : `0 14px 26px ${alpha(k.primary, 0.32)}`,
     '--bp-disc': light ? '#0F1318' : '#1B2128',
     '--bp-backdrop': light ? 'rgba(20,23,28,0.45)' : 'rgba(0,0,0,0.6)',
     '--bp-shadow': light

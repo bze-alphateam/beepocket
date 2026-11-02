@@ -1,0 +1,110 @@
+/* Field: label, box (input + trailing adornment), one hint line. */
+.bp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bp-field > label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bp-muted);
+}
+
+.bp-field-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 0 0 12px;
+  border: 1px solid var(--bp-line-strong);
+  border-radius: 12px;
+  background: var(--bp-inset);
+}
+
+.bp-field-box:focus-within {
+  border-color: var(--bp-soft-line);
+}
+
+.bp-field-box:has(input:focus-visible) {
+  border-color: var(--bp-primary);
+  box-shadow: 0 0 0 3px var(--bp-soft);
+}
+
+.bp-field-box:has(input[aria-invalid='true']) {
+  border-color: var(--bp-bad-line);
+}
+
+.bp-field-box input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 12px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--bp-text);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+.bp-field-box input::placeholder {
+  color: var(--bp-faint);
+}
+
+.bp-field-box input:disabled {
+  opacity: 0.5;
+}
+
+.bp-field-box > :not(input) {
+  flex: none;
+}
+
+.bp-field-lg .bp-field-box {
+  height: 48px;
+  padding-left: 14px;
+  border-color: var(--bp-soft-line);
+}
+
+.bp-field-amount .bp-field-box {
+  height: 52px;
+  padding-right: 6px;
+  border-color: var(--bp-soft-line);
+}
+
+.bp-field-amount input {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-field-mono input {
+  font-family: var(--bp-font-mono);
+  font-size: 12px;
+}
+
+.bp-field-suffix {
+  color: var(--bp-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bp-field-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--bp-faint);
+  font-size: 12px;
+}
+
+.bp-field-note > .bp-icon {
+  margin-top: 1px;
+}
+
+.bp-field-error {
+  color: var(--bp-bad-text);
+}
+
+.bp-field-success {
+  color: var(--bp-ok-text);
+}

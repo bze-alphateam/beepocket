@@ -1,0 +1,16 @@
+/* Logo: the disc follows the scheme, the wordmark is white on dark and ink on light. */
+.bp-logo {
+  display: block;
+}
+
+.bp-logo-disc {
+  fill: var(--bp-disc);
+}
+
+.bp-logo-word {
+  fill: #ffffff;
+}
+
+:root[data-scheme='light'] .bp-logo-word {
+  fill: #14171c;
+}

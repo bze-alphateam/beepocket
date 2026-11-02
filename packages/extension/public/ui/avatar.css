@@ -1,0 +1,63 @@
+/* Avatar (token / contact / site letter) and IconTile. */
+.bp-avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 999px;
+  color: #0a0c10;
+  font-weight: 800;
+}
+
+.bp-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bp-avatar-contact {
+  border: 1px solid var(--bp-soft-line);
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+  font-weight: 700;
+}
+
+.bp-avatar-site {
+  border-radius: 28%;
+}
+
+.bp-icon-tile {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bp-icon-tile-soft {
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+}
+
+.bp-empty .bp-icon-tile-soft {
+  border: 1px solid var(--bp-soft-line);
+}
+
+.bp-icon-tile-inset {
+  background: var(--bp-inset);
+  color: var(--bp-muted);
+}
+
+.bp-empty .bp-icon-tile-inset {
+  color: var(--bp-faint);
+}
+
+.bp-icon-tile-ok {
+  background: color-mix(in srgb, var(--bp-ok) 14%, transparent);
+  color: var(--bp-ok-text);
+}
+
+.bp-icon-tile-bad {
+  background: var(--bp-bad-soft);
+  color: var(--bp-bad-text);
+}

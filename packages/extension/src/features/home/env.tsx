@@ -1,6 +1,6 @@
 import { createContext, type ComponentChildren } from 'preact';
 import { useContext } from 'preact/hooks';
-import { systemScheme, type Scheme, type ThemeTarget } from '../../theme';
+import type { Scheme, SchemeSource, ThemeTarget } from '../../theme';
 
 /** Timers the home screen uses, injectable so tests drive time by hand. */
 export interface Scheduler {
@@ -18,8 +18,8 @@ export interface HomeEnv {
   clipboard: { writeText(text: string): Promise<void> };
 }
 
-export function browserHomeEnv(): HomeEnv {
-  const dark = window.matchMedia('(prefers-color-scheme: dark)');
+/** `scheme` is the popup's appearance (setting + OS), so screens never read the OS alone. */
+export function browserHomeEnv(scheme: SchemeSource): HomeEnv {
   return {
     scheduler: {
       every: (ms, fn) => {
@@ -36,15 +36,7 @@ export function browserHomeEnv(): HomeEnv {
       },
     },
     themeTarget: document.documentElement,
-    scheme: {
-      current: () => systemScheme(dark),
-      subscribe: (listener) => {
-        dark.addEventListener('change', listener);
-        return () => {
-          dark.removeEventListener('change', listener);
-        };
-      },
-    },
+    scheme,
     clipboard: { writeText: (text) => navigator.clipboard.writeText(text) },
   };
 }

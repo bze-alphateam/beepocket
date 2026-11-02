@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "screens": "node screens/run.mjs"
   },
   "dependencies": {
     "@beepocket/core": "workspace:*",

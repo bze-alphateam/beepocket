@@ -1,0 +1,23 @@
+/*
+ * The shared UI kit, loaded before every screen stylesheet. One file per component under ui/;
+ * a screen restyle adds or changes its own component file, never a neighbour's.
+ * All colours come from the --bp-* variables the theme engine sets (src/theme).
+ */
+@import url('ui/base.css');
+@import url('ui/frame.css');
+@import url('ui/icon.css');
+@import url('ui/logo.css');
+@import url('ui/button.css');
+@import url('ui/header.css');
+@import url('ui/field.css');
+@import url('ui/words.css');
+@import url('ui/card.css');
+@import url('ui/avatar.css');
+@import url('ui/segmented.css');
+@import url('ui/toggle.css');
+@import url('ui/check.css');
+@import url('ui/sheet.css');
+@import url('ui/states.css');
+@import url('ui/banner.css');
+@import url('ui/pill.css');
+@import url('ui/spinner.css');

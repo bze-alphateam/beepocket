@@ -1,0 +1,50 @@
+/* Segmented: tabs and radio segments. */
+.bp-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--bp-line);
+  border-radius: 10px;
+  background: var(--bp-inset);
+}
+
+.bp-seg > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--bp-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bp-seg-sm {
+  gap: 4px;
+}
+
+.bp-seg-sm > button {
+  height: 28px;
+  font-size: 12px;
+}
+
+.bp-seg > .bp-seg-on {
+  background: var(--bp-seg-on);
+  color: var(--bp-text);
+}
+
+.bp-seg > button:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 1px;
+}
+
+.bp-seg-count {
+  color: var(--bp-faint);
+  font-size: 11px;
+}

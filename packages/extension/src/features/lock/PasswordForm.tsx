@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { PasswordOutcome, Result } from '../../protocol';
-import { Button, TextField } from '../../ui';
+import { Button, Field } from '../../ui';
 import { formatCountdown, useCountdown } from './countdown';
 import { useLockEnv } from './env';
 
@@ -16,6 +16,8 @@ export interface PasswordFormProps {
   /** The submit button waits for something else (e.g. a tick) and takes this style. */
   hold?: boolean;
   variant?: 'primary' | 'danger';
+  /** Unlock's look: 48 px field and button, the label kept for screen readers only. */
+  large?: boolean;
 }
 
 /** Password field + submit with the wrong-password error and the throttle countdown. */
@@ -60,15 +62,18 @@ export function PasswordForm(props: PasswordFormProps) {
         void submit();
       }}
     >
-      <TextField
+      <Field
         label={props.label}
+        hideLabel={props.large}
+        placeholder={props.large === true ? props.label : undefined}
+        size={props.large === true ? 'lg' : 'md'}
         type="password"
         value={password}
         onInput={setPassword}
         disabled={blocked || busy}
         autoFocus
         autoComplete="current-password"
-        {...(error === undefined ? {} : { error })}
+        error={error}
       />
       {blocked && (
         <>
@@ -83,6 +88,7 @@ export function PasswordForm(props: PasswordFormProps) {
       <Button
         type="submit"
         variant={props.variant ?? 'primary'}
+        size={props.large === true ? 'lg' : 'md'}
         disabled={blocked || busy || password === '' || props.hold === true}
       >
         {busy ? t('lock.unlocking') : props.submitLabel}

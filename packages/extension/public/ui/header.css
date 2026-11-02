@@ -1,0 +1,124 @@
+/* Headers: flow screen, onboarding step, Home (token pill / title). */
+.bp-screen-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 56px;
+  padding: 0 16px 0 6px;
+}
+
+.bp-screen-header > .bp-btn-icon {
+  color: var(--bp-text);
+}
+
+.bp-screen-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bp-ob-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: 0 6px;
+}
+
+.bp-ob-header > .bp-btn-icon:first-child {
+  color: var(--bp-text);
+}
+
+.bp-ob-header-gap {
+  flex: none;
+  width: 44px;
+}
+
+.bp-progress {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+}
+
+.bp-progress > span {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bp-track);
+}
+
+.bp-progress > .bp-progress-on {
+  background: var(--bp-primary);
+}
+
+.bp-progress-short {
+  padding-left: 4px;
+  color: var(--bp-faint);
+  font-size: 12px;
+}
+
+.bp-home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 6px 0 12px;
+}
+
+.bp-home-header-actions {
+  display: flex;
+}
+
+.bp-token-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px 0 6px;
+  border: 1px solid var(--bp-line-strong);
+  border-radius: 999px;
+  background: var(--bp-card);
+  color: var(--bp-text);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.35s ease;
+}
+
+.bp-token-pill:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+.bp-token-pill > .bp-icon {
+  color: var(--bp-muted);
+}
+
+.bp-token-pill-sym,
+.bp-token-title-sym {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.bp-token-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding-left: 4px;
+}
+
+.bp-token-title > span:last-child {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.bp-token-title-cap {
+  color: var(--bp-muted);
+  font-size: 11px;
+}
