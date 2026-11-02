@@ -55,6 +55,8 @@ export const onboarding = {
   'onboarding.start.lookup': 'Look up',
   'onboarding.start.looking': 'Looking up',
   'onboarding.start.prefilled': 'Filled in from a link',
+  'onboarding.link.strip': 'Setting up for {symbol} · Link from {host}',
+  'onboarding.link.stripNoToken': 'Link from {host}',
   'onboarding.start.invalid': "That isn't a valid token code.",
   'onboarding.start.noSuchToken': 'No token with this code on BeeZee',
   'onboarding.start.noSuchTokenHint': 'Check it with whoever shared it.',

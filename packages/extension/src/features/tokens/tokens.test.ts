@@ -2,6 +2,7 @@ import { NETWORKS, type DenomBranding, type NetworkId, type TokenInfo } from '@b
 import { describe, expect, it } from 'vitest';
 import { registerHandlers } from '../../background/handlers';
 import type { DappService } from '../../dapp';
+import type { AddTokenService } from '../addtoken';
 import { HandlerRegistry } from '../../background/registry';
 import type { Services } from '../../background/services';
 import type { Platform } from '../../platform';
@@ -525,6 +526,7 @@ describe('wired to the wallet profile', () => {
       } as unknown as Services,
       wallet: wallet as unknown as WalletService,
       dapp: {} as unknown as DappService,
+      addToken: {} as unknown as AddTokenService,
     });
     return { registry, writes, profile: () => profile };
   }

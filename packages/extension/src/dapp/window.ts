@@ -8,7 +8,9 @@ export interface WindowsLike {
     width: number;
     height: number;
     focused: boolean;
-  }): Promise<{ id?: number | undefined } | undefined>;
+  }): Promise<
+    { id?: number | undefined; tabs?: { id?: number | undefined }[] | undefined } | undefined
+  >;
   get(windowId: number): Promise<unknown>;
   update(windowId: number, info: { focused: boolean }): Promise<unknown>;
 }

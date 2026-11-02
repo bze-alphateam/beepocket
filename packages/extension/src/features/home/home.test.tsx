@@ -69,7 +69,7 @@ interface World {
   failed: number[];
 }
 
-function setup(over: Partial<World> = {}) {
+function setup(over: Partial<World> = {}, route: HomeRoute = { name: 'home.main' }) {
   const w: World = {
     tokens: [BZE, PAGE],
     addresses: [addr(0, 'Main'), addr(1, 'Savings')],
@@ -186,7 +186,7 @@ function setup(over: Partial<World> = {}) {
   const { host } = render(
     <ClientProvider client={client}>
       <HomeEnvProvider env={env}>
-        <Router<HomeRoute> table={table} initial={{ name: 'home.main' }} />
+        <Router<HomeRoute> table={table} initial={route} />
       </HomeEnvProvider>
     </ClientProvider>,
   );
@@ -239,6 +239,32 @@ describe('balance block', () => {
     expect(text(s.host)).toContain('No BZE yet');
     expect(text(s.host)).toContain('Main');
     expect(text(s.host)).toContain('Savings');
+  });
+});
+
+describe('arrival from the add-a-token link', () => {
+  it('opens on the chosen token and shows the toast until it expires', async () => {
+    const s = setup({}, { name: 'home.main', denom: PAGE.denom, toast: 'PAGE added' });
+    await s.tick();
+    expect(text(s.host)).toContain('PAGE');
+    expect(
+      s.calls.some(
+        (c) => c.method === 'tokens.balances' && (c.req as { denom: string }).denom === 'ubze',
+      ),
+    ).toBe(false);
+    expect(text(s.host)).toContain('PAGE added');
+    s.fire(1800);
+    expect(text(s.host)).not.toContain('PAGE added');
+  });
+
+  it('falls back to the first token when the chosen one is not in the list', async () => {
+    const s = setup({}, { name: 'home.main', denom: 'factory/bze1x/gone' });
+    await s.tick();
+    expect(
+      s.calls.some(
+        (c) => c.method === 'tokens.balances' && (c.req as { denom: string }).denom === 'ubze',
+      ),
+    ).toBe(true);
   });
 });
 

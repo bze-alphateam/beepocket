@@ -42,6 +42,7 @@ await build({
   entryPoints: {
     inpage: join(root, 'src/dapp/inpage/main.ts'),
     relay: join(root, 'src/dapp/relay-main.ts'),
+    addtoken: join(root, 'src/features/addtoken/content-main.ts'),
   },
   outdir: dist,
   bundle: true,
