@@ -188,6 +188,8 @@ const ICONS = {
       <path d="M12 3.8l2.5 5.1 5.6.8-4.05 3.95.96 5.6L12 16.6l-5 2.65.96-5.6L3.9 9.7l5.6-.8z" />
     ),
   },
+  // Not on a board: a filled dot, the neutral mark of an activity kind the wallet doesn't know.
+  dot: { width: 2, fill: true, body: <circle cx="12" cy="12" r="3" /> },
   // Not on a board: a plain shield, same stroke style.
   shield: { width: 1.8, body: <path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z" /> },
 } satisfies Record<string, { width: number; fill?: boolean; body: JSX.Element }>;

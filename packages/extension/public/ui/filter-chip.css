@@ -1,0 +1,12 @@
+/* FilterChip: a DropdownSheet trigger that turns soft accent while it narrows a list. */
+.bp-filter-chip {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 4px 0 0;
+}
+
+.bp-filter-chip[data-on] > .bp-dropdown {
+  border-color: var(--bp-soft-line);
+  background: var(--bp-soft);
+}

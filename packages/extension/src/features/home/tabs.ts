@@ -17,6 +17,8 @@ export interface HomeTab {
   id: string;
   label: string;
   render(ctx: HomeTabContext): ComponentChildren;
+  /** Right of the tabs while this tab is open, in place of the Addresses tab's + (a filter chip). */
+  action?(ctx: HomeTabContext): ComponentChildren;
 }
 
 const tabs: HomeTab[] = [];

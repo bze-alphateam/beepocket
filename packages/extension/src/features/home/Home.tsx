@@ -27,7 +27,7 @@ import { useHomeEnv } from './env';
 import { amountText, subline, tokenColor } from './format';
 import { RenameSheet } from './RenameSheet';
 import { Switcher } from './Switcher';
-import { homeTabs } from './tabs';
+import { homeTabs, type HomeTabContext } from './tabs';
 
 export interface HomeRoute {
   name: 'home.main';
@@ -223,6 +223,13 @@ export function Home() {
     balances.addresses.every((a) => BigInt(a.amount) === 0n);
   const extra = homeTabs();
   const active = extra.find((x) => x.id === tab);
+  const tabContext: HomeTabContext = {
+    token,
+    tokens: loaded.tokens,
+    balances,
+    addresses: loaded.addresses,
+    refresh,
+  };
   const color = tokenColor(token, kit?.denom === token.denom ? kit.branding : undefined);
 
   const header = (
@@ -351,7 +358,9 @@ export function Home() {
               ...extra.map((x) => ({ value: x.id, label: x.label })),
             ]}
           />
-          {!active && (
+          {active ? (
+            active.action?.(tabContext)
+          ) : (
             <Button
               variant="icon"
               icon="plus"
@@ -366,13 +375,7 @@ export function Home() {
           )}
         </div>
         {active ? (
-          active.render({
-            token,
-            tokens: loaded.tokens,
-            balances,
-            addresses: loaded.addresses,
-            refresh,
-          })
+          active.render(tabContext)
         ) : (
           <>
             {none && (
