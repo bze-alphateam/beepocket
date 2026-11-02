@@ -8,7 +8,8 @@ import { ClientProvider } from '../../popup/client-context';
 import { Router } from '../../popup/router';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { LockEnvProvider } from '../lock/env';
-import { SendEnvProvider, SendFlow, type SendEnv, type SendRoute } from './routes';
+import { SendEnvProvider, type SendEnv } from './env';
+import { SendFlow, type SendRoute } from './SendFlow';
 
 type TestRoute = SendRoute | { name: 'home.main' };
 
@@ -209,6 +210,21 @@ describe('send form', () => {
     expect(host.querySelector('[role=dialog]')).toBeNull();
   });
 
+  it('Review in the pinned footer submits the form, so Enter in a field reaches Review', async () => {
+    const { host } = setup();
+    await flush();
+    type(field(host, 'To'), TO);
+    type(field(host, 'Amount'), '1.5');
+    const review = button(host, 'Review');
+    const form = host.querySelector('form');
+    // Enter submits a form through its submit button: the footer button must belong to it.
+    expect(review?.type).toBe('submit');
+    expect(review?.form).toBe(form);
+    fireEvent(review, 'click');
+    await flush();
+    expect(host.querySelector('.bp-send-hero')).not.toBeNull();
+  });
+
   it('puts the whole balance in the amount with Max and sends max to prepare', async () => {
     const { host, call } = setup();
     await flush();
@@ -247,6 +263,14 @@ describe('review', () => {
     const submit = vi.fn(() => ok({ txHash: HASH }));
     const { host, call } = setup({ 'send.submit': submit }, true);
     await toReview(host);
+    // The board's label line: the lock icon, then the text; the field shows "Password".
+    expect(host.querySelector('.bp-lock-form-label [data-icon="lock"]')).not.toBeNull();
+    expect(host.querySelector('.bp-lock-form-label')?.textContent).toBe(
+      'Enter your password to sign',
+    );
+    expect(host.querySelector('input[type=password]')?.getAttribute('placeholder')).toBe(
+      'Password',
+    );
     // Confirm is the password form's own button, disabled until a password is typed.
     const confirm = button(host, 'Confirm and send');
     expect(confirm?.closest('form')?.querySelector('input[type=password]')).not.toBeNull();
@@ -443,6 +467,18 @@ describe('fee on the form', () => {
       ),
     ).toEqual(['Back', 'Confirm and send', 'Edit']);
     expect(submits(call)).toBe(0);
+  });
+
+  it("Edit and the form's Review are separate buttons, so a tap on Edit never submits", async () => {
+    const { host } = setup();
+    await toReview(host);
+    const editButton = button(host, 'Edit');
+    await press(host, 'Edit');
+    const review = button(host, 'Review');
+    expect(review?.type).toBe('submit');
+    // A reused element turns submit during the tap and the browser submits the form.
+    expect(review).not.toBe(editButton);
+    expect(editButton?.isConnected).toBe(false);
   });
 
   it('Edit goes back to the form with every value kept, fee token included', async () => {

@@ -122,22 +122,28 @@ function Body(props: AddressBookSheetProps & { view: View; setView: (view: View)
             else setView({ kind: 'list' });
           }}
           onCancel={back}
-          onRename={(contact) => {
-            setView({ kind: 'edit', contact });
-          }}
-          onDelete={
-            editing &&
-            (() => {
-              setDeleteFailed(false);
-              void client.call('book.remove', { address: editing.address }).then((r) => {
-                if (!r.ok) {
-                  setDeleteFailed(true);
-                  return;
+          // Editing and deleting are Settings' job: Send's sheet only picks and adds.
+          onRename={
+            mode === 'manage'
+              ? (contact) => {
+                  setView({ kind: 'edit', contact });
                 }
-                changed();
-                setView({ kind: 'list' });
-              });
-            })
+              : undefined
+          }
+          onDelete={
+            mode !== 'manage' || !editing
+              ? undefined
+              : () => {
+                  setDeleteFailed(false);
+                  void client.call('book.remove', { address: editing.address }).then((r) => {
+                    if (!r.ok) {
+                      setDeleteFailed(true);
+                      return;
+                    }
+                    changed();
+                    setView({ kind: 'list' });
+                  });
+                }
           }
         />
       </>

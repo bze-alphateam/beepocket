@@ -17,6 +17,8 @@ interface ButtonBase {
   /** Renders a link opened in a new tab instead of a button. */
   href?: string | undefined;
   type?: 'button' | 'submit' | undefined;
+  /** The id of the form a submit button outside it submits (a pinned footer button). */
+  form?: string | undefined;
   disabled?: boolean | undefined;
   pressed?: boolean | undefined;
   expanded?: boolean | undefined;
@@ -60,6 +62,7 @@ export function Button(props: ButtonProps) {
     round = false,
     href,
     type = 'button',
+    form,
     disabled = false,
     label,
     pressed,
@@ -98,6 +101,7 @@ export function Button(props: ButtonProps) {
   return (
     <button
       type={type}
+      form={form}
       class={classes.join(' ')}
       disabled={disabled}
       aria-label={label}

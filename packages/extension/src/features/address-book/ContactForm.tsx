@@ -30,8 +30,11 @@ export interface ContactFormProps {
   /** Saved; answers the contact as stored. */
   onDone: (contact: Contact) => void;
   onCancel: () => void;
-  /** The address is saved under another name: offer to rename that one. */
-  onRename: (contact: Contact) => void;
+  /**
+   * The address is saved under another name: offer to rename that one. Without it (pick mode)
+   * the form only says so.
+   */
+  onRename?: ((contact: Contact) => void) | undefined;
   /** Editing only: shows "Delete contact" under Cancel. */
   onDelete?: (() => void) | undefined;
   /** Contacts, to name the existing one on a duplicate. */
@@ -65,7 +68,8 @@ export function ContactForm(props: ContactFormProps) {
     if (!nameOk || !addressOk || busy) return;
     setBusy(true);
     setServerError(null);
-    const payload = { name, address };
+    // Stored exactly as it is looked up, so the saved contact is the one Send matches.
+    const payload = { name, address: normalizeAddress(address) ?? address };
     void client.call(existing ? 'book.update' : 'book.add', payload).then((r) => {
       setBusy(false);
       if (!r.ok) {
@@ -104,14 +108,18 @@ export function ContactForm(props: ContactFormProps) {
       {duplicate && (
         <Banner tone="amber">
           {t('book.error.duplicate', { name: duplicate.name })}{' '}
-          <Button
-            variant="ghost"
-            onClick={() => {
-              props.onRename(duplicate);
-            }}
-          >
-            {t('book.rename', { name: duplicate.name })}
-          </Button>
+          {props.onRename ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                props.onRename?.(duplicate);
+              }}
+            >
+              {t('book.rename', { name: duplicate.name })}
+            </Button>
+          ) : (
+            t('book.error.duplicate.pick')
+          )}
         </Banner>
       )}
       <div class="bp-book-actions">

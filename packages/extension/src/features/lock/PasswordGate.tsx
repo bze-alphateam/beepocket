@@ -1,5 +1,6 @@
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
+import type { IconName } from '../../ui';
 import { PasswordForm } from './PasswordForm';
 
 export interface PasswordGateProps {
@@ -12,10 +13,15 @@ export interface PasswordGateProps {
   /** Keep the button disabled until something else is done. */
   hold?: boolean;
   variant?: 'primary' | 'danger';
+  /** An icon before the label ("Enter your password to sign" on Review). */
+  labelIcon?: IconName;
+  /** Shown in the empty field. */
+  placeholder?: string;
 }
 
 /** "Unlock and approve" in place: asks the password, calls `wallet.reauth`, no navigation. */
-export function PasswordGate({ label, submitLabel, onUnlocked, hold, variant }: PasswordGateProps) {
+export function PasswordGate(props: PasswordGateProps) {
+  const { label, submitLabel, onUnlocked, hold, variant, labelIcon, placeholder } = props;
   const client = useClient();
   return (
     <PasswordForm
@@ -25,6 +31,8 @@ export function PasswordGate({ label, submitLabel, onUnlocked, hold, variant }: 
       onSuccess={onUnlocked}
       {...(hold === undefined ? {} : { hold })}
       {...(variant === undefined ? {} : { variant })}
+      {...(labelIcon === undefined ? {} : { labelIcon })}
+      {...(placeholder === undefined ? {} : { placeholder })}
     />
   );
 }

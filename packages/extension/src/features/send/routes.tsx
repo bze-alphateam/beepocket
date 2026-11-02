@@ -6,8 +6,6 @@ import { SendEnvProvider } from './env';
 import { SendFlow, type SendRoute } from './SendFlow';
 
 export type { SendRoute } from './SendFlow';
-export { SendEnvProvider, type SendEnv } from './env';
-export { SendFlow } from './SendFlow';
 
 function SendScreen({ route }: { route: SendRoute }) {
   const scheme = useAppearance();

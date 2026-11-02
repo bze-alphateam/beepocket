@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from './test-render';
-import { Avatar, Field, FieldAction, ResultLayout, SelectRow } from '.';
+import { Avatar, Button, Field, FieldAction, ResultLayout, SelectRow } from '.';
 
 afterEach(cleanup);
 
@@ -47,6 +47,26 @@ describe('SelectRow', () => {
     expect(host.querySelector('.bp-select-row-text')).toBeNull();
     fireEvent(host.querySelector('button'), 'click');
     expect(onClick).not.toHaveBeenCalled();
+  });
+});
+
+describe('Button form', () => {
+  it('ties a submit button outside a form to it by id', () => {
+    const onSubmit = vi.fn((e: Event) => {
+      e.preventDefault();
+    });
+    const { host } = render(
+      <>
+        <form id="f" onSubmit={onSubmit} />
+        <Button type="submit" form="f">
+          Review
+        </Button>
+      </>,
+    );
+    const button = host.querySelector('button');
+    expect(button?.form).toBe(host.querySelector('form'));
+    fireEvent(button, 'click');
+    expect(onSubmit).toHaveBeenCalledOnce();
   });
 });
 

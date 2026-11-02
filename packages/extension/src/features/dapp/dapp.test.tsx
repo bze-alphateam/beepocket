@@ -265,7 +265,7 @@ describe('the sign screen', () => {
     await settle();
     fireEvent(
       [...document.querySelectorAll('button')].find((b) =>
-        (b.getAttribute('aria-label') ?? b.textContent).startsWith('OTH'),
+        b.getAttribute('aria-label')?.startsWith('OTH'),
       ),
       'click',
     );
@@ -401,7 +401,7 @@ describe('the sign screen: risk levels', () => {
     await settle();
     fireEvent(
       [...document.querySelectorAll('button')].find((b) =>
-        (b.getAttribute('aria-label') ?? b.textContent).startsWith('OTH'),
+        b.getAttribute('aria-label')?.startsWith('OTH'),
       ),
       'click',
     );

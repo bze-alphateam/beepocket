@@ -67,6 +67,8 @@ export function ReviewScreen(props: {
       {props.locked ? (
         <PasswordGate
           label={t('send.review.unlock')}
+          labelIcon="lock"
+          placeholder={t('send.review.password')}
           submitLabel={t('send.review.confirm')}
           onUnlocked={props.onUnlocked}
         />

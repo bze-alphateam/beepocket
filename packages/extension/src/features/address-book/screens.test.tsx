@@ -137,17 +137,32 @@ describe('AddressBookSheet, pick mode (Send)', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('offers to rename the existing contact on a duplicate', async () => {
-    const { host } = sheet([{ name: 'Alex', address: A }], { mode: 'pick' });
+  it('stores the address normalized, as Send looks it up', async () => {
+    const { host, calls, onPick } = sheet([], {
+      mode: 'pick',
+      newAddress: `  ${B.toUpperCase()} `,
+    });
+    await flush();
+    type(fieldByLabel(host, 'Name'), 'Bo');
+    fireEvent(host.querySelector('form'), 'submit');
+    await flush();
+    expect(calls).toContainEqual({ method: 'book.add', payload: { name: 'Bo', address: B } });
+    expect(onPick).toHaveBeenCalledWith(B);
+  });
+
+  it('never edits or deletes: a duplicate only says where the address is saved', async () => {
+    const { host, calls } = sheet([{ name: 'Alex', address: A }], { mode: 'pick' });
     await flush();
     fireEvent(button(host, 'New contact'), 'click');
     type(fieldByLabel(host, 'Name'), 'Other');
     type(fieldByLabel(host, 'Address'), A);
     fireEvent(host.querySelector('form'), 'submit');
     await flush();
-    expect(host.textContent).toContain('already saved as Alex');
-    fireEvent(button(host, 'Rename Alex'), 'click');
-    expect(title(host)).toBe('Edit contact');
+    expect(host.textContent).toContain('already saved as Alex. Pick it from the list.');
+    expect(button(host, 'Rename Alex')).toBeNull();
+    expect(button(host, 'Delete contact')).toBeNull();
+    expect(title(host)).toBe('New contact');
+    expect(calls.some((c) => c.method === 'book.update' || c.method === 'book.remove')).toBe(false);
   });
 
   it('renders nothing while closed', () => {
@@ -200,6 +215,20 @@ describe('AddressBookSheet, manage mode (Settings)', () => {
     expect(title(host)).toBe('Address book');
     expect(button(host, 'Edit Bo')).toBeNull();
     expect(button(host, 'Edit Alex')).not.toBeNull();
+  });
+
+  it('offers to rename the existing contact on a duplicate', async () => {
+    const { host } = sheet([{ name: 'Alex', address: A }], { mode: 'manage' });
+    await flush();
+    fireEvent(button(host, 'New contact'), 'click');
+    type(fieldByLabel(host, 'Name'), 'Other');
+    type(fieldByLabel(host, 'Address'), A);
+    fireEvent(host.querySelector('form'), 'submit');
+    await flush();
+    expect(host.textContent).toContain('already saved as Alex');
+    fireEvent(button(host, 'Rename Alex'), 'click');
+    expect(title(host)).toBe('Edit contact');
+    expect(button(host, 'Delete contact')).not.toBeNull();
   });
 
   it('adds with a plain Save and goes back to the list', async () => {

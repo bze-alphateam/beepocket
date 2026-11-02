@@ -26,6 +26,7 @@ export const addressBook = {
   'book.error.address': 'This is not a BeeZee address.',
   'book.error.own': 'This is one of your own addresses; it is already listed under “My addresses”.',
   'book.error.duplicate': 'This address is already saved as {name}.',
+  'book.error.duplicate.pick': 'Pick it from the list.',
   'book.error.duplicateName': 'Another contact already has this name.',
   'book.error.generic': 'Could not save. Unlock your wallet and try again.',
   'book.error.delete': 'Could not delete. Unlock your wallet and try again.',

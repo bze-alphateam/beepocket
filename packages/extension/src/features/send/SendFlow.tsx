@@ -45,7 +45,10 @@ export interface SendRoute {
 const HOME: RouteBase = { name: 'home.main' };
 
 /** The fee is estimated this long after the last change to From, To, Amount or the fee token. */
-export const ESTIMATE_DEBOUNCE_MS = 400;
+const ESTIMATE_DEBOUNCE_MS = 400;
+
+/** The form's id: Review is pinned in the footer, outside it, and still submits it (Enter too). */
+const FORM_ID = 'bp-send-form';
 
 interface Loaded {
   token: TokenInfo;
@@ -380,7 +383,9 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
         header={<ScreenHeader title={t('send.review.title')} onBack={edit} />}
         footer={
           <BottomActions>
-            <Button variant="secondary" onClick={edit}>
+            {/* Keyed apart from the form's Review: the DOM button is never reused as a submit
+                one, which would submit the form from the very tap on Edit. */}
+            <Button key="edit" variant="secondary" onClick={edit}>
               {t('send.review.edit')}
             </Button>
           </BottomActions>
@@ -433,8 +438,10 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       footer={
         <BottomActions>
           <Button
+            key="review"
+            type="submit"
+            form={FORM_ID}
             disabled={busy || target === '' || (!max && typed === '')}
-            onClick={() => void toReview()}
           >
             {t('send.review')}
           </Button>
@@ -442,6 +449,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       }
     >
       <form
+        id={FORM_ID}
         class="bp-send"
         onSubmit={(e) => {
           e.preventDefault();

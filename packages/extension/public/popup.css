@@ -110,6 +110,16 @@
   gap: 10px;
 }
 
+.bp-lock-form-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -2px;
+  color: var(--bp-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .bp-lock-forgot {
   margin-top: 10px;
 }

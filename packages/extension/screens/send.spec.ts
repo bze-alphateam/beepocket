@@ -28,6 +28,8 @@ interface Node {
   reject: string | null;
   /** Leaves the transaction lookup unanswered, so the flow stays on Pending. */
   hold: boolean;
+  /** The raw log the included transaction failed with on chain; null when it succeeded. */
+  failOnChain: string | null;
 }
 
 /**
@@ -35,7 +37,7 @@ interface Node {
  * broadcast, the transaction lookup, and a BZE / PAGE pool so PAGE can pay the fee.
  */
 async function mockSendNode(context: BrowserContext): Promise<Node> {
-  const node: Node = { reject: null, hold: false };
+  const node: Node = { reject: null, hold: false, failOnChain: null };
   await context.route('https://rest.getbze.com/**', (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -106,8 +108,8 @@ async function mockSendNode(context: BrowserContext): Promise<Node> {
             tx_response: {
               height: '12',
               txhash: HASH,
-              code: 0,
-              raw_log: '[]',
+              code: node.failOnChain === null ? 0 : 11,
+              raw_log: node.failOnChain ?? '[]',
               gas_used: '120000',
               gas_wanted: '195000',
             },
@@ -283,22 +285,34 @@ test('success of a PAGE send', async ({ context, extensionId }) => {
   await shot(page, 'send-success-page');
 });
 
-test('failed: the node rejects the broadcast', async ({ context, extensionId }) => {
+test('failed on chain: the fee was taken', async ({ context, extensionId }) => {
   const { page, node } = await startSend(context, extensionId);
-  node.reject = OUT_OF_GAS;
+  node.failOnChain = OUT_OF_GAS;
   await fill(page, ALEX);
   await review(page);
   await page.getByRole('button', { name: 'Confirm and send' }).click();
   await page.getByRole('heading', { name: 'Send failed' }).waitFor();
+  await page.getByText('Tx hash').waitFor();
   await shot(page, 'send-failed');
 });
 
-test('failed PAGE send', async ({ context, extensionId }) => {
+test('failed on chain, a PAGE send', async ({ context, extensionId }) => {
   const { page, node } = await startSend(context, extensionId, { symbol: 'PAGE' });
-  node.reject = OUT_OF_GAS;
+  node.failOnChain = OUT_OF_GAS;
   await fill(page, ALEX);
   await review(page);
   await page.getByRole('button', { name: 'Confirm and send' }).click();
   await page.getByRole('heading', { name: 'Send failed' }).waitFor();
+  await page.getByText('Tx hash').waitFor();
   await shot(page, 'send-failed-page');
+});
+
+test('rejected: the node refuses the broadcast', async ({ context, extensionId }) => {
+  const { page, node } = await startSend(context, extensionId);
+  node.reject = 'insufficient fee; got: 1ubze required: 1950ubze';
+  await fill(page, ALEX);
+  await review(page);
+  await page.getByRole('button', { name: 'Confirm and send' }).click();
+  await page.getByRole('heading', { name: 'Send failed' }).waitFor();
+  await shot(page, 'send-rejected');
 });

@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { PasswordOutcome, Result } from '../../protocol';
-import { Button, Field } from '../../ui';
+import { Button, Field, Icon, type IconName } from '../../ui';
 import { formatCountdown, useCountdown } from './countdown';
 import { useLockEnv } from './env';
 
@@ -18,6 +18,10 @@ export interface PasswordFormProps {
   variant?: 'primary' | 'danger';
   /** Unlock's look: 48 px field and button, the label kept for screen readers only. */
   large?: boolean;
+  /** An icon before the label; the label line is then drawn with it. */
+  labelIcon?: IconName;
+  /** Shown in the empty field (Unlock uses the label). */
+  placeholder?: string;
 }
 
 /** Password field + submit with the wrong-password error and the throttle countdown. */
@@ -62,10 +66,16 @@ export function PasswordForm(props: PasswordFormProps) {
         void submit();
       }}
     >
+      {props.labelIcon !== undefined && (
+        <p class="bp-lock-form-label" aria-hidden="true">
+          <Icon name={props.labelIcon} size={13} strokeWidth={2.2} />
+          {props.label}
+        </p>
+      )}
       <Field
         label={props.label}
-        hideLabel={props.large}
-        placeholder={props.large === true ? props.label : undefined}
+        hideLabel={props.large === true || props.labelIcon !== undefined}
+        placeholder={props.placeholder ?? (props.large === true ? props.label : undefined)}
         size={props.large === true ? 'lg' : 'md'}
         type="password"
         value={password}

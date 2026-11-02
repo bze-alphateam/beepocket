@@ -31,6 +31,7 @@ export const send = {
   'send.review.confirm': 'Confirm and send',
   'send.review.changed': 'The network fee changed. Check the new numbers before you send.',
   'send.review.unlock': 'Enter your password to sign',
+  'send.review.password': 'Password',
   'send.fee.title': 'Pay network fee with',
   'send.fee.intro':
     'Paid from {label}. Pick any token this address holds that the network takes for fees.',
