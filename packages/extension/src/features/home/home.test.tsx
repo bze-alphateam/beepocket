@@ -16,7 +16,7 @@ import {
 import { ClientProvider } from '../../popup/client-context';
 import { Router, type RouteTable } from '../../popup/router';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
-import { Home, type HomeRoute } from './Home';
+import { Home, type HomeRoute, type SendTarget, type SettingsTarget } from './Home';
 import { HomeEnvProvider, type HomeEnv } from './env';
 import { registerHomeTab } from './tabs';
 
@@ -64,6 +64,8 @@ interface World {
   brandThemes: boolean;
   network: 'mainnet' | 'testnet';
   search: ListedToken[];
+  /** What `tokens.search('')` answers: every token on any address, plus ubze. */
+  held: ListedToken[];
   lookup: Result<ListedToken>;
   /** Indexes of addresses whose balance read fails. */
   failed: number[];
@@ -82,6 +84,7 @@ function setup(
     brandThemes: true,
     network: 'mainnet',
     search: [],
+    held: [BZE],
     lookup: fail(TokenErrorCodes.noSuchToken, 'none'),
     failed: [],
     ...over,
@@ -100,10 +103,11 @@ function setup(
       return ok({ ...b, addresses: addrs, total, partial: w.failed.length > 0 });
     },
     'tokens.theme': (r) => ok(r.denom === PAGE.denom ? BRAND : null),
-    'tokens.search': () => ok(w.search),
+    'tokens.search': (r) => ok(r.query === '' ? w.held : w.search),
     'tokens.lookup': () => w.lookup,
     'tokens.add': (r) => {
-      const added = w.search.find((x) => x.denom === r.denom) ?? tok(r.denom, 'NEW');
+      const added =
+        [...w.search, ...w.held].find((x) => x.denom === r.denom) ?? tok(r.denom, 'NEW');
       w.tokens = [...w.tokens, added];
       return ok(w.tokens);
     },
@@ -112,8 +116,14 @@ function setup(
       w.tokens = w.tokens.filter((x) => x.denom !== r.denom);
       return ok(w.tokens);
     },
-    'wallet.deriveNext': () => {
-      const next = addr(w.addresses.length, `Address ${String(w.addresses.length + 1)}`);
+    'wallet.previewNext': () => {
+      const index = w.addresses.length;
+      return ok({ index, address: addr(index, '').address });
+    },
+    'wallet.deriveNext': (r) => {
+      const index = w.addresses.length;
+      if (r.index !== undefined && r.index !== index) return fail('stale_index', 'stale');
+      const next = addr(index, r.label ?? `Address ${String(index + 1)}`);
       w.addresses = [...w.addresses, next];
       w.amounts = Object.fromEntries(Object.entries(w.amounts).map(([k, v]) => [k, [...v, '0']]));
       return ok({ address: next });
@@ -188,11 +198,20 @@ function setup(
       },
     },
   };
-  const table: RouteTable<HomeRoute> = { 'home.main': Home };
+  const seen: { name: string }[] = [];
+  const Marker = (props: { route: SendTarget | SettingsTarget }) => {
+    seen.push(props.route);
+    return <p>at:{props.route.name}</p>;
+  };
+  const table = {
+    'home.main': Home,
+    send: Marker,
+    'settings.main': Marker,
+  } as RouteTable<HomeRoute | SendTarget | SettingsTarget>;
   const { host } = render(
     <ClientProvider client={client}>
       <HomeEnvProvider env={env}>
-        <Router<HomeRoute> table={table} initial={route} />
+        <Router<HomeRoute | SendTarget | SettingsTarget> table={table} initial={route} />
       </HomeEnvProvider>
     </ClientProvider>,
   );
@@ -215,7 +234,7 @@ function setup(
   const releaseAll = () => {
     for (const release of releases) release();
   };
-  return { host, hold, releaseAll, w, calls, style, written, timers, tick, fire };
+  return { host, hold, releaseAll, w, calls, style, written, timers, tick, fire, seen };
 }
 
 const byLabel = (host: HTMLElement, label: string) =>
@@ -313,21 +332,86 @@ describe('addresses tab', () => {
     click(byLabel(s.host, 'Copy address Main'));
     await s.tick();
     expect(s.written).toEqual([addr(0, 'Main').address]);
-    expect(text(s.host)).toContain('Copied');
+    expect(text(s.host)).toContain('Address copied');
+    expect(byLabel(s.host, 'Copy address Main')?.classList.contains('bp-copy-done')).toBe(true);
     s.fire(1800);
-    expect(text(s.host)).not.toContain('Copied');
+    expect(text(s.host)).not.toContain('Address copied');
+    expect(byLabel(s.host, 'Copy address Main')?.classList.contains('bp-copy-done')).toBe(false);
   });
 
-  it('derives the next address and opens the add sheet', async () => {
+  it('opens Send from the tapped address', async () => {
     const s = setup();
     await s.tick();
-    click(
-      [...s.host.querySelectorAll('button')].find((b) => b.textContent.includes('Add address')) ??
-        null,
-    );
+    click(byLabel(s.host, 'Send BZE from Main'));
+    expect(s.seen).toEqual([{ name: 'send', denom: 'ubze', fromIndex: 0 }]);
+  });
+
+  it('opens Send without a preset from the total card', async () => {
+    const s = setup();
     await s.tick();
-    expect(s.calls.some((c) => c.method === 'wallet.deriveNext')).toBe(true);
-    expect(s.host.querySelector('[role="dialog"]')?.textContent).toContain('Address added');
+    click([...s.host.querySelectorAll('button')].find((b) => b.textContent === 'Send BZE') ?? null);
+    expect(s.seen).toEqual([{ name: 'send', denom: 'ubze' }]);
+  });
+
+  it('previews the next address without storing it, then adds exactly that one', async () => {
+    const s = setup();
+    await s.tick();
+    click(byLabel(s.host, 'Add address'));
+    await s.tick();
+    const dialog = () => s.host.querySelector('[role="dialog"]');
+    expect(s.calls.some((c) => c.method === 'wallet.previewNext')).toBe(true);
+    expect(s.calls.some((c) => c.method === 'wallet.deriveNext')).toBe(false);
+    expect(s.w.addresses).toHaveLength(2);
+    expect(dialog()?.textContent).toContain("It's address #3 in this wallet.");
+    expect(dialog()?.textContent).toContain(addr(2, '').address);
+    const input = dialog()?.querySelector<HTMLInputElement>('input');
+    if (input) input.value = 'x7-cold';
+    fireEvent(input, 'input');
+    fireEvent(dialog()?.querySelector('form'), 'submit');
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'wallet.deriveNext').map((c) => c.req)).toEqual([
+      { index: 2, label: 'x7-cold' },
+    ]);
+    expect(s.w.addresses[2]).toEqual(addr(2, 'x7-cold'));
+    expect(dialog()).toBeNull();
+    // The new address is empty, so it folds away behind the ghost button.
+    expect(text(s.host)).toContain('Show 2 empty addresses');
+  });
+
+  it('adds without a label, and closes on Cancel without storing anything', async () => {
+    const s = setup();
+    await s.tick();
+    click(byLabel(s.host, 'Add address'));
+    await s.tick();
+    click(
+      [...(s.host.querySelector('[role="dialog"]')?.querySelectorAll('button') ?? [])].find(
+        (b) => b.textContent === 'Cancel',
+      ) ?? null,
+    );
+    expect(s.host.querySelector('[role="dialog"]')).toBeNull();
+    expect(s.calls.some((c) => c.method === 'wallet.deriveNext')).toBe(false);
+    click(byLabel(s.host, 'Add address'));
+    await s.tick();
+    fireEvent(s.host.querySelector('[role="dialog"] form'), 'submit');
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'wallet.deriveNext').map((c) => c.req)).toEqual([
+      { index: 2 },
+    ]);
+  });
+
+  it('shows the new next address when another one was added meanwhile', async () => {
+    const s = setup();
+    await s.tick();
+    click(byLabel(s.host, 'Add address'));
+    await s.tick();
+    // Another popup adds address #3 first.
+    s.w.addresses = [...s.w.addresses, addr(2, 'Elsewhere')];
+    fireEvent(s.host.querySelector('[role="dialog"] form'), 'submit');
+    await s.tick();
+    const dialog = s.host.querySelector('[role="dialog"]');
+    expect(dialog?.querySelector('[role="alert"]')).not.toBeNull();
+    expect(dialog?.textContent).toContain("It's address #4 in this wallet.");
+    expect(s.w.addresses).toHaveLength(3);
   });
 
   it('renames within 1–32 characters and refuses the rest', async () => {
@@ -358,47 +442,89 @@ describe('addresses tab', () => {
 });
 
 describe('header', () => {
-  it('hides the token selector with exactly one preferred token', async () => {
+  it('shows the token title instead of the switcher with exactly one preferred token', async () => {
     const one = setup({ tokens: [BZE] });
     await one.tick();
-    expect(byLabel(one.host, 'Choose token')).toBeNull();
+    expect(byLabel(one.host, 'Switch token, current BZE')).toBeNull();
+    expect(one.host.querySelector('.bp-token-title')?.textContent).toContain('BZE wallet');
     cleanup();
     const two = setup();
     await two.tick();
-    expect(byLabel(two.host, 'Choose token')).not.toBeNull();
+    expect(byLabel(two.host, 'Switch token, current BZE')).not.toBeNull();
   });
 
-  it('shows the testnet pill and locks through wallet.lock', async () => {
+  it('shows the testnet pill, the appearance and settings buttons, and no lock button', async () => {
     const s = setup({ network: 'testnet' });
     await s.tick();
     expect(text(s.host)).toContain('Testnet');
-    click(byLabel(s.host, 'Lock wallet'));
-    await s.tick();
-    expect(s.calls.some((c) => c.method === 'wallet.lock')).toBe(true);
+    expect(byLabel(s.host, 'Switch to light mode')).not.toBeNull();
+    expect(byLabel(s.host, 'Lock wallet')).toBeNull();
+    click(byLabel(s.host, 'Settings'));
+    expect(s.seen).toEqual([{ name: 'settings.main' }]);
   });
 });
 
 describe('token switcher', () => {
   const open = async (s: ReturnType<typeof setup>) => {
     await s.tick();
-    click(byLabel(s.host, 'Choose token'));
+    click(byLabel(s.host, 'Switch token, current BZE'));
     await s.tick();
   };
+  const dialog = (s: ReturnType<typeof setup>) => s.host.querySelector('[role="dialog"]');
+  const groups = (s: ReturnType<typeof setup>) =>
+    [...(dialog(s)?.querySelectorAll('section') ?? [])].map((g) => ({
+      title: g.querySelector('h3')?.textContent,
+      rows: [...g.querySelectorAll('.bp-list-row-title')].map((r) => r.textContent),
+    }));
 
   it('lists preferred tokens with balances and switches', async () => {
     const s = setup();
     await open(s);
-    const dialog = s.host.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain('1,234.56789');
-    expect(dialog?.textContent).toContain('12.00');
-    click(
-      [...(dialog?.querySelectorAll('button.bp-home-label') ?? [])].find(
-        (b) => b.textContent === 'PAGE',
-      ) ?? null,
-    );
+    expect(dialog(s)?.textContent).toContain('1,234.56789');
+    expect(dialog(s)?.textContent).toContain('12.00');
+    click(dialog(s)?.querySelector('[aria-label="PAGE"]') ?? null);
     await s.tick();
     expect(s.host.querySelector('[role="dialog"]')).toBeNull();
     expect(text(s.host)).toContain('12.00');
+  });
+
+  it('groups preferred tokens and the other held tokens; empty ones stay out', async () => {
+    const gold = tok('factory/bze1x/gold', 'GOLD');
+    const dust = tok('factory/bze1x/dust', 'DUST');
+    const s = setup({
+      held: [BZE, gold, dust],
+      amounts: {
+        ubze: ['1234567890', '0'],
+        [PAGE.denom]: ['500', '700'],
+        [gold.denom]: ['3000000', '0'],
+        [dust.denom]: ['0', '0'],
+      },
+    });
+    await open(s);
+    expect(groups(s)).toEqual([
+      { title: 'Preferred · 2', rows: ['BZE', 'PAGE'] },
+      { title: 'You hold · 1', rows: ['GOLD'] },
+    ]);
+    expect(byLabel(s.host, 'Remove BZE from preferred')?.getAttribute('aria-pressed')).toBe('true');
+    // A held token is starred, not opened.
+    expect(dialog(s)?.querySelector('[aria-label="GOLD"]')).toBeNull();
+    click(byLabel(s.host, 'Add GOLD to preferred'));
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'tokens.add').map((c) => c.req)).toEqual([
+      { denom: gold.denom },
+    ]);
+    expect(groups(s)[0]).toEqual({ title: 'Preferred · 3', rows: ['BZE', 'PAGE', 'GOLD'] });
+  });
+
+  it('filters by symbol or name into one Results group', async () => {
+    const s = setup({ search: [] });
+    await open(s);
+    const input = dialog(s)?.querySelector<HTMLInputElement>('input');
+    if (input) input.value = 'pag';
+    fireEvent(input, 'input');
+    await s.tick();
+    expect(groups(s)).toEqual([{ title: 'Results · 1', rows: ['PAGE'] }]);
+    expect(s.calls.some((c) => c.method === 'tokens.lookup')).toBe(false);
   });
 
   it('searches and adds a token', async () => {
@@ -409,7 +535,7 @@ describe('token switcher', () => {
     if (input) input.value = 'gol';
     fireEvent(input, 'input');
     await s.tick();
-    click(byLabel(s.host, 'Add GOLD'));
+    click(byLabel(s.host, 'Add GOLD to preferred'));
     await s.tick();
     expect(s.w.tokens.map((x) => x.symbol)).toEqual(['BZE', 'PAGE', 'GOLD']);
   });
@@ -422,7 +548,7 @@ describe('token switcher', () => {
     if (input) input.value = gold.denom;
     fireEvent(input, 'input');
     await s.tick();
-    expect(byLabel(s.host, 'Add GOLD')).not.toBeNull();
+    expect(byLabel(s.host, 'Add GOLD to preferred')).not.toBeNull();
     s.w.lookup = fail(TokenErrorCodes.noSuchToken, 'none');
     if (input) input.value = 'factory/bze1x/none';
     fireEvent(input, 'input');
@@ -430,13 +556,18 @@ describe('token switcher', () => {
     expect(text(s.host)).toContain('No token with this code on BeeZee');
   });
 
-  it('removes a token but blocks removing the last one', async () => {
+  it('un-stars a token but never the last preferred one, and says why', async () => {
     const s = setup();
     await open(s);
-    click(byLabel(s.host, 'Remove PAGE'));
+    click(byLabel(s.host, 'Remove PAGE from preferred'));
     await s.tick();
     expect(s.w.tokens).toEqual([BZE]);
-    expect(byLabel(s.host, 'Remove BZE')?.hasAttribute('disabled')).toBe(true);
+    expect(byLabel(s.host, 'Remove BZE from preferred')).toBeNull();
+    const star = byLabel(s.host, 'Keep at least one preferred token');
+    expect(star?.hasAttribute('disabled')).toBe(true);
+    click(star);
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'tokens.remove')).toHaveLength(1);
   });
 });
 
@@ -446,12 +577,9 @@ describe('theme', () => {
     await s.tick();
     const bzeVars = s.style.get('--bp-primary');
     await s.tick();
-    click(byLabel(s.host, 'Choose token'));
+    click(byLabel(s.host, 'Switch token, current BZE'));
     await s.tick();
-    click(
-      [...s.host.querySelectorAll('button.bp-home-label')].find((b) => b.textContent === 'PAGE') ??
-        null,
-    );
+    click(s.host.querySelector('[role="dialog"] [aria-label="PAGE"]'));
     await s.tick();
     await s.tick();
     expect(s.style.get('--bp-primary')).not.toBe(bzeVars);
@@ -459,8 +587,11 @@ describe('theme', () => {
     cleanup();
     const off = setup({ brandThemes: false, tokens: [PAGE, BZE] });
     await off.tick();
-    expect(off.calls.some((c) => c.method === 'tokens.theme')).toBe(false);
     expect(off.style.get('--bp-primary')).not.toBe(s.style.get('--bp-primary'));
+    // The avatar keeps the token's own colour either way.
+    expect(off.host.querySelector<HTMLElement>('.bp-token-pill .bp-avatar')?.style.background).toBe(
+      'rgb(255, 176, 0)',
+    );
   });
 });
 
@@ -516,34 +647,33 @@ describe('races and guards', () => {
     const s = setup();
     await s.tick();
     const release = s.hold('wallet.deriveNext');
-    click(
-      [...s.host.querySelectorAll('button')].find((b) => b.textContent.includes('Add address')) ??
-        null,
-    );
+    click(byLabel(s.host, 'Add address'));
     await s.tick();
-    click(byLabel(s.host, 'Rename Main'));
-    const input = s.host.querySelector<HTMLInputElement>('[role="dialog"] input');
-    if (input) input.value = 'Daily';
-    fireEvent(input, 'input');
     fireEvent(s.host.querySelector('[role="dialog"] form'), 'submit');
     await s.tick();
+    // The add sheet waits; meanwhile the label of Main changes elsewhere.
+    s.w.addresses = s.w.addresses.map((a) => (a.index === 0 ? { ...a, label: 'Daily' } : a));
     release();
     await s.tick();
-    expect(text(s.host)).toContain('Daily');
-    expect(s.host.querySelector('[role="dialog"]')?.textContent).toContain('Address added');
+    expect(s.w.addresses).toHaveLength(3);
+    expect(s.host.querySelector('[role="dialog"]')).toBeNull();
+    expect(text(s.host)).toContain('Show 2 empty addresses');
   });
 
-  it('derives once on a double tap of "+"', async () => {
+  it('stores once on a double tap of Add address', async () => {
     const s = setup();
     await s.tick();
-    const release = s.hold('wallet.deriveNext');
-    const plus = [...s.host.querySelectorAll('button')].find((b) =>
-      b.textContent.includes('Add address'),
-    );
-    click(plus ?? null);
-    click(plus ?? null);
+    click(byLabel(s.host, 'Add address'));
     await s.tick();
-    expect(plus?.hasAttribute('disabled')).toBe(true);
+    const release = s.hold('wallet.deriveNext');
+    const form = s.host.querySelector('[role="dialog"] form');
+    fireEvent(form, 'submit');
+    fireEvent(form, 'submit');
+    await s.tick();
+    const add = [...(form?.querySelectorAll('button') ?? [])].find(
+      (b) => b.textContent === 'Add address',
+    );
+    expect(add?.hasAttribute('disabled')).toBe(true);
     release();
     await s.tick();
     expect(s.calls.filter((c) => c.method === 'wallet.deriveNext')).toHaveLength(1);
@@ -557,7 +687,7 @@ describe('races and guards', () => {
     s.fire(1800);
     click(byLabel(s.host, 'Copy address Main'));
     await s.tick();
-    expect(text(s.host)).toContain('Copied');
+    expect(text(s.host)).toContain('Address copied');
   });
 
   it('does not poll again while a read is in flight', async () => {

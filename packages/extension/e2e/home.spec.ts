@@ -94,10 +94,14 @@ test('home shows balances, derives, renames and re-themes per token', async ({
   await expect(page.getByRole('heading', { level: 1 })).toContainText('1.50');
   await expect(page.getByText('in your address')).toBeVisible();
 
+  // The sheet shows the next address before anything is stored.
   await page.getByRole('button', { name: 'Add address' }).click();
-  await expect(page.getByRole('dialog', { name: 'Address added' })).toBeVisible();
-  await page.getByRole('textbox', { name: 'Label' }).fill('Savings');
-  await page.getByRole('button', { name: 'Done' }).click();
+  const add = page.getByRole('dialog', { name: 'Add an address' });
+  await expect(add).toContainText("It's address #2 in this wallet.");
+  await expect(add).toContainText(deriveAccount(PHRASE, 1).address);
+  await add.getByRole('textbox', { name: 'Label (optional)' }).fill('Savings');
+  await add.getByRole('button', { name: 'Add address' }).click();
+  await expect(add).toBeHidden();
   // The new address holds nothing yet, so it folds away.
   await page.getByRole('button', { name: 'Show 1 empty address' }).click();
   await expect(page.getByRole('button', { name: 'Rename Savings' })).toBeVisible();
@@ -110,8 +114,12 @@ test('home shows balances, derives, renames and re-themes per token', async ({
   const primary = () =>
     page.evaluate(() => document.documentElement.style.getPropertyValue('--bp-primary'));
   const before = await primary();
-  await page.getByRole('button', { name: 'Choose token' }).click();
-  await page.getByRole('button', { name: 'GOLD', exact: true }).click();
+  await page.getByRole('button', { name: 'Switch token, current BZE' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'GOLD', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1 })).toContainText('2.00');
   await expect.poll(primary).not.toBe(before);
+
+  // A row opens Send with that address as the sender.
+  await page.getByRole('button', { name: 'Send GOLD from Daily' }).click();
+  await expect(page.getByRole('button', { name: 'Send GOLD from Daily' })).toBeHidden();
 });

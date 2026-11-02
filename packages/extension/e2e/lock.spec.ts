@@ -35,7 +35,7 @@ test('a locked wallet opens on the unlock screen and the right password unlocks 
 
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Unlock' }).click();
-  await expect(page.getByRole('button', { name: 'Lock wallet' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
 });
 
 test('five wrong passwords show the countdown and block the field', async ({
@@ -60,7 +60,7 @@ test('the popup switches to the unlock screen when the full-lock alarm fires', a
   const page = await open(context, extensionId);
   await call(page, 'wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE });
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Lock wallet' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
 
   const worker = context.serviceWorkers()[0];
   if (!worker) throw new Error('no service worker');

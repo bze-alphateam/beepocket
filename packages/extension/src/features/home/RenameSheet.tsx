@@ -1,22 +1,18 @@
 import { useState } from 'preact/hooks';
-import { t, type StringKey } from '../../i18n';
+import { t } from '../../i18n';
+import type { WalletAddress } from '../../protocol';
+import { Button, Field, Sheet } from '../../ui';
 import { MAX_LABEL } from './limits';
-import { Button, Sheet, TextField } from '../../ui';
 
 export interface RenameSheetProps {
-  open: boolean;
-  title: string;
-  /** Shown above the field (the new address in the add flow). */
-  intro?: string;
-  initial: string;
-  saveLabel: StringKey;
+  address: WalletAddress;
   onSave: (label: string) => Promise<boolean>;
   onClose: () => void;
 }
 
-/** `W-Rename` and `W-AddAddress`: one label field, 1–32 characters. */
+/** `W-Rename`: the full address, one label field of 1–32 characters, Save and Cancel. */
 export function RenameSheet(props: RenameSheetProps) {
-  const [label, setLabel] = useState(props.initial);
+  const [label, setLabel] = useState(props.address.label);
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
 
@@ -34,17 +30,19 @@ export function RenameSheet(props: RenameSheetProps) {
   };
 
   return (
-    <Sheet open={props.open} title={props.title} onClose={props.onClose}>
-      {props.intro !== undefined && <p class="bp-home-note">{props.intro}</p>}
+    <Sheet open title={t('home.rename.title')} onClose={props.onClose}>
       <form
+        class="bp-home-sheet-form"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
       >
-        <TextField
+        <p class="bp-home-full-address bp-mono">{props.address.address}</p>
+        <Field
           label={t('home.rename.label')}
           value={label}
+          hint={t('home.rename.hint')}
           {...(error === undefined ? {} : { error })}
           autoFocus
           onInput={(v) => {
@@ -53,7 +51,10 @@ export function RenameSheet(props: RenameSheetProps) {
           }}
         />
         <Button type="submit" disabled={busy}>
-          {t(props.saveLabel)}
+          {t('home.rename.save')}
+        </Button>
+        <Button variant="secondary" onClick={props.onClose}>
+          {t('home.rename.cancel')}
         </Button>
       </form>
     </Sheet>
