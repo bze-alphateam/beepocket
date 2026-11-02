@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from './test-render';
-import { SearchField, SectionLabel, StarButton } from '.';
+import { CopyButton, ListGroup, ListRow, SearchField, SectionLabel, StarButton } from '.';
 
 afterEach(cleanup);
 
@@ -83,5 +83,46 @@ describe('StarButton', () => {
     expect(b?.disabled).toBe(true);
     fireEvent(b, 'click');
     expect(onToggle).not.toHaveBeenCalled();
+  });
+});
+
+describe('CopyButton', () => {
+  it('is a named copy icon that turns into a check once copied', () => {
+    const onCopy = vi.fn();
+    const { host } = render(
+      <>
+        <CopyButton label="Copy address Main" onCopy={onCopy} />
+        <CopyButton label="Copy address Savings" copied onCopy={onCopy} />
+      </>,
+    );
+    const [idle, done] = [...host.querySelectorAll('button')];
+    expect(idle?.getAttribute('aria-label')).toBe('Copy address Main');
+    expect(idle?.classList.contains('bp-copy-done')).toBe(false);
+    expect(done?.classList.contains('bp-copy-done')).toBe(true);
+    expect(idle?.innerHTML).not.toBe(done?.innerHTML);
+    fireEvent(idle, 'click');
+    expect(onCopy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ListGroup', () => {
+  it('titles its rows and marks a flat group', () => {
+    const { host } = render(
+      <>
+        <ListGroup title="Preferred" count={2} flat>
+          <ListRow size="option" title="BZE" />
+          <ListRow size="option" title="PAGE" selected />
+        </ListGroup>
+        <ListGroup title="You hold">
+          <ListRow size="option" title="VDL" />
+        </ListGroup>
+      </>,
+    );
+    const [flat, plain] = [...host.querySelectorAll('section')];
+    expect(flat?.querySelector('h3')?.textContent).toBe('Preferred · 2');
+    expect(flat?.className).toBe('bp-list-group bp-list-group-flat');
+    expect(flat?.querySelectorAll('.bp-list-row')).toHaveLength(2);
+    expect(plain?.className).toBe('bp-list-group');
+    expect(plain?.querySelector('h3')?.textContent).toBe('You hold');
   });
 });
