@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
-import type { RequestView } from '../../protocol';
+import type { CurrentRequest } from '../../protocol';
 import { Banner, Button, Spinner } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
+import { useHomeEnv } from '../home/env';
 import { useLockEnv } from '../lock/env';
 import { UnlockPanel } from '../lock/UnlockScreen';
 import { ConnectScreen } from './ConnectScreen';
@@ -15,7 +16,21 @@ export interface RequestScreenProps {
   close: () => void;
 }
 
-type Load = { status: 'loading' } | { status: 'failed' } | { status: 'ready'; view: RequestView };
+const NEXT_MS = 600;
+const POLL_MS = 1_000;
+
+/** "1 of N" while more than one request waits; the head is always the first. */
+function QueuePill({ count }: { count: number | undefined }) {
+  if (count === undefined || count < 2) return null;
+  return (
+    <span class="bp-dapp-pill" aria-label={t('dapp.queue.pill', { n: '1', count: String(count) })}>
+      {t('dapp.queue.pill', { n: '1', count: String(count) })}
+    </span>
+  );
+}
+
+type Load =
+  { status: 'loading' } | { status: 'failed' } | { status: 'ready'; view: CurrentRequest };
 
 /**
  * The request window: shows the request that waits. The worker decides what that is, so a
@@ -23,33 +38,96 @@ type Load = { status: 'loading' } | { status: 'failed' } | { status: 'ready'; vi
  */
 export function RequestScreen({ close }: RequestScreenProps) {
   const client = useClient();
-  const { events } = useLockEnv();
+  const { events, clock } = useLockEnv();
+  const { scheduler } = useHomeEnv();
+  // The "Next request" state: how many wait behind the one just answered.
+  const [next, setNext] = useState<number | null>(null);
+  const cancelNext = useRef<() => void>(() => undefined);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const closed = useRef(false);
 
-  const refresh = useCallback(async () => {
-    const res = await client.call('dapp.current', {});
-    if (!res.ok) {
-      setLoad({ status: 'failed' });
-      return;
-    }
-    if (res.value.status === 'none') {
-      if (!closed.current) {
-        closed.current = true;
-        close();
+  // Requests that arrive while one is on screen only change the count, never the view.
+  const [live, setLive] = useState<number | null>(null);
+
+  /** `from` is the request just answered: when another one takes its place, "Next request" shows first. */
+  const refresh = useCallback(
+    async (from?: string) => {
+      const res = await client.call('dapp.current', {});
+      if (!res.ok) {
+        setLoad({ status: 'failed' });
+        return;
       }
-      return;
-    }
-    setLoad({ status: 'ready', view: res.value });
-  }, [client, close]);
+      const view = res.value;
+      if (view.status === 'none') {
+        if (!closed.current) {
+          closed.current = true;
+          close();
+        }
+        return;
+      }
+      setLive(null);
+      setLoad({ status: 'ready', view });
+      if (
+        (view.status === 'connect' || view.status === 'sign') &&
+        from !== undefined &&
+        view.id !== from
+      ) {
+        cancelNext.current();
+        setNext(view.count ?? 1);
+        cancelNext.current = scheduler.after(NEXT_MS, () => {
+          setNext(null);
+        });
+      }
+    },
+    [client, close, scheduler],
+  );
 
   useEffect(() => {
     void refresh();
-    return events.subscribe((e) => {
-      if (e.state === 'locked') void refresh();
+    // Any change of the lock (here or in the toolbar popup) can change what the head needs.
+    return events.subscribe(() => {
+      void refresh();
     });
   }, [events, refresh]);
 
+  const ready = load.status === 'ready' ? load.view : null;
+  const expiresAt = ready?.expiresAt;
+  // An expired request leaves the view by itself; the worker answers it `expired`.
+  useEffect(() => {
+    if (expiresAt === undefined) return undefined;
+    return scheduler.after(Math.max(expiresAt - clock.now(), 0) + 50, () => {
+      void refresh();
+    });
+  }, [expiresAt, scheduler, clock, refresh]);
+  useEffect(
+    () => () => {
+      cancelNext.current();
+    },
+    [],
+  );
+  // The window hears about requests queued behind the one on screen by asking now and then.
+  useEffect(
+    () =>
+      scheduler.every(POLL_MS, () => {
+        void client.call('dapp.queue', {}).then((res) => {
+          if (!res.ok) return;
+          if (res.value.count === 0) void refresh();
+          else setLive(res.value.count);
+        });
+      }),
+    [client, scheduler, refresh],
+  );
+  const count = live ?? ready?.count;
+
+  if (next !== null) {
+    return (
+      <Layout>
+        <div class="bp-dapp-center">
+          <p role="status">{t('dapp.queue.next', { n: String(next) })}</p>
+        </div>
+      </Layout>
+    );
+  }
   if (load.status === 'loading') {
     return (
       <Layout>
@@ -97,9 +175,19 @@ export function RequestScreen({ close }: RequestScreenProps) {
         </Layout>
       );
     case 'connect':
-      return <ConnectScreen view={view} done={() => void refresh()} />;
+      return (
+        <>
+          <QueuePill count={count} />
+          <ConnectScreen view={view} done={() => void refresh(view.id)} />
+        </>
+      );
     case 'sign':
-      return <SignScreen view={view} done={() => void refresh()} />;
+      return (
+        <>
+          <QueuePill count={count} />
+          <SignScreen view={view} done={() => void refresh(view.id)} />
+        </>
+      );
     case 'none':
       return null;
   }

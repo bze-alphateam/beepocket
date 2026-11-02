@@ -240,3 +240,52 @@ test('a send plus an unknown message shows two cards, the second with its raw JS
     stop();
   }
 });
+
+test('two sign requests share one window: 1 of 2, Next request, then the second', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  const { dapp, stop } = await connectedDapp(context, extensionId);
+  try {
+    await dapp.getByLabel('Recipient').fill(RECIPIENT);
+    const [sign] = await Promise.all([
+      context.waitForEvent('page'),
+      dapp.getByRole('button', { name: 'Send 1 BZE' }).click(),
+    ]);
+    await dapp.getByRole('button', { name: 'Send 1 BZE' }).click();
+    await expect(sign.getByText('1 of 2')).toBeVisible();
+    await sign.getByRole('button', { name: 'Approve' }).click();
+    await expect(sign.getByText('Next request · 1 waiting')).toBeVisible();
+    await expect(sign.getByRole('heading', { name: 'Approve a transaction' })).toBeVisible();
+    await expect(sign.getByText('1 of 2')).toHaveCount(0);
+    await sign.getByRole('button', { name: 'Reject' }).click();
+    await expect(dapp.locator('#log li')).toHaveText([
+      `hash ${HASH.toLowerCase()}`,
+      'error rejected',
+    ]);
+  } finally {
+    stop();
+  }
+});
+
+test('closing the window answers every queued request rejected', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  const { dapp, stop } = await connectedDapp(context, extensionId);
+  try {
+    await dapp.getByLabel('Recipient').fill(RECIPIENT);
+    const [sign] = await Promise.all([
+      context.waitForEvent('page'),
+      dapp.getByRole('button', { name: 'Send 1 BZE' }).click(),
+    ]);
+    await dapp.getByRole('button', { name: 'Send 1 BZE' }).click();
+    await expect(sign.getByText('1 of 2')).toBeVisible();
+    await sign.close();
+    await expect(dapp.locator('#log li')).toHaveText(['error rejected', 'error rejected']);
+  } finally {
+    stop();
+  }
+});

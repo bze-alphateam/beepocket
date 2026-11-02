@@ -17,6 +17,7 @@ import {
   type TabsLike,
   type WindowsLike,
 } from '../dapp';
+import { DAPP_EXPIRY_ALARM } from '../dapp/requests';
 import { registerHandlers } from './handlers';
 import { HandlerRegistry } from './registry';
 import { createServices } from './services';
@@ -43,7 +44,9 @@ export interface BackgroundEnv extends PlatformEnv {
     };
     alarms: AlarmsLike & { onAlarm: AlarmEventLike };
     tabs: TabsLike & { onRemoved: { addListener(listener: (tabId: number) => void): void } };
-    windows: WindowsLike;
+    windows: WindowsLike & {
+      onRemoved: { addListener(listener: (windowId: number) => void): void };
+    };
   };
 }
 
@@ -93,8 +96,19 @@ export function startBackground(env: BackgroundEnv): void {
       .then((r) => r.dapp.onTabRemoved(tabId))
       .catch(() => undefined);
   });
+  env.chrome.windows.onRemoved.addListener((windowId) => {
+    void registry()
+      .then((r) => r.dapp.onWindowRemoved(windowId))
+      .catch(() => undefined);
+  });
   // Alarms wake a stopped worker, so the listener is attached synchronously too.
   env.chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === DAPP_EXPIRY_ALARM) {
+      void registry()
+        .then((r) => r.dapp.onExpiry())
+        .catch(() => undefined);
+      return;
+    }
     void registry()
       .then((r) => r.wallet.onAlarm(alarm.name))
       .catch(() => retryLock(env, alarm.name));
@@ -154,7 +168,11 @@ async function createRegistry(env: BackgroundEnv): Promise<Started> {
       void sent?.catch(() => undefined);
     },
   );
-  const dapp = createDappService(platform, services, wallet, env.chrome);
+  const dapp = createDappService(platform, services, wallet, {
+    tabs: env.chrome.tabs,
+    windows: env.chrome.windows,
+    alarms: new ChromeAlarms(env.chrome.alarms),
+  });
   const registry = new HandlerRegistry();
   registerHandlers(registry, { platform, services, wallet, dapp });
   return { registry, wallet, dapp };

@@ -163,3 +163,28 @@ test('Settings › Connected sites: Change pushes accountChanged, Disconnect mak
     stop();
   }
 });
+
+test('a fully locked wallet shows the waiting card in the popup; unlocking there continues the request', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const lockPage = await context.newPage();
+  await lockPage.goto(`chrome-extension://${extensionId}/popup.html`);
+  await call(lockPage, 'wallet.lock', {});
+  const { dapp, stop } = await openDapp(context);
+  try {
+    const request = await connect(context, dapp);
+    await expect(request.getByLabel('Password')).toBeVisible();
+
+    await lockPage.reload();
+    await expect(lockPage.getByText(/is waiting/)).toBeVisible();
+    await expect(lockPage.getByText('It stays connected.')).toBeVisible();
+    await lockPage.getByLabel('Password').fill(PASSWORD);
+    await lockPage.getByRole('button', { name: 'Unlock' }).click();
+    await expect(request.getByRole('heading', { name: 'Connect to a site' })).toBeVisible();
+  } finally {
+    stop();
+  }
+});

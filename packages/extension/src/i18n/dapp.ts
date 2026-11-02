@@ -38,6 +38,12 @@ export const dapp = {
   'dapp.sign.cardNo': '{n} of {count}',
   'dapp.sign.changed': 'The network fee changed. Check the new numbers before you approve.',
   'dapp.sign.failed': 'The transaction could not be signed. Please try again.',
+  'dapp.queue.pill': '{n} of {count}',
+  'dapp.queue.next': 'Next request · {n} waiting',
+  'dapp.waiting.one': '{site} is waiting',
+  'dapp.waiting.many': '{site} and {n} more are waiting',
+  'dapp.waiting.sub': 'Unlock to see its request. It stays connected.',
+  'dapp.waiting.subMany': 'Unlock to see their requests. They stay connected.',
   'dapp.failed': 'The wallet service did not answer. Please try again.',
   'dapp.retry': 'Try again',
 } as const;

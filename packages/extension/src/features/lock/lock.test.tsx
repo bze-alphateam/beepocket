@@ -12,6 +12,7 @@ import {
   type Result,
   type WalletState,
 } from '../../protocol';
+import type { QueueView } from '../../protocol';
 import type { Client } from '../../protocol/client';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { LockEnvProvider } from './env';
@@ -437,7 +438,58 @@ describe('useLock', () => {
 });
 
 describe('WaitingRequests', () => {
-  it('renders nothing yet', () => {
-    expect(render(<WaitingRequests />).host.innerHTML).toBe('');
+  const queue = (q: QueueView) => ({ 'dapp.queue': () => ok(q) });
+
+  it('renders nothing when nobody waits', async () => {
+    const { host } = setup(queue({ head: null, count: 0, origins: [] }), <WaitingRequests />);
+    await flush();
+    expect(host.querySelector('.bp-lock-waiting')).toBeNull();
+  });
+
+  it('names the one site that waits', async () => {
+    const { host } = setup(
+      queue({ head: 'https://dex.getbze.com', count: 1, origins: ['https://dex.getbze.com'] }),
+      <WaitingRequests />,
+    );
+    await flush();
+    const card = host.querySelector('.bp-lock-waiting');
+    expect(card?.textContent).toContain('https://dex.getbze.com is waiting');
+    expect(card?.textContent).toContain('Unlock to see its request. It stays connected.');
+  });
+
+  it('counts the other sites when several wait', async () => {
+    const { host } = setup(
+      queue({
+        head: 'https://a.example',
+        count: 4,
+        origins: ['https://a.example', 'https://b.example', 'https://c.example'],
+      }),
+      <WaitingRequests />,
+    );
+    await flush();
+    expect(host.querySelector('.bp-lock-waiting')?.textContent).toContain(
+      'https://a.example and 2 more are waiting',
+    );
+  });
+
+  it('shows the card on the unlock screen, and opens the request window after unlocking', async () => {
+    const close = vi.spyOn(window, 'close').mockImplementation(() => undefined);
+    const { host, call } = setup(
+      {
+        'wallet.state': stateReply('locked'),
+        'wallet.unlock': outcome({ status: 'ok' }),
+        'dapp.queue': () =>
+          ok({ head: 'https://a.example', count: 1, origins: ['https://a.example'] }),
+      },
+      <UnlockScreen />,
+    );
+    await flush();
+    expect(host.textContent).toContain('https://a.example is waiting');
+    type(host, 'right');
+    await submit(host);
+    await flush();
+    expect(call).toHaveBeenCalledWith('dapp.open', {});
+    expect(close).toHaveBeenCalledTimes(1);
+    close.mockRestore();
   });
 });

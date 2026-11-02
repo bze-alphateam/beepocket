@@ -260,3 +260,32 @@
   text-align: center;
   opacity: 0.8;
 }
+
+.bp-dapp-pill {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 1;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--bp-surface, rgba(128, 128, 128, 0.18));
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-lock-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: stretch;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bp-surface, rgba(128, 128, 128, 0.18));
+  font-size: 13px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.bp-lock-waiting span {
+  color: var(--bp-muted);
+}

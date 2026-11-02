@@ -68,29 +68,42 @@ async function rig() {
   const created: { url: string; type: string; width: number; height: number }[] = [];
   const open = new Set<number>();
   const focused: number[] = [];
-  const dapp = createDappService({ session, clock } as unknown as Platform, services, wallet, {
-    tabs: {
-      sendMessage: (tabId, message, options) => {
-        if (options?.documentId !== undefined && unreachable.has(options.documentId)) {
-          return Promise.reject(new Error('no such document'));
-        }
-        delivered.push({ tabId, documentId: options?.documentId, message });
-        return Promise.resolve();
+  const alarms = new Map<string, number>();
+  const build = () =>
+    createDappService({ session, clock } as unknown as Platform, services, wallet, {
+      alarms: {
+        set: (name, minutes) => {
+          alarms.set(name, minutes);
+          return Promise.resolve();
+        },
+        clear: (name) => {
+          alarms.delete(name);
+          return Promise.resolve();
+        },
       },
-    },
-    windows: {
-      create: (info) => {
-        created.push(info);
-        open.add(created.length);
-        return Promise.resolve({ id: created.length });
+      tabs: {
+        sendMessage: (tabId, message, options) => {
+          if (options?.documentId !== undefined && unreachable.has(options.documentId)) {
+            return Promise.reject(new Error('no such document'));
+          }
+          delivered.push({ tabId, documentId: options?.documentId, message });
+          return Promise.resolve();
+        },
       },
-      get: (id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('no window'))),
-      update: (id) => {
-        focused.push(id);
-        return Promise.resolve({});
+      windows: {
+        create: (info) => {
+          created.push(info);
+          open.add(created.length);
+          return Promise.resolve({ id: created.length });
+        },
+        get: (id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('no window'))),
+        update: (id) => {
+          focused.push(id);
+          return Promise.resolve({});
+        },
       },
-    },
-  });
+    });
+  const dapp = build();
 
   let n = 0;
   const nextId = () => (++n).toString(16).padStart(32, '0');
@@ -118,12 +131,16 @@ async function rig() {
   return {
     wallet,
     dapp,
+    /** A fresh service over the same storage: the worker was stopped and started again. */
+    restart: build,
     ask,
     site,
     answersFor,
     delivered,
     unreachable,
     clock,
+    alarms,
+    session,
     created,
     focused,
     open,
@@ -238,18 +255,6 @@ describe('connect and getKey, wallet unlocked', () => {
     expect(profile.ok && profile.value.sites.mainnet).toEqual({});
   });
 
-  it('answers a second request that needs the window with invalid-request while one waits', async () => {
-    const t = await rig();
-    const first = await t.ask('connect', chainId());
-    const second = await t.ask('connect', chainId(), t.site('https://other.example', 2, 'doc-2'));
-    expect(second.ack).toEqual({
-      error: { code: 'invalid-request', message: 'Another request is waiting' },
-    });
-    // The first one still completes.
-    await t.dapp.answer(first.id, { approve: true, index: 0 });
-    expect(one(t.answersFor(first.id))).toMatchObject({ result: { name: 'Main' } });
-  });
-
   it('focuses the open window instead of opening another, and opens a new one after it closed', async () => {
     const t = await rig();
     const first = await t.ask('connect', chainId());
@@ -317,7 +322,7 @@ describe('connect and getKey, wallet locked', () => {
     const connect = await t.ask('connect', chainId());
     expect(connect.ack).toEqual({ accepted: true });
     expect(t.created).toHaveLength(1);
-    expect(await t.dapp.current()).toEqual({ status: 'locked', origin: ORIGIN });
+    expect(await t.dapp.current()).toMatchObject({ status: 'locked', origin: ORIGIN });
     await t.wallet.unlock(PASSWORD);
     expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: connect.id });
     await t.dapp.answer(connect.id, { approve: false });
@@ -325,7 +330,7 @@ describe('connect and getKey, wallet locked', () => {
     await t.wallet.lock();
     const key = await t.ask('getKey', chainId());
     expect(t.answersFor(key.id)).toEqual([]);
-    expect(await t.dapp.current()).toEqual({ status: 'locked', origin: ORIGIN });
+    expect(await t.dapp.current()).toMatchObject({ status: 'locked', origin: ORIGIN });
     await t.wallet.unlock(PASSWORD);
     expect(await t.dapp.current()).toEqual({ status: 'none' });
     expect(one(t.answersFor(key.id))).toMatchObject({ error: { code: 'not-connected' } });
@@ -382,7 +387,7 @@ describe('connect and getKey, wallet weakly locked', () => {
 
     const a = await t.ask('getKey', chainId());
     expect(t.answersFor(a.id)).toEqual([]);
-    expect(await t.dapp.current()).toEqual({ status: 'unlock', origin: ORIGIN });
+    expect(await t.dapp.current()).toMatchObject({ status: 'unlock', origin: ORIGIN });
 
     await t.wallet.reauth(PASSWORD);
     expect(await t.dapp.current()).toEqual({ status: 'none' });
@@ -609,5 +614,192 @@ describe('connected sites', () => {
     expect(sent).toHaveLength(200);
     expect(sent).not.toContain('0:doc-0');
     expect(sent.filter((s) => s === '5:doc-5')).toHaveLength(1);
+  });
+});
+
+const at = (n: number) => `https://site${String(n)}.example`;
+const MINUTE = 60_000;
+
+describe('request queue', () => {
+  it('shows the head only, in arrival order, with the count behind it', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    const b = await t.ask('connect', chainId(), t.site(at(2), 2, 'd2'));
+    const c = await t.ask('connect', chainId(), t.site(at(3), 3, 'd3'));
+    expect(t.created).toHaveLength(1);
+    expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: a.id, count: 3 });
+    expect(await t.dapp.queue()).toEqual({
+      head: at(1),
+      count: 3,
+      origins: [at(1), at(2), at(3)],
+    });
+
+    await t.dapp.answer(a.id, { approve: false });
+    expect(await t.dapp.current()).toMatchObject({ id: b.id, count: 2 });
+    await t.dapp.answer(b.id, { approve: false });
+    expect(await t.dapp.current()).toMatchObject({ id: c.id, count: 1 });
+    await t.dapp.answer(c.id, { approve: false });
+    expect(await t.dapp.current()).toEqual({ status: 'none' });
+  });
+
+  it('keeps 5 requests per site, answering the rest invalid-request', async () => {
+    const t = await rig();
+    for (let i = 0; i < 5; i++) {
+      const ok = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+      expect(ok.ack).toEqual({ accepted: true });
+    }
+    const sixth = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    expect(sixth.ack).toEqual({
+      error: { code: 'invalid-request', message: 'Too many requests waiting' },
+    });
+    // The hostile site did not take anybody else's place.
+    for (let i = 2; i <= 4; i++) {
+      for (let j = 0; j < 5; j++) {
+        const ok = await t.ask('connect', chainId(), t.site(at(i), i, `d${String(i)}`));
+        expect(ok.ack).toEqual({ accepted: true });
+      }
+    }
+    expect((await t.dapp.queue()).count).toBe(20);
+  });
+
+  it("lets a new site in when other sites fill the queue, ending the busiest one's oldest", async () => {
+    const t = await rig();
+    const first = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    for (let i = 1; i <= 4; i++) {
+      for (let j = i === 1 ? 1 : 0; j < 5; j++) {
+        await t.ask('connect', chainId(), t.site(at(i), i, `d${String(i)}`));
+      }
+    }
+    expect((await t.dapp.queue()).count).toBe(20);
+    const fresh = await t.ask('connect', chainId(), t.site(at(5), 5, 'd5'));
+    expect(fresh.ack).toEqual({ accepted: true });
+    const queue = await t.dapp.queue();
+    expect(queue.count).toBe(20);
+    expect(queue.origins).toContain(at(5));
+    expect(one(t.answersFor(first.id))).toMatchObject({ error: { code: 'invalid-request' } });
+  });
+
+  it('opens one window when requests arrive together', async () => {
+    const t = await rig();
+    await Promise.all([
+      t.ask('connect', chainId(), t.site(at(1), 1, 'd1')),
+      t.ask('connect', chainId(), t.site(at(2), 2, 'd2')),
+    ]);
+    expect(t.created).toHaveLength(1);
+  });
+
+  it('refuses a request id that is already waiting', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    const again = await t.dapp.receive(t.site(at(1), 1, 'd1'), {
+      id: a.id,
+      method: 'connect',
+      params: chainId(),
+    });
+    expect(again.ack).toMatchObject({ error: { code: 'invalid-request' } });
+    expect((await t.dapp.queue()).count).toBe(1);
+  });
+
+  it('does not queue what needs no window', async () => {
+    const t = await rig();
+    for (let i = 0; i < 25; i++) await t.ask('getKey', chainId(), t.site(at(1), 1, 'd1'));
+    expect((await t.dapp.queue()).count).toBe(0);
+    expect(t.created).toHaveLength(0);
+  });
+
+  it('answers every queued request rejected when the window is closed', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    const b = await t.ask('connect', chainId(), t.site(at(2), 2, 'd2'));
+    await t.dapp.onWindowRemoved(99);
+    expect((await t.dapp.queue()).count).toBe(2);
+    await t.dapp.onWindowRemoved(1);
+    expect(one(t.answersFor(a.id))).toMatchObject({ error: { code: 'rejected' } });
+    expect(one(t.answersFor(b.id))).toMatchObject({ error: { code: 'rejected' } });
+    expect((await t.dapp.queue()).count).toBe(0);
+    expect(t.alarms.has('dapp-expiry')).toBe(false);
+  });
+
+  it('removes only the requests of a closed tab', async () => {
+    const t = await rig();
+    await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    const b = await t.ask('connect', chainId(), t.site(at(2), 2, 'd2'));
+    await t.dapp.onTabRemoved(1);
+    expect(await t.dapp.queue()).toEqual({ head: at(2), count: 1, origins: [at(2)] });
+    expect(await t.dapp.current()).toMatchObject({ id: b.id });
+  });
+
+  it('expires a request after 10 minutes with the alarm set to the earliest one', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    t.clock.t += 4 * MINUTE;
+    const b = await t.ask('connect', chainId(), t.site(at(2), 2, 'd2'));
+    // 10 minutes after the first request, which is 6 from now.
+    expect(t.alarms.get('dapp-expiry')).toBe(6);
+
+    t.clock.t += 6 * MINUTE;
+    await t.dapp.onExpiry();
+    expect(one(t.answersFor(a.id))).toMatchObject({ error: { code: 'expired' } });
+    expect(t.answersFor(b.id)).toEqual([]);
+    expect(t.alarms.get('dapp-expiry')).toBe(4);
+    expect(await t.dapp.current()).toMatchObject({ id: b.id, count: 1 });
+
+    t.clock.t += 4 * MINUTE;
+    await t.dapp.onExpiry();
+    expect(one(t.answersFor(b.id))).toMatchObject({ error: { code: 'expired' } });
+    expect(t.alarms.has('dapp-expiry')).toBe(false);
+  });
+
+  it('never approves an expired request, even if the window answers late', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    t.clock.t += 10 * MINUTE;
+    const res = await t.dapp.answer(a.id, { approve: true, index: 0 });
+    expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
+    expect(one(t.answersFor(a.id))).toMatchObject({ error: { code: 'expired' } });
+  });
+
+  it('lets expired requests make room for a new one', async () => {
+    const t = await rig();
+    for (let i = 0; i < 5; i++) await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    t.clock.t += 10 * MINUTE;
+    const fresh = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    expect(fresh.ack).toEqual({ accepted: true });
+    expect((await t.dapp.queue()).count).toBe(1);
+  });
+
+  it('keeps the queue, the count and the expiry across a worker restart', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    const b = await t.ask('connect', chainId(), t.site(at(2), 2, 'd2'));
+    const again = t.restart();
+    expect(await again.current()).toMatchObject({ id: a.id, count: 2 });
+    t.clock.t += 10 * MINUTE;
+    await again.onExpiry();
+    expect(one(t.answersFor(a.id))).toMatchObject({ error: { code: 'expired' } });
+    expect(one(t.answersFor(b.id))).toMatchObject({ error: { code: 'expired' } });
+    // The window was stored too: closing it now finds nothing left to reject.
+    await t.restart().onWindowRemoved(1);
+    expect(t.delivered).toHaveLength(2);
+  });
+
+  it('leaves a request waiting while the wallet is locked, then shows it after unlock', async () => {
+    const t = await rig();
+    await t.wallet.lock();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    expect(await t.dapp.current()).toMatchObject({ status: 'locked', origin: at(1), count: 1 });
+    expect(await t.dapp.queue()).toMatchObject({ head: at(1), count: 1 });
+    expect(t.answersFor(a.id)).toEqual([]);
+    await t.wallet.unlock(PASSWORD);
+    expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: a.id });
+  });
+
+  it('opens the window from the unlock screen only when something waits', async () => {
+    const t = await rig();
+    await t.dapp.openWindow();
+    expect(t.created).toHaveLength(0);
+    await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    await t.dapp.openWindow();
+    expect(t.focused).toEqual([1]);
   });
 });
