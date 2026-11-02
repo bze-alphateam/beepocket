@@ -8,6 +8,8 @@
     <h1>Test dapp</h1>
     <button id="connect" type="button">Connect wallet</button>
     <button id="get-key" type="button">Get key</button>
+    <label>Recipient <input id="to" type="text" /></label>
+    <button id="send" type="button">Send 1 BZE</button>
     <p id="result" role="status"></p>
     <script>
       // A plain page that talks to the raw window.beepocket; the connector replaces it later.
@@ -25,6 +27,73 @@
       document.getElementById('connect').addEventListener('click', () => {
         void show(() => window.beepocket.connect(CHAIN_ID));
       });
+      // A tiny protobuf writer: just enough for one MsgSend, so the page needs no library.
+      const encoder = new TextEncoder();
+      const cat = (...parts) => {
+        const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+        let at = 0;
+        for (const p of parts) {
+          out.set(p, at);
+          at += p.length;
+        }
+        return out;
+      };
+      const varint = (value) => {
+        let n = BigInt(value);
+        const bytes = [];
+        do {
+          let b = Number(n & 0x7fn);
+          n >>= 7n;
+          if (n > 0n) b |= 0x80;
+          bytes.push(b);
+        } while (n > 0n);
+        return Uint8Array.from(bytes);
+      };
+      const bytesField = (no, bytes) => cat(varint((no << 3) | 2), varint(bytes.length), bytes);
+      const textField = (no, text) => bytesField(no, encoder.encode(text));
+      const numberField = (no, n) => cat(varint(no << 3), varint(n));
+      const any = (typeUrl, value) => cat(textField(1, typeUrl), bytesField(2, value));
+      const fromBase64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+
+      function sendDoc(key, to) {
+        const coin = cat(textField(1, 'ubze'), textField(2, '1000000'));
+        const msg = cat(textField(1, key.address), textField(2, to), bytesField(3, coin));
+        const bodyBytes = bytesField(1, any('/cosmos.bank.v1beta1.MsgSend', msg));
+        const pubKey = any('/cosmos.crypto.secp256k1.PubKey', bytesField(1, key.pubKey));
+        const signerInfo = cat(
+          bytesField(1, pubKey),
+          bytesField(2, bytesField(1, numberField(1, 1))),
+          numberField(3, 0),
+        );
+        // The wallet replaces this fee with its own.
+        const authInfoBytes = cat(bytesField(1, signerInfo), bytesField(2, numberField(2, 1)));
+        return { bodyBytes, authInfoBytes, chainId: CHAIN_ID, accountNumber: 7n };
+      }
+
+      document.getElementById('send').addEventListener('click', () => {
+        void (async () => {
+          try {
+            const key = await window.beepocket.getKey(CHAIN_ID);
+            const to = document.getElementById('to').value;
+            const { signed, signature } = await window.beepocket.signDirect(
+              CHAIN_ID,
+              key.address,
+              sendDoc(key, to),
+            );
+            const txRaw = cat(
+              bytesField(1, signed.bodyBytes),
+              bytesField(2, signed.authInfoBytes),
+              bytesField(3, fromBase64(signature.signature)),
+            );
+            const hash = await window.beepocket.sendTx(CHAIN_ID, txRaw, 'sync');
+            result.textContent =
+              'hash ' + Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
+          } catch (error) {
+            result.textContent = 'error ' + (error.code ?? error.message);
+          }
+        })();
+      });
+
       document.getElementById('get-key').addEventListener('click', () => {
         void show(() => window.beepocket.getKey(CHAIN_ID));
       });

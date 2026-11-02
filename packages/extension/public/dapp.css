@@ -100,3 +100,65 @@
   gap: 8px;
   margin-top: auto;
 }
+
+/* Sign screen. */
+.bp-dapp-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--bp-line);
+  border-radius: 12px;
+  background: var(--bp-card);
+}
+
+.bp-dapp-hero strong {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.bp-dapp-hero small {
+  color: var(--bp-muted);
+  overflow-wrap: anywhere;
+}
+
+.bp-dapp-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.bp-dapp-rows dt {
+  color: var(--bp-muted);
+}
+
+.bp-dapp-rows dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bp-dapp-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.bp-dapp-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bp-primary);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.bp-dapp-json {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

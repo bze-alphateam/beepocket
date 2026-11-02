@@ -155,5 +155,13 @@ function view(
         network: request.network,
         addresses: decision.addresses,
       };
+    case 'sign':
+      return {
+        status: 'sign',
+        id: request.id,
+        origin: request.origin,
+        network: request.network,
+        ...decision.details,
+      };
   }
 }

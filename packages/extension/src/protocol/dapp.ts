@@ -1,5 +1,8 @@
 import type { NetworkId } from '@beepocket/core';
+import type { ReviewedFee, SignView } from './dapp-sign';
 import type { WalletAddress } from './wallet';
+
+export type { ReviewedFee, SignDetails, SignView } from './dapp-sign';
 
 /** Error codes of the `dapp.*` methods (`ProtocolError.code`). */
 export const DappProtocolCodes = {
@@ -22,7 +25,9 @@ export type RequestView =
       origin: string;
       network: NetworkId;
       addresses: WalletAddress[];
-    };
+    }
+  /** A site asks for a transaction to be signed: show it in plain words. */
+  | SignView;
 
 /** Methods the request window calls. Own pages only. */
 export interface DappProtocol {
@@ -30,7 +35,7 @@ export interface DappProtocol {
   'dapp.current': { req: Record<string, never>; res: RequestView };
   /** The user's answer: Cancel (`approve: false`) or Connect with the picked address `index`. */
   'dapp.answer': {
-    req: { id: string; approve: boolean; index?: number };
+    req: { id: string; approve: boolean; index?: number; fee?: ReviewedFee };
     res: Record<string, never>;
   };
 }

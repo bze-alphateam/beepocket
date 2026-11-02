@@ -87,6 +87,16 @@ export function txRawBytes(params: {
   return TxRaw.encode(TxRaw.fromPartial(params)).finish();
 }
 
+/** Reads serialized `TxRaw` bytes; throws when they are not a `TxRaw`. */
+export function decodeTxRaw(txRaw: Uint8Array): {
+  bodyBytes: Uint8Array;
+  authInfoBytes: Uint8Array;
+  signatures: Uint8Array[];
+} {
+  const { bodyBytes, authInfoBytes, signatures } = TxRaw.decode(txRaw);
+  return { bodyBytes, authInfoBytes, signatures };
+}
+
 /** `TxRaw` for `/cosmos/tx/v1beta1/simulate`: empty signature and a zero fee. */
 export function simulationTxBytes(
   bodyBytes: Uint8Array,
