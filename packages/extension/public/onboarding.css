@@ -1,12 +1,4 @@
-/* First-run flow. Colours come from the --bp-* variables set by the theme engine. */
-.ob-step {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 100%;
-  padding: 16px 20px 20px;
-}
+/* First-run flow layout. Every control is a kit component; colours come from --bp-* variables. */
 
 /* Welcome (Ob-Welcome): the lockup and tagline centred, the actions at the bottom. */
 .ob-welcome {
@@ -39,20 +31,8 @@
   line-height: 1.5;
 }
 
-.ob-welcome > .bp-card {
+.ob-welcome-link {
   margin-bottom: 16px;
-}
-
-.ob-link-strip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.ob-link-strip > .bp-icon {
-  color: var(--bp-accent-text);
 }
 
 .ob-welcome-actions {
@@ -68,232 +48,90 @@
   text-align: center;
 }
 
-.ob-step h1 {
-  font-size: 22px;
-}
-
-.ob-hint {
-  color: var(--bp-muted);
-  line-height: 1.45;
-}
-
-.ob-note {
-  color: var(--bp-muted);
-  font-size: 12px;
-}
-
-.ob-note.ob-bad {
-  color: var(--bp-bad-text);
-}
-
-.ob-note.ob-ok {
-  color: var(--bp-ok-text);
-}
-
-.ob-top {
+/* A step after Welcome: the title block, then the board's blocks at its own spacing. */
+.ob-step {
+  position: relative;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  padding: 0 16px 16px;
+}
+
+.ob-gap-12 {
   gap: 12px;
 }
 
-.ob-back {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--bp-line-strong);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--bp-text);
-  font-size: 20px;
-  cursor: pointer;
+.ob-gap-14 {
+  gap: 14px;
 }
 
-.ob-bars {
+.ob-gap-16 {
+  gap: 16px;
+}
+
+.ob-title {
   display: flex;
-  flex: 1;
+  flex-direction: column;
   gap: 4px;
 }
 
-.ob-bar {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--bp-switch-off);
+.ob-title h1 {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
-.ob-bar-on {
-  background: var(--bp-primary);
-}
-
-.ob-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ob-words-wrap {
-  position: relative;
-}
-
-.ob-words {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin: 0;
-  padding: 10px;
-  list-style: none;
-  border: 1px solid var(--bp-line);
-  border-radius: 12px;
-  background: var(--bp-card);
-  font-size: 13px;
-}
-
-.ob-words li {
-  display: flex;
-  gap: 6px;
-}
-
-.ob-words b {
-  width: 16px;
-  color: var(--bp-faint);
-  font-weight: 500;
-  text-align: right;
-}
-
-.ob-blur {
-  filter: blur(7px);
-  user-select: none;
-}
-
-.ob-veil {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+.ob-title p {
   color: var(--bp-muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
-.ob-check {
+.ob-wait {
   display: flex;
   align-items: center;
   gap: 8px;
+  color: var(--bp-muted);
   font-size: 13px;
 }
 
-.ob-quiz {
+/* Ob-Phrase: the copy chip sits under the grid, at its start. */
+.ob-copy {
+  align-self: flex-start;
+}
+
+/* Ob-Import: the length control left, the Paste button right. */
+.ob-import-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.ob-quiz legend {
-  margin-bottom: 6px;
-  padding: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--bp-muted);
-}
-
-.ob-opt,
-.ob-card,
-.ob-row {
-  border: 1px solid var(--bp-line);
-  border-radius: 12px;
-  background: var(--bp-card);
-  color: var(--bp-text-soft);
-  font: inherit;
-  cursor: pointer;
-}
-
-.ob-opt {
-  flex: 1;
-  min-height: 40px;
+.ob-import-bar > .bp-btn-ghost {
+  min-height: 36px;
+  height: 36px;
   padding: 0 10px;
 }
 
-.ob-opt-on,
-.ob-card-on,
-.ob-row-on {
-  border-color: var(--bp-soft-line);
-  background: var(--bp-soft);
-  color: var(--bp-text);
+.ob-form,
+.ob-code {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.ob-card {
+.ob-code {
+  gap: 8px;
+}
+
+/* The Paste text button fills the code field's height. */
+.ob-code .bp-field-box > .bp-btn-ghost {
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
+}
+
+.ob-tokens {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px 14px;
-  text-align: left;
-}
-
-.ob-card small,
-.ob-token small,
-.ob-row small {
-  display: block;
-  color: var(--bp-muted);
-  font-size: 12px;
-}
-
-.ob-area {
-  padding: 10px 12px;
-  border: 1px solid var(--bp-line-strong);
-  border-radius: 12px;
-  background: var(--bp-inset);
-  color: var(--bp-text);
-  font: inherit;
-  resize: none;
-}
-
-.ob-token {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--bp-soft-line);
-  border-radius: 12px;
-  background: var(--bp-bg);
-  color: var(--bp-text);
-}
-
-.ob-dot {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--bp-grad);
-  color: var(--bp-btn-text);
-  font-weight: 700;
-}
-
-.ob-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ob-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-}
-
-.ob-ph {
-  flex: 1;
-  height: 10px;
-  margin-top: 4px;
-  border-radius: 5px;
-  background: var(--bp-line-strong);
 }

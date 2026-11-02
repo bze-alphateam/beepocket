@@ -9,13 +9,22 @@ export interface WordGridProps {
   invalid?: readonly number[] | undefined;
   /** Accessible name of a cell: "Word 3" by default. */
   cellLabel?: ((n: number) => string) | undefined;
-  /** Called with the whole text when several words are pasted into one cell. */
+  /**
+   * Called with the whole text when several words land in one cell: pasted, dropped, or typed
+   * by an autocorrect that inserts a space.
+   */
   onPaste?: ((text: string, index: number) => void) | undefined;
 }
 
 const defaultLabel = (n: number) => t('app.word', { n });
 
-/** Numbered recovery-phrase cells in three columns. */
+/** Moves focus to the next editable cell of the same grid. */
+function focusNext(input: HTMLInputElement): void {
+  const cells = [...(input.closest('ol')?.querySelectorAll('input') ?? [])];
+  cells[cells.indexOf(input) + 1]?.focus();
+}
+
+/** Numbered recovery-phrase cells in three columns. A space in a cell moves to the next one. */
 export function WordGrid({ words, onWordInput, invalid = [], cellLabel, onPaste }: WordGridProps) {
   const label = cellLabel ?? defaultLabel;
   const editable = onWordInput !== undefined;
@@ -35,8 +44,15 @@ export function WordGrid({ words, onWordInput, invalid = [], cellLabel, onPaste 
                 value={word}
                 spellcheck={false}
                 autoComplete="off"
+                onKeyDown={(e) => {
+                  if (e.key !== ' ') return;
+                  e.preventDefault();
+                  focusNext(e.currentTarget);
+                }}
                 onInput={(e) => {
-                  onWordInput(i, e.currentTarget.value);
+                  const value = e.currentTarget.value;
+                  if (onPaste && /\S\s+\S/.test(value.trim())) onPaste(value, i);
+                  else onWordInput(i, value.trim());
                 }}
                 onPaste={(e) => {
                   const text = e.clipboardData?.getData('text') ?? '';

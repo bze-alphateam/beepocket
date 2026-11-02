@@ -1,0 +1,51 @@
+/* ChoiceGrid: a labelled row of three answer tiles (Ob-Confirm). */
+.bp-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.bp-choices > legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--bp-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bp-choices-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bp-choice-tile {
+  height: 44px;
+  overflow: hidden;
+  padding: 0 8px;
+  border: 1px solid var(--bp-line);
+  border-radius: 12px;
+  background: var(--bp-card);
+  color: var(--bp-text-soft);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bp-choice-tile:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+.bp-choice-tile-on {
+  border-color: var(--bp-pick-line);
+  background: var(--bp-soft);
+  color: var(--bp-text);
+}

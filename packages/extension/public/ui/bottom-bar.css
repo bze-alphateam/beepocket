@@ -1,0 +1,17 @@
+/* BottomBar: note left, action right, pinned under a picker (Ob-Tokens). */
+.bp-bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.bp-bottom-bar-note {
+  flex: 1;
+  color: var(--bp-muted);
+  font-size: 13px;
+}
+
+.bp-bottom-bar > .bp-btn {
+  padding: 0 28px;
+}

@@ -1,4 +1,6 @@
+import { useMemo } from 'preact/hooks';
 import type { RouteTable } from '../../popup/router';
+import { browserOnboardingEnv, OnboardingEnvProvider, useOptionalOnboardingEnv } from './env';
 import { Onboarding } from './Onboarding';
 
 /** The names are the contract with the state routing of the unlock story. */
@@ -19,7 +21,18 @@ export type OnboardingRoute =
     }
   | { name: 'onboarding.import'; prefillCode?: string; link?: LinkOrigin };
 
+/** Uses the env a provider hands in (tests), else the browser's. */
+function OnboardingScreen({ route }: { route: OnboardingRoute }) {
+  const given = useOptionalOnboardingEnv();
+  const env = useMemo(() => given ?? browserOnboardingEnv(), [given]);
+  return (
+    <OnboardingEnvProvider env={env}>
+      <Onboarding route={route} />
+    </OnboardingEnvProvider>
+  );
+}
+
 export const onboardingRoutes: RouteTable<OnboardingRoute> = {
-  'onboarding.welcome': Onboarding,
-  'onboarding.import': Onboarding,
+  'onboarding.welcome': OnboardingScreen,
+  'onboarding.import': OnboardingScreen,
 };

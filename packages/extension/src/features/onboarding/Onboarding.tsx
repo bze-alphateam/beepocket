@@ -1,20 +1,19 @@
 import { useEffect, useState } from 'preact/hooks';
-import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
 import { homeTarget } from '../lock/targets';
-import { AppearanceToggle } from '../../popup/appearance';
-import { Layout } from '../../popup/Layout';
+import { tokenColor } from '../home/format';
 import {
   Confirm,
   ImportPhrase,
   PasswordStep,
   Phrase,
+  resize,
   Start,
-  Step,
   Tokens,
   Welcome,
-  wordsOf,
+  type StepFrame,
+  type WelcomeLink,
 } from './screens';
 import type { OnboardingRoute } from './routes';
 
@@ -26,18 +25,14 @@ const FLOWS: Record<Path, StepName[]> = {
   import: ['import', 'password', 'start', 'tokens'],
 };
 
-/**
- * The first-run flow. The recovery phrase lives only in this component's state: it is dropped
- * as soon as the wallet exists, and again when the component unmounts.
- */
-function linkStrip(symbol: string | null, host: string | null): string | undefined {
-  if (symbol === null)
-    return host === null ? undefined : t('onboarding.link.stripNoToken', { host });
-  return host === null
-    ? t('onboarding.link.stripNoSite', { symbol })
-    : t('onboarding.link.strip', { symbol, host });
-}
+/** Import opens on 12 cells, as on the board; the length control switches to 24. */
+const blankWords = () => resize([], 12);
 
+/**
+ * The first-run flow. The recovery phrase (made or typed) lives only in this component's state:
+ * it is dropped when the flow goes back to Welcome, as soon as the wallet exists, and with the
+ * component when it unmounts. Nothing of it is written to storage, the URL or the console.
+ */
 export function Onboarding({ route }: { route: OnboardingRoute }) {
   const client = useClient();
   const { navigate } = useRoute();
@@ -46,22 +41,31 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const [path, setPath] = useState<Path>(importFirst ? 'import' : 'create');
   const [phrase, setPhrase] = useState<string | null>(null);
   const [phraseFailed, setPhraseFailed] = useState(false);
-  const [importText, setImportText] = useState('');
+  const [importWords, setImportWords] = useState<string[]>(blankWords);
   const [importRejected, setImportRejected] = useState(false);
+  // A token code that found a token makes the token step unnecessary.
+  const [codeFound, setCodeFound] = useState(false);
 
-  // The token behind a link, for the Welcome strip; the strip falls back to the host alone.
-  const [linkSymbol, setLinkSymbol] = useState<string | null>(null);
+  // The token behind a link, for the Welcome card; the card falls back to the host alone.
+  const [linkToken, setLinkToken] = useState<{ symbol: string; color: string } | null>(null);
   useEffect(() => {
     if (route.prefillCode === undefined || route.link === undefined) return;
     let live = true;
     void client.call('tokens.lookup', { code: route.prefillCode }).then((res) => {
-      if (live && res.ok) setLinkSymbol(res.value.symbol);
+      if (live && res.ok) setLinkToken({ symbol: res.value.symbol, color: tokenColor(res.value) });
     });
     return () => {
       live = false;
     };
   }, [client, route.prefillCode, route.link]);
-  const strip = route.link === undefined ? undefined : linkStrip(linkSymbol, route.link.host);
+  const link: WelcomeLink | undefined =
+    route.link === undefined
+      ? undefined
+      : {
+          symbol: linkToken?.symbol ?? null,
+          color: linkToken?.color,
+          host: route.link.host,
+        };
 
   const generate = () => {
     setPhrase(null);
@@ -72,25 +76,31 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
     });
   };
 
-  const flow = FLOWS[path];
+  const flow = FLOWS[path].filter((s) => !(codeFound && s === 'tokens'));
   const index = flow.indexOf(step);
+  const forget = () => {
+    setPhrase(null);
+    setImportWords(blankWords());
+    setImportRejected(false);
+  };
   const back = () => {
     const prev = flow[index - 1];
-    if (prev === undefined) {
-      // Leaving the first step drops whatever phrase was shown or typed.
-      setPhrase(null);
-      setImportText('');
-    }
+    // Leaving the first step drops whatever phrase was shown or typed.
+    if (prev === undefined) forget();
     setStep(prev ?? 'welcome');
   };
+  const frame = (withBack = true): StepFrame => ({
+    index,
+    total: flow.length,
+    onBack: withBack ? back : undefined,
+  });
   // The home screen reads the preferred tokens itself and opens on the first one.
   const home = () => {
     navigate(homeTarget);
   };
 
   const walletMade = () => {
-    setPhrase(null);
-    setImportText('');
+    forget();
     setStep('start');
   };
 
@@ -109,12 +119,11 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
     return true;
   };
 
-  let body;
   switch (step) {
     case 'welcome':
-      body = (
+      return (
         <Welcome
-          strip={strip}
+          link={link}
           onCreate={() => {
             setPath('create');
             setStep('phrase');
@@ -126,121 +135,82 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
           }}
         />
       );
-      break;
     case 'phrase':
-      body = (
-        <Step index={index} total={flow.length} title={t('onboarding.phrase.title')} onBack={back}>
-          <Phrase
-            phrase={phrase}
-            failed={phraseFailed}
-            onRetry={generate}
-            onContinue={() => {
-              setStep('confirm');
-            }}
-          />
-        </Step>
-      );
-      break;
-    case 'confirm':
-      body = (
-        <Step
-          index={index}
-          total={flow.length}
-          title={t('onboarding.confirm.title')}
-          hint={t('onboarding.confirm.hint')}
-          onBack={back}
-        >
-          <Confirm
-            phrase={phrase ?? ''}
-            onDone={() => {
-              setStep('password');
-            }}
-          />
-        </Step>
-      );
-      break;
-    case 'import':
-      body = (
-        <Step
-          index={index}
-          total={flow.length}
-          title={t('onboarding.import.title')}
-          hint={t('onboarding.import.hint')}
-          onBack={back}
-        >
-          <ImportPhrase
-            value={importText}
-            error={importRejected}
-            onInput={(v) => {
-              setImportRejected(false);
-              setImportText(v);
-            }}
-            onDone={() => {
-              setStep('password');
-            }}
-          />
-        </Step>
-      );
-      break;
-    case 'password':
-      body = (
-        <Step
-          index={index}
-          total={flow.length}
-          title={t('onboarding.password.title')}
-          hint={t('onboarding.password.hint')}
-          onBack={back}
-        >
-          <PasswordStep
-            mode={path}
-            mnemonic={path === 'create' ? (phrase ?? '') : wordsOf(importText).join(' ')}
-            onCreated={walletMade}
-            onBadPhrase={() => {
-              setImportRejected(true);
-              setStep(path === 'import' ? 'import' : 'phrase');
-            }}
-          />
-        </Step>
-      );
-      break;
-    case 'start':
-      body = (
-        <Step
-          index={index}
-          total={flow.length}
-          title={t('onboarding.start.title')}
-          hint={t('onboarding.start.hint')}
-        >
-          <Start
-            prefillCode={route.prefillCode}
-            warn={route.link !== undefined && !route.link.known}
-            onOpen={(denom) => addAll([denom])}
-            onPick={() => {
-              setStep('tokens');
-            }}
-          />
-        </Step>
-      );
-      break;
-    case 'tokens':
-      body = (
-        <Step
-          index={index}
-          total={flow.length}
-          title={t('onboarding.tokens.title')}
-          hint={t('onboarding.tokens.hint')}
-          onBack={() => {
-            setStep('start');
+      return (
+        <Phrase
+          frame={frame()}
+          phrase={phrase}
+          failed={phraseFailed}
+          onRetry={generate}
+          onContinue={() => {
+            setStep('confirm');
           }}
-        >
-          <Tokens onFinish={addAll} />
-        </Step>
+        />
       );
-      break;
+    case 'confirm':
+      return (
+        <Confirm
+          frame={frame()}
+          phrase={phrase ?? ''}
+          onDone={() => {
+            setStep('password');
+          }}
+        />
+      );
+    case 'import':
+      return (
+        <ImportPhrase
+          frame={frame()}
+          words={importWords}
+          error={importRejected}
+          onWords={(words) => {
+            setImportRejected(false);
+            setImportWords(words);
+          }}
+          onDone={() => {
+            setStep('password');
+          }}
+        />
+      );
+    case 'password':
+      return (
+        <PasswordStep
+          frame={frame()}
+          mode={path}
+          mnemonic={path === 'create' ? (phrase ?? '') : importWords.join(' ')}
+          onCreated={walletMade}
+          onBadPhrase={() => {
+            setImportRejected(true);
+            setStep(path === 'import' ? 'import' : 'phrase');
+          }}
+        />
+      );
+    case 'start':
+      // No way back: the wallet exists now.
+      return (
+        <Start
+          frame={frame(false)}
+          prefillCode={route.prefillCode}
+          linkHost={route.link?.host}
+          warn={route.link !== undefined && !route.link.known}
+          onFound={setCodeFound}
+          onOpen={(denom) => addAll([denom])}
+          onPick={() => {
+            setStep('tokens');
+          }}
+        />
+      );
+    case 'tokens':
+      return (
+        <Tokens
+          frame={{
+            ...frame(),
+            onBack: () => {
+              setStep('start');
+            },
+          }}
+          onFinish={addAll}
+        />
+      );
   }
-  return (
-    <Layout glow="tall" corner={step === 'welcome' ? <AppearanceToggle /> : undefined}>
-      {body}
-    </Layout>
-  );
 }

@@ -1,0 +1,33 @@
+/* NoticeCard: avatar + two lines on a card (Ob-Welcome-Link, Ob-Unlock-Request). */
+.bp-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--bp-line);
+  border-radius: 14px;
+  background: var(--bp-card);
+  text-align: left;
+}
+
+.bp-notice-soft {
+  border-color: var(--bp-soft-line);
+}
+
+.bp-notice-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bp-notice-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bp-notice-sub {
+  color: var(--bp-muted);
+  font-size: 12px;
+}

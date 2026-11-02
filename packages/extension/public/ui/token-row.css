@@ -1,0 +1,105 @@
+/* Swatches and TokenRow: the token picker rows and the found-token card (Ob-Tokens, Ob-Start-Code). */
+.bp-swatches {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.bp-swatches > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.bp-swatches > span:first-child {
+  border: 1px solid var(--bp-swatch-line);
+}
+
+.bp-token-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bp-token-row:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: -2px;
+}
+
+.bp-token-row-on {
+  background: var(--bp-row-on);
+}
+
+.bp-token-row-card {
+  min-height: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--bp-line);
+  background: var(--bp-card);
+  cursor: default;
+}
+
+.bp-token-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bp-token-row-card .bp-token-row-text {
+  gap: 3px;
+}
+
+.bp-token-row-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bp-token-row-card .bp-token-row-title {
+  font-weight: 700;
+}
+
+.bp-token-row-name {
+  color: var(--bp-muted);
+  font-weight: 400;
+}
+
+.bp-token-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--bp-faint);
+  font-size: 11px;
+}
+
+.bp-token-row-box {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--bp-box-off);
+  border-radius: 7px;
+  color: var(--bp-btn-text);
+}
+
+.bp-token-row-on .bp-token-row-box {
+  border-color: var(--bp-primary);
+  background: var(--bp-primary);
+}
+
+.bp-token-row-found {
+  flex: none;
+  display: flex;
+  color: var(--bp-ok);
+}

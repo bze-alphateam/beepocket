@@ -273,19 +273,7 @@
   font-size: 12px;
 }
 
+/* The "<site> is waiting" NoticeCard on Unlock: long origins wrap. */
 .bp-lock-waiting {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-self: stretch;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--bp-surface, rgba(128, 128, 128, 0.18));
-  font-size: 13px;
-  text-align: left;
   overflow-wrap: anywhere;
-}
-
-.bp-lock-waiting span {
-  color: var(--bp-muted);
 }

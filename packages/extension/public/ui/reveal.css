@@ -1,0 +1,48 @@
+/* PhraseReveal: blurred placeholder cells under a veil button (Ob-Phrase before reveal). */
+.bp-reveal {
+  position: relative;
+}
+
+.bp-reveal-cells {
+  filter: blur(7px);
+}
+
+/* A short bar stands in for each hidden word. */
+.bp-reveal-cells .bp-word > span:last-child::before {
+  content: '';
+  display: block;
+  width: 44px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bp-text-soft);
+  opacity: 0.5;
+}
+
+.bp-reveal-veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--bp-veil);
+  color: var(--bp-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bp-reveal-veil:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+.bp-reveal-note {
+  color: var(--bp-muted);
+  font-size: 12px;
+  font-weight: 400;
+}

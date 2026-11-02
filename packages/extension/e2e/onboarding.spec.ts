@@ -24,8 +24,8 @@ test('create a wallet, confirm words, set a password and start with a token code
   await page.getByRole('button', { name: 'Create a new wallet' }).click();
   await page.getByRole('button', { name: 'Reveal phrase' }).click();
   const words = await page
-    .locator('.ob-words li')
-    .evaluateAll((items) => items.map((li) => li.lastChild?.textContent ?? ''));
+    .locator('.bp-words .bp-word')
+    .evaluateAll((items) => items.map((li) => li.lastElementChild?.textContent ?? ''));
   expect(words).toHaveLength(24);
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -41,9 +41,9 @@ test('create a wallet, confirm words, set a password and start with a token code
   await page.getByLabel('Repeat password').fill('correct horse');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  await page.getByRole('button', { name: 'I have a token code' }).click();
-  await page.getByLabel('Token code').fill(mockFactoryDenom);
-  await page.getByLabel('Token code').press('Enter');
+  await page.getByRole('radio', { name: 'I have a token code' }).click();
+  await page.getByLabel('Token code', { exact: true }).fill(mockFactoryDenom);
+  await page.getByLabel('Token code', { exact: true }).press('Enter');
   await expect(page.getByText('Gold Coin')).toBeVisible();
   await page.getByRole('button', { name: 'Open wallet with GOLD' }).click();
   await expect(page.getByRole('button', { name: 'Open wallet with GOLD' })).toBeHidden();

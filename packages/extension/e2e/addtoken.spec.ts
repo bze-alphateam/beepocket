@@ -85,7 +85,8 @@ lateTest(
 
     const [win] = await Promise.all([context.waitForEvent('page'), install()]);
     await expect.poll(() => win.url()).toContain('window=onboarding');
-    await expect(win.getByText('Setting up for GOLD · Link from dex.getbze.com')).toBeVisible();
+    await expect(win.getByText('Setting up for GOLD')).toBeVisible();
+    await expect(win.getByText('Link from dex.getbze.com')).toBeVisible();
     await expect(win.getByRole('button', { name: 'Create a new wallet' })).toBeVisible();
   },
 );

@@ -1,0 +1,58 @@
+/* PasswordField (field + meter, 6 px apart) and StrengthMeter (Ob-Password). */
+.bp-password {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bp-password .bp-field-box {
+  padding-right: 0;
+}
+
+.bp-strength {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bp-strength-bars {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.bp-strength-bars > span {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bp-switch-off);
+}
+
+.bp-strength-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bp-strength-ok .bp-strength-on {
+  background: var(--bp-ok);
+}
+
+.bp-strength-ok .bp-strength-label {
+  color: var(--bp-ok-text);
+}
+
+.bp-strength-warn .bp-strength-on {
+  background: var(--bp-warn-text);
+}
+
+.bp-strength-warn .bp-strength-label {
+  color: var(--bp-warn-text);
+}
+
+.bp-strength-bad .bp-strength-on {
+  background: var(--bp-bad);
+}
+
+.bp-strength-bad .bp-strength-label {
+  color: var(--bp-bad-text);
+}
