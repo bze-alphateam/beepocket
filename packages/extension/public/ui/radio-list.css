@@ -1,0 +1,73 @@
+/* RadioList: one choice out of rows (connect: pick the address). */
+.bp-radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bp-radio-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 12px;
+  border: 1px solid var(--bp-line);
+  border-radius: 12px;
+  background: var(--bp-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.35s ease;
+}
+
+.bp-radio-row:disabled {
+  cursor: default;
+}
+
+.bp-radio-row:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+.bp-radio-row-on {
+  border-color: var(--bp-soft-line);
+  background: var(--bp-soft);
+}
+
+.bp-radio-row .bp-radio {
+  border-color: var(--bp-line-strong);
+}
+
+.bp-radio-row .bp-radio-on {
+  border-color: var(--bp-primary);
+}
+
+.bp-radio-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bp-radio-row-title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bp-radio-row-sub {
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-radio-row-value {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

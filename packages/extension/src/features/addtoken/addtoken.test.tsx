@@ -147,11 +147,16 @@ describe('the Add a token screen', () => {
   it('shows the site, the token and what happens, in the token kit', async () => {
     const t = await mounted(link());
     expect(t.host.textContent).toContain(en['addtoken.title']);
-    expect(t.host.textContent).toContain('dex.getbze.com sent you here');
+    expect(t.host.querySelector('.bp-site-card-name')?.textContent).toBe('dex.getbze.com');
+    expect(t.host.querySelector('.bp-site-card-aside')?.textContent).toBe(en['addtoken.sentYou']);
     expect(t.host.textContent).toContain('GOLD');
     expect(t.host.textContent).toContain('Gold Coin');
     expect(t.host.textContent).toContain(GOLD.denom);
-    expect(t.host.textContent).toContain(en['addtoken.what']);
+    expect([...t.host.querySelectorAll('.bp-check-list li')].map((li) => li.textContent)).toEqual([
+      en['addtoken.list.add'],
+      'The wallet switches to GOLD and its colours',
+      en['addtoken.list.private'],
+    ]);
     expect(t.applied['--bp-primary']).toBe('#FFB000');
     expect(t.host.textContent).not.toContain(en['addtoken.unknown']);
     expect(button(t.host, 'Add GOLD')).toBeDefined();
@@ -166,7 +171,7 @@ describe('the Add a token screen', () => {
 
   it('copies the full code', async () => {
     const t = await mounted(link());
-    fireEvent(button(t.host, en['addtoken.copy']), 'click');
+    fireEvent(t.host.querySelector(`button[aria-label="${en['addtoken.copy']}"]`), 'click');
     await settle();
     expect(t.copied).toEqual([GOLD.denom]);
   });

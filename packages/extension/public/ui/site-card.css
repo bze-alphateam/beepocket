@@ -1,0 +1,97 @@
+/* SiteCard: letter avatar, host, lock + origin, an optional right column. */
+.bp-site-card {
+  flex: none;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--bp-line);
+  background: var(--bp-card);
+  transition: background 0.35s ease;
+}
+
+.bp-site-card-lg {
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.bp-site-card-sm {
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+.bp-site-card .bp-avatar-site {
+  color: #0a0c10;
+  font-weight: 800;
+}
+
+.bp-site-card-lg .bp-avatar-site {
+  border-radius: 12px;
+}
+
+.bp-site-card-sm .bp-avatar-site {
+  border-radius: 9px;
+}
+
+.bp-site-card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.bp-site-card-lg .bp-site-card-text {
+  gap: 2px;
+}
+
+.bp-site-card-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bp-site-card-lg .bp-site-card-name {
+  font-size: 15px;
+}
+
+.bp-site-card-origin {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-site-card-lg .bp-site-card-origin {
+  font-size: 13px;
+}
+
+.bp-site-card-origin > .bp-icon {
+  flex: none;
+}
+
+.bp-site-card-origin > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bp-site-card-aside {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  color: var(--bp-faint);
+  font-size: 11px;
+}
+
+.bp-site-card-aside strong {
+  color: var(--bp-text);
+  font-size: 13px;
+  font-weight: 600;
+}

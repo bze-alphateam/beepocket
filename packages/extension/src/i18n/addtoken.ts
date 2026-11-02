@@ -1,16 +1,17 @@
 /** Strings of the add-a-token link (window and onboarding strip). */
 export const addtoken = {
   'addtoken.title': 'Add a token',
-  'addtoken.site': '{site} sent you here',
   'addtoken.siteUnknown': 'A link sent you here',
-  'addtoken.unknown': 'Anyone can make a token. Add it only if you trust them.',
+  'addtoken.unknown':
+    'First time on this site. Anyone can make a token. Add it only if you trust them.',
   'addtoken.lookalike':
     'You already have a token called {symbol}, or it is the BeeZee coin. This one has a different code: check it.',
-  'addtoken.code': 'Token code',
   'addtoken.copy': 'Copy code',
-  'addtoken.copied': 'Copied',
-  'addtoken.what':
-    'It is added to your tokens and BeePocket switches to it. The site gets no address and no balances.',
+  'addtoken.sentYou': 'sent you here',
+  'addtoken.list.add': 'Added to your preferred tokens',
+  'addtoken.list.already': '{symbol} is already in your preferred tokens',
+  'addtoken.list.switch': 'The wallet switches to {symbol} and its colours',
+  'addtoken.list.private': 'The site gets no address and no balances',
   'addtoken.add': 'Add {symbol}',
   'addtoken.open': 'Open {symbol}',
   'addtoken.adding': 'Adding',

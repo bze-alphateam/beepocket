@@ -168,3 +168,15 @@
     animation-duration: 3s;
   }
 }
+
+/* BottomActions row: two buttons side by side. */
+.bp-bottom-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bp-bottom-row > .bp-btn {
+  padding: 0 6px;
+  white-space: nowrap;
+}

@@ -1,27 +1,57 @@
 /* Add-a-token window; the colours come from the --bp-* variables of the token's kit. */
+.bp-add-from {
+  color: var(--bp-muted);
+  font-size: 13px;
+}
+
 .bp-add-token {
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--bp-raised);
-}
-
-.bp-add-copy {
-  border: 0;
-  background: none;
-  color: var(--bp-primary);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.bp-add-actions {
+  flex: none;
   display: flex;
-  gap: 8px;
-  margin-top: auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  background: var(--bp-edge);
+  text-align: center;
 }
 
-.bp-add-actions > * {
-  flex: 1;
+.bp-add-token .bp-avatar {
+  font-size: 22px;
+  font-weight: 800;
+  box-shadow: var(--bp-btn-glow);
+}
+
+.bp-add-symbol {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.bp-add-name {
+  color: var(--bp-muted);
+  font-size: 13px;
+}
+
+.bp-add-code {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 2px 2px 2px 10px;
+  border-radius: 8px;
+  background: var(--bp-inset);
+  color: var(--bp-text-soft);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.bp-add-code .bp-btn-icon {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
 }
 
 .ob-link-strip {

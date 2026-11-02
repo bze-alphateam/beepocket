@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
-import type { DenomBranding } from '@beepocket/core';
+import { NETWORKS, type DenomBranding, type NetworkId } from '@beepocket/core';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
@@ -10,9 +10,21 @@ import {
   type ListedToken,
   type WalletState,
 } from '../../protocol';
-import { applyTheme } from '../../theme';
-import { Banner, Button, Spinner } from '../../ui';
+import {
+  Avatar,
+  Banner,
+  BottomActions,
+  Button,
+  CheckList,
+  CopyButton,
+  DappHeader,
+  RiskBox,
+  SiteCard,
+  Spinner,
+} from '../../ui';
+import { useTokenTheme } from '../dapp/theme';
 import { useHomeEnv } from '../home/env';
+import { tokenColor } from '../home/format';
 import type { HomeRoute } from '../home/Home';
 import { UnlockPanel } from '../lock/UnlockScreen';
 import type { OnboardingRoute } from '../onboarding/routes';
@@ -114,6 +126,8 @@ type Lookup =
       preferred: boolean;
       lookalike: boolean;
       branding: DenomBranding | null;
+      brandThemes: boolean;
+      network: NetworkId;
     };
 
 /** The same symbol as the native token or a token already held, under a different code. */
@@ -156,24 +170,22 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
       }
       const brandThemes = context.value.brandThemes;
       const branding = brandThemes ? found.value.branding : null;
-      applyTheme(env.themeTarget, {
-        denom: found.value.denom,
-        branding,
-        brandThemes,
-        scheme: env.scheme.current(),
-      });
       setLookup({
         status: 'found',
         token: found.value,
         preferred: preferred.value.some((x) => x.denom === found.value.denom),
         lookalike: looksLikeAnother(found.value, preferred.value),
         branding,
+        brandThemes,
+        network: context.value.network,
       });
     })();
     return () => {
       run.live = false;
     };
-  }, [client, env, link.code, attempt]);
+  }, [client, link.code, attempt]);
+  const found = lookup.status === 'found' ? lookup : null;
+  useTokenTheme(found?.token.denom ?? null, found?.branding ?? null, found?.brandThemes ?? true);
 
   const finish = () => {
     void client.call('addtoken.clear', {}).finally(close);
@@ -205,13 +217,37 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
     );
   };
 
+  const header = (
+    <DappHeader
+      title={t('addtoken.title')}
+      chainId={NETWORKS[found?.network ?? 'mainnet'].chainId}
+    />
+  );
+  const footer =
+    found === null ? undefined : (
+      <BottomActions row>
+        <Button variant="secondary" onClick={finish}>
+          {t('addtoken.cancel')}
+        </Button>
+        <Button disabled={busy} onClick={() => void choose(found.token, found.preferred)}>
+          {found.preferred
+            ? t('addtoken.open', { symbol: found.token.symbol })
+            : busy
+              ? t('addtoken.adding')
+              : t('addtoken.add', { symbol: found.token.symbol })}
+        </Button>
+      </BottomActions>
+    );
+
   return (
-    <Layout>
+    <Layout header={header} footer={footer}>
       <main class="bp-dapp bp-add">
-        <h1>{t('addtoken.title')}</h1>
-        <p class="bp-dapp-sub">
-          {link.host === null ? t('addtoken.siteUnknown') : t('addtoken.site', { site: link.host })}
-        </p>
+        {link.host === null ? (
+          <p class="bp-add-from">{t('addtoken.siteUnknown')}</p>
+        ) : (
+          <SiteCard origin={link.host} aside={t('addtoken.sentYou')} />
+        )}
+        {!link.known && <RiskBox tone="amber">{t('addtoken.unknown')}</RiskBox>}
         {lookup.status === 'loading' && (
           <div class="bp-dapp-center">
             <Spinner />
@@ -227,7 +263,7 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
             >
               {t('addtoken.retry')}
             </Button>
-            <Button variant="quiet" onClick={finish}>
+            <Button variant="secondary" onClick={finish}>
               {t('addtoken.close')}
             </Button>
           </>
@@ -235,45 +271,37 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
         {lookup.status === 'unknown' && (
           <>
             <Banner tone="red">{t('addtoken.noSuchToken')}</Banner>
-            <Button variant="quiet" onClick={finish}>
+            <Button variant="secondary" onClick={finish}>
               {t('addtoken.close')}
             </Button>
           </>
         )}
-        {lookup.status === 'found' && (
+        {found !== null && (
           <>
-            <section class="bp-add-token" data-denom={lookup.token.denom}>
-              <b>{lookup.token.symbol}</b> · {lookup.token.name}
-              <dl class="bp-dapp-facts">
-                <dt>{t('addtoken.code')}</dt>
-                <dd class="bp-dapp-origin">
-                  {link.code}{' '}
-                  <button type="button" class="bp-add-copy" onClick={copy}>
-                    {copied ? t('addtoken.copied') : t('addtoken.copy')}
-                  </button>
-                </dd>
-              </dl>
+            <section class="bp-add-token" data-denom={found.token.denom}>
+              <Avatar label={found.token.symbol} color={tokenColor(found.token)} size={56} />
+              <strong class="bp-add-symbol">{found.token.symbol}</strong>
+              <span class="bp-add-name">{found.token.name}</span>
+              <span class="bp-add-code">
+                <span class="bp-mono">{link.code}</span>
+                <CopyButton label={t('addtoken.copy')} copied={copied} onCopy={copy} />
+              </span>
             </section>
-            <p class="bp-dapp-sub">{t('addtoken.what')}</p>
-            {!link.known && <Banner tone="amber">{t('addtoken.unknown')}</Banner>}
-            {lookup.lookalike && (
-              <Banner tone="amber">
-                {t('addtoken.lookalike', { symbol: lookup.token.symbol })}
-              </Banner>
+            {found.lookalike && (
+              <RiskBox tone="amber">
+                {t('addtoken.lookalike', { symbol: found.token.symbol })}
+              </RiskBox>
             )}
+            <CheckList
+              items={[
+                found.preferred
+                  ? t('addtoken.list.already', { symbol: found.token.symbol })
+                  : t('addtoken.list.add'),
+                t('addtoken.list.switch', { symbol: found.token.symbol }),
+                t('addtoken.list.private'),
+              ]}
+            />
             {failed && <Banner tone="red">{t('addtoken.failed')}</Banner>}
-            <div class="bp-add-actions">
-              <Button variant="quiet" onClick={finish}>
-                {t('addtoken.cancel')}
-              </Button>
-              <Button disabled={busy} onClick={() => void choose(lookup.token, lookup.preferred)}>
-                {lookup.preferred
-                  ? t('addtoken.open', { symbol: lookup.token.symbol })
-                  : busy
-                    ? t('addtoken.adding')
-                    : t('addtoken.add', { symbol: lookup.token.symbol })}
-              </Button>
-            </div>
           </>
         )}
       </main>

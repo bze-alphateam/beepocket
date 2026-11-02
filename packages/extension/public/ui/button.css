@@ -47,7 +47,7 @@
 
 .bp-btn-danger {
   background: var(--bp-bad);
-  color: var(--bp-btn-text);
+  color: var(--bp-bg);
 }
 
 .bp-btn-ghost {

@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import type { IconName } from '../../ui';
@@ -17,11 +18,14 @@ export interface PasswordGateProps {
   labelIcon?: IconName;
   /** Shown in the empty field. */
   placeholder?: string;
+  /** A button set left of submit, side by side (Reject on a sign request). */
+  secondary?: ComponentChildren;
 }
 
 /** "Unlock and approve" in place: asks the password, calls `wallet.reauth`, no navigation. */
 export function PasswordGate(props: PasswordGateProps) {
-  const { label, submitLabel, onUnlocked, hold, variant, labelIcon, placeholder } = props;
+  const { label, submitLabel, onUnlocked, hold, variant, labelIcon, placeholder, secondary } =
+    props;
   const client = useClient();
   return (
     <PasswordForm
@@ -33,6 +37,7 @@ export function PasswordGate(props: PasswordGateProps) {
       {...(variant === undefined ? {} : { variant })}
       {...(labelIcon === undefined ? {} : { labelIcon })}
       {...(placeholder === undefined ? {} : { placeholder })}
+      {...(secondary === undefined ? {} : { secondary })}
     />
   );
 }
