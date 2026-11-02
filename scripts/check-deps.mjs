@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 const RUNTIME_PACKAGES = ['core', 'extension'];
 const NO_RUNTIME_PACKAGES = ['connector'];
+// The connector is published to npm: it brings nothing of its own and only peers on the wallet kit.
+const CONNECTOR_PEERS = ['@interchain-kit/core'];
+const CONNECTOR_NAME = '@bze/beepocket-connector';
 const ALLOWED = [/^@noble\/[^/]+$/, /^@scure\/[^/]+$/, /^preact$/];
 const EXACT = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 const FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'];
@@ -40,7 +43,8 @@ export function checkDeps(root) {
 
     for (const field of FIELDS) {
       for (const [name, version] of Object.entries(manifest[field] ?? {})) {
-        const workspace = version === 'workspace:*' && name === '@beepocket/core';
+        const workspace =
+          version === 'workspace:*' && (name === '@beepocket/core' || name === CONNECTOR_NAME);
         if (!workspace && !EXACT.test(version)) {
           errors.push(`${label}: ${field}.${name} is not an exact version (${version})`);
         }
@@ -50,6 +54,7 @@ export function checkDeps(root) {
     for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
       for (const [name, version] of Object.entries(manifest[field] ?? {})) {
         if (NO_RUNTIME_PACKAGES.includes(pkg)) {
+          if (field === 'peerDependencies' && CONNECTOR_PEERS.includes(name)) continue;
           errors.push(
             `${label}: ${field}.${name} is not allowed (connector has no runtime dependencies)`,
           );

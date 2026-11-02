@@ -24,6 +24,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Pack the connector
+        run: |
+          pnpm --filter @bze/beepocket-connector pack --pack-destination "$RUNNER_TEMP/connector"
+          tar -tzf "$RUNNER_TEMP"/connector/*.tgz | sort
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: beepocket-extension
