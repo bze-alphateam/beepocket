@@ -321,14 +321,13 @@ async function signView(
   };
 }
 
-const disabled = (host: HTMLElement, name: string) =>
-  (button(host, name) as HTMLButtonElement | undefined)?.disabled;
+const disabled = (host: HTMLElement, name: string) => button(host, name)?.disabled;
 function setTick(host: HTMLElement): void {
   const box = tick(host);
   box.checked = true;
   fireEvent(box, 'change');
 }
-const tick = (host: HTMLElement) => host.querySelector('input[type=checkbox]') as HTMLInputElement;
+const tick = (host: HTMLElement) => host.querySelector<HTMLInputElement>('input[type=checkbox]')!;
 
 describe('the sign screen: risk levels', () => {
   it('shows an unknown message with the amber line and its raw JSON open', async () => {
@@ -340,7 +339,7 @@ describe('the sign screen: risk levels', () => {
     expect(t.host.querySelector('.bp-dapp-raw')?.textContent).toContain('/test.v1.MsgNothing');
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
     expect(disabled(t.host, 'Approve')).toBe(false);
-    expect(tick(t.host)).toBeNull();
+    expect(t.host.querySelector('input[type=checkbox]')).toBeNull();
   });
 
   it('keeps a dangerous request disabled until the tick, and approves with trusted', async () => {
@@ -349,7 +348,7 @@ describe('the sign screen: risk levels', () => {
     expect(t.host.textContent).toContain('power over your address');
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
     expect(disabled(t.host, 'Approve')).toBe(true);
-    fireEvent(button(t.host, 'Approve') as Element, 'click');
+    fireEvent(button(t.host, 'Approve'), 'click');
     await settle();
     expect(t.call).not.toHaveBeenCalledWith('dapp.answer', expect.anything());
 
@@ -357,7 +356,7 @@ describe('the sign screen: risk levels', () => {
     setTick(t.host);
     await settle();
     expect(disabled(t.host, 'Approve')).toBe(false);
-    fireEvent(button(t.host, 'Approve') as Element, 'click');
+    fireEvent(button(t.host, 'Approve'), 'click');
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
@@ -374,14 +373,12 @@ describe('the sign screen: risk levels', () => {
     await settle();
     expect(disabled(t.host, 'Approve')).toBe(false);
     fireEvent(
-      [...t.host.querySelectorAll('button')].find((b) => b.textContent.includes('▾')) as Element,
+      [...t.host.querySelectorAll('button')].find((b) => b.textContent.includes('▾')),
       'click',
     );
     await settle();
     fireEvent(
-      [...document.querySelectorAll('button')].find((b) =>
-        b.textContent.startsWith('OTH'),
-      ) as Element,
+      [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('OTH')),
       'click',
     );
     await settle();
@@ -436,9 +433,9 @@ describe('the sign screen: risk levels', () => {
     });
     await settle();
     expect(t.host.querySelector('input[type=password]')).not.toBeNull();
-    const submit = () => t.host.querySelector('button[type=submit]') as HTMLButtonElement;
+    const submit = () => t.host.querySelector<HTMLButtonElement>('button[type=submit]')!;
     expect(submit().className).toContain('bp-btn-danger');
-    const password = t.host.querySelector('input[type=password]') as HTMLInputElement;
+    const password = t.host.querySelector<HTMLInputElement>('input[type=password]')!;
     password.value = 'pw';
     fireEvent(password, 'input');
     await settle();

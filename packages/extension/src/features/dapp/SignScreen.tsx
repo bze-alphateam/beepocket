@@ -190,7 +190,7 @@ export function SignScreen({ view, done }: SignScreenProps) {
               type="checkbox"
               checked={trusted}
               onChange={(e) => {
-                setTrusted((e.currentTarget as HTMLInputElement).checked);
+                setTrusted(e.currentTarget.checked);
               }}
             />
             <span>{t('dapp.sign.trust')}</span>
