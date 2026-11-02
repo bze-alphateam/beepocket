@@ -59,6 +59,7 @@ async function rig() {
   });
   let network: NetworkId = 'mainnet';
   const services = { activeNetwork: () => Promise.resolve(NETWORKS[network]) } as Services;
+  const unreachable = new Set<string>();
   const delivered: { tabId: number; documentId: string | undefined; message: unknown }[] = [];
   const created: { url: string; type: string; width: number; height: number }[] = [];
   const open = new Set<number>();
@@ -66,6 +67,9 @@ async function rig() {
   const dapp = createDappService({ session, clock } as unknown as Platform, services, wallet, {
     tabs: {
       sendMessage: (tabId, message, options) => {
+        if (options?.documentId !== undefined && unreachable.has(options.documentId)) {
+          return Promise.reject(new Error('no such document'));
+        }
         delivered.push({ tabId, documentId: options?.documentId, message });
         return Promise.resolve();
       },
@@ -114,6 +118,7 @@ async function rig() {
     site,
     answersFor,
     delivered,
+    unreachable,
     created,
     focused,
     open,
@@ -472,5 +477,131 @@ describe('connected sites in the profile', () => {
       ok: false,
       error: { code: 'profile_invalid' },
     });
+  });
+});
+
+describe('connected sites', () => {
+  const OTHER = 'https://app.cointrunk.io';
+  const pushes = (t: Awaited<ReturnType<typeof rig>>) =>
+    t.delivered
+      .filter((d) => (d.message as { dapp: { event?: string } }).dapp.event === 'accountChanged')
+      .map((d) => `${String(d.tabId)}:${String(d.documentId)}`)
+      .sort();
+
+  /** Connects `from` with the address at `index`. */
+  async function connectSite(t: Awaited<ReturnType<typeof rig>>, from: DappSender, index = 0) {
+    const a = await t.ask('connect', chainId(), from);
+    expect((await t.dapp.answer(a.id, { approve: true, index })).ok).toBe(true);
+  }
+
+  it('lists the sites of the active network, newest first, with the current address labels', async () => {
+    const t = await rig();
+    await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 2);
+    await connectSite(t, t.site(OTHER, 2, 'doc-2'), 0);
+    const listed = await t.dapp.sites.list();
+    if (!listed.ok) throw new Error('list failed');
+    expect(listed.value.network).toBe('mainnet');
+    expect(listed.value.sites.map((s) => [s.origin, s.label])).toEqual([
+      [ORIGIN, 'Address 3'],
+      [OTHER, 'Main'],
+    ]);
+    expect(listed.value.addresses.map((a) => a.index)).toEqual([0, 1, 2]);
+
+    t.setNetwork('testnet');
+    const other = await t.dapp.sites.list();
+    expect(other.ok && other.value.sites).toEqual([]);
+  });
+
+  it('Change rewrites the address, pushes to that origin only and getKey follows', async () => {
+    const t = await rig();
+    await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 0);
+    await connectSite(t, t.site(OTHER, 2, 'doc-2'), 0);
+    await t.ask('getKey', chainId(), t.site(ORIGIN, 3, 'doc-3'));
+
+    expect(await t.dapp.sites.change(ORIGIN, 1)).toEqual({ ok: true, value: {} });
+    expect(pushes(t)).toEqual(['1:doc-1', '3:doc-3']);
+    expect(t.delivered.at(-1)?.message).toEqual({ dapp: { event: 'accountChanged' } });
+
+    const key = await t.ask('getKey', chainId());
+    expect(one(t.answersFor(key.id))).toMatchObject({
+      result: { address: deriveAccount(PHRASE, 1).address, name: 'Address 2' },
+    });
+  });
+
+  it('Change refuses an unknown site or address and pushes nothing', async () => {
+    const t = await rig();
+    await connectSite(t, t.site());
+    expect(await t.dapp.sites.change(OTHER, 1)).toMatchObject({
+      ok: false,
+      error: { code: 'unknown-site' },
+    });
+    expect(await t.dapp.sites.change(ORIGIN, 9)).toMatchObject({
+      ok: false,
+      error: { code: 'unknown_address' },
+    });
+    expect(pushes(t)).toEqual([]);
+  });
+
+  it('Disconnect removes the site, tells its pages and the next getKey is not-connected', async () => {
+    const t = await rig();
+    await connectSite(t, t.site(ORIGIN, 1, 'doc-1'));
+    await connectSite(t, t.site(OTHER, 2, 'doc-2'));
+
+    expect(await t.dapp.sites.disconnect(ORIGIN)).toEqual({ ok: true, value: {} });
+    expect(pushes(t)).toEqual(['1:doc-1']);
+    const key = await t.ask('getKey', chainId());
+    expect(one(t.answersFor(key.id))).toMatchObject({ error: { code: 'not-connected' } });
+    const listed = await t.dapp.sites.list();
+    expect(listed.ok && listed.value.sites.map((s) => s.origin)).toEqual([OTHER]);
+    expect(await t.dapp.sites.disconnect(ORIGIN)).toMatchObject({
+      ok: false,
+      error: { code: 'unknown-site' },
+    });
+  });
+
+  it('needs the wallet unlocked to change or disconnect', async () => {
+    const t = await rig();
+    await connectSite(t, t.site());
+    await t.wallet.weakLock();
+    expect(await t.dapp.sites.disconnect(ORIGIN)).toMatchObject({
+      ok: false,
+      error: { code: 'needs-password' },
+    });
+    expect(pushes(t)).toEqual([]);
+  });
+
+  it('a network switch pushes to every recorded document', async () => {
+    const t = await rig();
+    await t.ask('getKey', chainId(), t.site(ORIGIN, 1, 'doc-1'));
+    await t.ask('getKey', chainId(), t.site(OTHER, 2, 'doc-2'));
+    await t.dapp.networkChanged();
+    expect(pushes(t)).toEqual(['1:doc-1', '2:doc-2']);
+  });
+
+  it('forgets a document whose push failed, and a closed tab', async () => {
+    const t = await rig();
+    await t.ask('getKey', chainId(), t.site(ORIGIN, 1, 'doc-1'));
+    await t.ask('getKey', chainId(), t.site(ORIGIN, 2, 'doc-2'));
+    await t.ask('getKey', chainId(), t.site(ORIGIN, 3, 'doc-3'));
+    t.unreachable.add('doc-1');
+    await t.dapp.networkChanged();
+    t.unreachable.clear();
+    await t.dapp.onTabRemoved(2);
+    t.delivered.length = 0;
+    await t.dapp.networkChanged();
+    expect(pushes(t)).toEqual(['3:doc-3']);
+  });
+
+  it('records a document once and keeps the 200 newest', async () => {
+    const t = await rig();
+    for (let i = 0; i < 201; i++) {
+      await t.ask('getKey', chainId(), t.site(ORIGIN, i, `doc-${String(i)}`));
+    }
+    await t.ask('getKey', chainId(), t.site(ORIGIN, 5, 'doc-5'));
+    await t.dapp.networkChanged();
+    const sent = pushes(t);
+    expect(sent).toHaveLength(200);
+    expect(sent).not.toContain('0:doc-0');
+    expect(sent.filter((s) => s === '5:doc-5')).toHaveLength(1);
   });
 });

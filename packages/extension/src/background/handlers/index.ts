@@ -12,7 +12,7 @@ import { SettingsService } from '../../features/settings/service';
 import { registerHomeHandlers } from '../../features/home/handlers';
 import { registerSendHandlers } from '../../features/send/handlers';
 import { registerActivityHandlers } from '../../features/activity/handlers';
-import { registerDappPopupHandlers, type DappService } from '../../dapp';
+import { registerDappPopupHandlers, registerSitesHandlers, type DappService } from '../../dapp';
 import { registerAppHandlers } from './app';
 
 /** What handlers may use. Handlers hold no state of their own: the worker can restart. */
@@ -30,11 +30,16 @@ export function registerHandlers(registry: HandlerRegistry, deps: HandlerDeps): 
   registerTokenHandlers(registry, deps, walletTokenSeams(deps.wallet));
   registerSettingsHandlers(
     registry,
-    new SettingsService({ wallet: deps.wallet, storage: deps.platform.storage }),
+    new SettingsService({
+      wallet: deps.wallet,
+      storage: deps.platform.storage,
+      onNetworkChanged: () => deps.dapp.networkChanged(),
+    }),
   );
   registerBookHandlers(registry, walletBookStore(deps.wallet));
   registerHomeHandlers(registry, deps);
   registerSendHandlers(registry, deps);
   registerActivityHandlers(registry, deps);
   registerDappPopupHandlers(registry, deps.dapp);
+  registerSitesHandlers(registry, deps.dapp);
 }

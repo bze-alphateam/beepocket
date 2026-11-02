@@ -100,3 +100,44 @@
   gap: 8px;
   margin-top: auto;
 }
+
+.bp-sites {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.bp-sites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bp-sites-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bp-surface, rgba(255, 255, 255, 0.06));
+}
+
+.bp-sites-origin {
+  overflow-wrap: anywhere;
+}
+
+.bp-sites-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.bp-sites-empty {
+  margin: 24px 0;
+  text-align: center;
+  opacity: 0.8;
+}

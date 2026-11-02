@@ -5,6 +5,8 @@ import type { WalletAddress } from './wallet';
 export const DappProtocolCodes = {
   /** There is no such pending request (answered already, or its tab is gone). */
   unknownRequest: 'unknown-request',
+  /** The site is not connected on the active network (disconnected already). */
+  unknownSite: 'unknown-site',
 } as const;
 
 /** What the request window shows for the request that is waiting. */
@@ -33,4 +35,27 @@ export interface DappProtocol {
     req: { id: string; approve: boolean; index?: number };
     res: Record<string, never>;
   };
+}
+
+/** A connected site as Settings lists it: the one address it sees. */
+export interface ConnectedSiteView {
+  origin: string;
+  /** The address's current label and address. */
+  label: string;
+  address: string;
+  /** Epoch ms. */
+  connectedAt: number;
+}
+
+/** Methods of Settings › Connected sites. Own pages only. */
+export interface SitesProtocol {
+  /** The sites of the active network, newest first, and the addresses a site can be moved to. */
+  'sites.list': {
+    req: Record<string, never>;
+    res: { network: NetworkId; sites: ConnectedSiteView[]; addresses: WalletAddress[] };
+  };
+  /** Gives the site another address and tells its open pages. Needs the wallet unlocked. */
+  'sites.change': { req: { origin: string; index: number }; res: Record<string, never> };
+  /** Forgets the site and tells its open pages. Needs the wallet unlocked. */
+  'sites.disconnect': { req: { origin: string }; res: Record<string, never> };
 }

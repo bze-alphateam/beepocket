@@ -7,6 +7,7 @@ import { lock } from './lock';
 import { send } from './send';
 import { activity } from './activity';
 import { dapp } from './dapp';
+import { sites } from './sites';
 
 /**
  * The one entry point for English strings. A feature adds `src/i18n/<feature>.ts` (keys
@@ -22,6 +23,7 @@ export const en = {
   ...send,
   ...activity,
   ...dapp,
+  ...sites,
 } as const;
 
 export type StringKey = keyof typeof en;
