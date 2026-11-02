@@ -450,7 +450,7 @@ describe('signDirect review and approval', () => {
     expect(t.signedOf(r.id)).toBeDefined();
   });
 
-  it('refuses a dangerous request without the tick, and keeps it waiting', async () => {
+  it('refuses a dangerous request without the tick and answers the page', async () => {
     const t = await rig();
     await t.connect();
     const r = await review(t, {
@@ -458,17 +458,20 @@ describe('signDirect review and approval', () => {
     });
     expect(r.view.summary.level).toBe('dangerous');
     expect(r.view.summary.messages[0]?.danger).not.toBeNull();
-    for (const trusted of [undefined, false]) {
-      const res = await t.dapp.answer(r.id, {
-        approve: true,
-        fee: feeFor(r.view),
-        ...(trusted === undefined ? {} : { trusted }),
-      });
-      expect(res).toMatchObject({ ok: false });
-    }
-    expect(t.answerOf(r.id)).toBeUndefined();
-    const ticked = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view), trusted: true });
-    expect(ticked.ok).toBe(true);
+    const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    expect(res.ok).toBe(true);
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
+  });
+
+  it('signs a dangerous request once the tick is sent', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, {
+      messages: [grantMsg(MAIN.address, OTHER.address, '/cosmos.bank.v1beta1.MsgSend')],
+    });
+    const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view), trusted: true });
+    expect(res.ok).toBe(true);
     expect(t.signedOf(r.id)).toBeDefined();
   });
 
@@ -487,7 +490,10 @@ describe('signDirect review and approval', () => {
     expect(r.view.summary.messages.map((m) => m.level)).toEqual(['normal', 'dangerous']);
     expect(r.view.messageJson).toHaveLength(2);
     const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
-    expect(res).toMatchObject({ ok: false });
+    expect(res.ok).toBe(true);
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
+    expect((await t.dapp.current()).status).toBe('none');
   });
 
   it('refuses to sign once the site is no longer connected', async () => {
@@ -589,6 +595,16 @@ describe('sendTx', () => {
     expect(t.answerOf(a.id)).toMatchObject({
       error: { code: 'invalid-request', message: 'insufficient fee' },
     });
+  });
+
+  it('refuses a node reply without a proper 32-byte hash', async () => {
+    const t = await rig();
+    await t.connect();
+    for (const txHash of ['', 'zz', 'AB'.repeat(31), `${'AB'.repeat(31)}ZZ`]) {
+      t.node.broadcast.mockResolvedValueOnce({ txHash });
+      const a = await t.ask('sendTx', params());
+      expect(t.answerOf(a.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    }
   });
 
   it('refuses a site that is not connected, and the wrong chain', async () => {
