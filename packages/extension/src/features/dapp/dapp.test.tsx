@@ -46,6 +46,7 @@ type Handler = (req: unknown) => Result<unknown>;
 function rig(
   handlers: Partial<Record<Method, Handler>>,
   after: Scheduler['after'] = () => () => undefined,
+  every: Scheduler['every'] = () => () => undefined,
 ) {
   const call = vi.fn((method: Method, req: unknown) => {
     const handler = handlers[method];
@@ -53,7 +54,7 @@ function rig(
   });
   const close = vi.fn();
   const env = {
-    scheduler: { every: () => () => undefined, after },
+    scheduler: { every, after },
     themeTarget: { style: { setProperty: () => undefined }, dataset: {} },
     scheme: { current: () => 'dark', subscribe: () => () => undefined },
     clipboard: { writeText: () => Promise.resolve() },
@@ -516,5 +517,46 @@ describe('the request queue in the window', () => {
     await settle();
     const after = t.call.mock.calls.filter(([m]) => m === 'dapp.current').length;
     expect(after).toBeGreaterThan(before);
+  });
+
+  it('counts requests that arrive while one is on screen, without touching the view', async () => {
+    let tick: (() => void) | undefined;
+    let waiting = 1;
+    const t = rig(
+      {
+        ...base,
+        'dapp.current': () => ok({ ...CONNECT, count: 1 }),
+        'dapp.queue': () => ok({ head: CONNECT.origin, count: waiting, origins: [CONNECT.origin] }),
+      },
+      undefined,
+      (_ms, fn) => {
+        tick = fn;
+        return () => undefined;
+      },
+    );
+    await settle();
+    await settle();
+    await settle();
+    expect(t.host.querySelector('.bp-dapp-pill')).toBeNull();
+    waiting = 2;
+    act(() => tick?.());
+    await settle();
+    expect(t.host.querySelector('.bp-dapp-pill')?.textContent).toBe('1 of 2');
+    expect(t.host.textContent).toContain('exactly one address');
+  });
+
+  it('keeps showing a request that stays waiting after a failed answer', async () => {
+    const t = rig({
+      ...base,
+      'dapp.current': () => ok({ ...CONNECT, count: 2 }),
+      'dapp.answer': () => ok({}),
+    });
+    await settle();
+    await settle();
+    await settle();
+    fireEvent(button(t.host, 'Cancel'), 'click');
+    await settle();
+    await settle();
+    expect(t.host.textContent).not.toContain('Next request');
   });
 });

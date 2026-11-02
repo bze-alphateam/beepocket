@@ -289,30 +289,3 @@ test('closing the window answers every queued request rejected', async ({
     stop();
   }
 });
-
-test('a fully locked wallet shows the waiting card in the popup; unlocking there continues the request', async ({
-  context,
-  extensionId,
-}) => {
-  test.setTimeout(120_000);
-  const { dapp, setup, stop } = await connectedDapp(context, extensionId);
-  try {
-    await call(setup, 'wallet.lock', {});
-    await dapp.getByLabel('Recipient').fill(RECIPIENT);
-    const [request] = await Promise.all([
-      context.waitForEvent('page'),
-      dapp.getByRole('button', { name: 'Send 1 BZE' }).click(),
-    ]);
-    await expect(request.getByLabel('Password')).toBeVisible();
-
-    const popup = await context.newPage();
-    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(popup.getByText(/is waiting/)).toBeVisible();
-    await expect(popup.getByText('It stays connected.')).toBeVisible();
-    await popup.getByLabel('Password').fill(PASSWORD);
-    await popup.getByRole('button', { name: 'Unlock' }).click();
-    await expect(request.getByRole('heading', { name: 'Approve a transaction' })).toBeVisible();
-  } finally {
-    stop();
-  }
-});

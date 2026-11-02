@@ -27,7 +27,7 @@ export function WaitingRequests() {
           ? t('dapp.waiting.many', { site: queue.head, n: String(more) })
           : t('dapp.waiting.one', { site: queue.head })}
       </strong>
-      <span>{t(queue.count > 1 ? 'dapp.waiting.subMany' : 'dapp.waiting.sub')}</span>
+      <span>{t(more > 0 ? 'dapp.waiting.subMany' : 'dapp.waiting.sub')}</span>
     </aside>
   );
 }
