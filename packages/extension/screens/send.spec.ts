@@ -127,13 +127,15 @@ interface Start {
   symbol?: 'BZE' | 'PAGE';
   /** Lets the weak-lock alarm fire before the flow opens. */
   weakLock?: boolean;
+  /** Opens Send from this Home address row ("Send BZE from Savings") instead of the main button. */
+  fromRow?: string;
 }
 
 /** The full data set, unlocked, on the Send form of `symbol`. */
 async function startSend(
   context: BrowserContext,
   extensionId: string,
-  { symbol = 'BZE', weakLock = false }: Start = {},
+  { symbol = 'BZE', weakLock = false, fromRow }: Start = {},
 ): Promise<{ page: Page; node: Node }> {
   const page = await openPopup(context, extensionId);
   const node = await mockSendNode(context);
@@ -151,10 +153,8 @@ async function startSend(
     }).toPass();
   }
   await reload(page, 'Main');
-  await page
-    .getByRole('button', { name: `Send ${symbol}`, exact: true })
-    .first()
-    .click();
+  const name = fromRow === undefined ? `Send ${symbol}` : `Send ${symbol} from ${fromRow}`;
+  await page.getByRole('button', { name, exact: true }).first().click();
   await page.getByRole('textbox', { name: 'To' }).waitFor();
   return { page, node };
 }
@@ -192,9 +192,13 @@ test('send form, from sheet and from row', async ({ context, extensionId }) => {
   await shot(page, 'send-from-sheet');
 
   await page.getByRole('button', { name: /^Savings, / }).click();
-  await page.getByRole('textbox', { name: 'To' }).fill('');
-  await page.getByRole('textbox', { name: 'Amount' }).fill('');
   await page.getByRole('button', { name: /^From Savings/ }).waitFor();
+});
+
+test('send from a Home address row', async ({ context, extensionId }) => {
+  // Home's "Send BZE from Savings" row preselects Savings on the From card.
+  const { page } = await startSend(context, extensionId, { fromRow: 'Savings' });
+  await page.getByRole('button', { name: /^From Savings, 3,200\.00 BZE/ }).waitFor();
   await shot(page, 'send-from-row');
 });
 

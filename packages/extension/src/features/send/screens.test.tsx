@@ -64,7 +64,11 @@ function manualScheduler() {
   };
 }
 
-function setup(handlers: Partial<Record<Method, Handler>> = {}, weak = false) {
+function setup(
+  handlers: Partial<Record<Method, Handler>> = {},
+  weak = false,
+  initial: SendRoute = { name: 'send', denom: 'ubze' },
+) {
   const defaults: Partial<Record<Method, Handler>> = {
     'tokens.lookup': () =>
       ok({
@@ -123,7 +127,7 @@ function setup(handlers: Partial<Record<Method, Handler>> = {}, weak = false) {
         <SendEnvProvider env={env}>
           <Router<TestRoute>
             table={{ send: SendFlow, 'home.main': () => <p>HOME</p> }}
-            initial={{ name: 'send', denom: 'ubze' }}
+            initial={initial}
           />
         </SendEnvProvider>
       </LockEnvProvider>
@@ -176,6 +180,39 @@ async function toReview(host: HTMLElement) {
 }
 
 describe('send form', () => {
+  it('preselects the sender a Home row asked for, not the richest one', async () => {
+    const SECOND = deriveAccount(PHRASE, 1).address;
+    const { host, call, scheduler } = setup(
+      {
+        'wallet.addresses': () =>
+          ok({
+            addresses: [
+              { index: 0, label: 'Main', address: OWN },
+              { index: 1, label: 'Savings', address: SECOND },
+            ],
+          }),
+        'tokens.balances': () =>
+          ok({
+            denom: 'ubze',
+            addresses: [
+              { index: 0, address: OWN, amount: '5000000' },
+              { index: 1, address: SECOND, amount: '2000000' },
+            ],
+            total: '7000000',
+            partial: false,
+          }),
+      },
+      false,
+      { name: 'send', denom: 'ubze', fromIndex: 1 },
+    );
+    await flush();
+    expect(button(host, 'From Savings, 2.00 BZE. Change address')).not.toBeNull();
+    type(field(host, 'To'), TO);
+    type(field(host, 'Amount'), '1');
+    await scheduler.fire();
+    expect(prepares(call)).toEqual([{ fromIndex: 1, to: TO, denom: 'ubze', amount: '1' }]);
+  });
+
   it('shows the token, the sender and what is available', async () => {
     const { host } = setup();
     await flush();
