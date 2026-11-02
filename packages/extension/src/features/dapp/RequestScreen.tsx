@@ -94,7 +94,9 @@ export function RequestScreen({ close }: RequestScreenProps) {
   // An expired request leaves the view by itself; the worker answers it `expired`.
   useEffect(() => {
     if (expiresAt === undefined) return undefined;
-    return scheduler.after(Math.max(expiresAt - clock.now(), 0) + 50, () => void refresh());
+    return scheduler.after(Math.max(expiresAt - clock.now(), 0) + 50, () => {
+      void refresh();
+    });
   }, [expiresAt, scheduler, clock, refresh]);
   useEffect(() => () => cancelNext.current(), []);
   // The window hears about requests queued behind the one on screen by asking now and then.

@@ -494,7 +494,7 @@ describe('the request queue in the window', () => {
     expect(t.host.textContent).toContain('Next request · 1 waiting');
     expect(button(t.host, 'Connect')).toBeUndefined();
 
-    act(() => timer?.());
+    await act(() => timer?.());
     await settle();
     await settle();
     expect(t.host.querySelector('.bp-dapp-pill')).toBeNull();
@@ -513,14 +513,14 @@ describe('the request queue in the window', () => {
     await settle();
     await settle();
     const before = t.call.mock.calls.filter(([m]) => m === 'dapp.current').length;
-    act(() => refresh.at(-1)?.());
+    await act(() => refresh.at(-1)?.());
     await settle();
     const after = t.call.mock.calls.filter(([m]) => m === 'dapp.current').length;
     expect(after).toBeGreaterThan(before);
   });
 
   it('counts requests that arrive while one is on screen, without touching the view', async () => {
-    let tick: (() => void) | undefined;
+    const ticks: (() => void)[] = [];
     let waiting = 1;
     const t = rig(
       {
@@ -530,7 +530,7 @@ describe('the request queue in the window', () => {
       },
       undefined,
       (_ms, fn) => {
-        tick = fn;
+        ticks.push(fn);
         return () => undefined;
       },
     );
@@ -539,7 +539,7 @@ describe('the request queue in the window', () => {
     await settle();
     expect(t.host.querySelector('.bp-dapp-pill')).toBeNull();
     waiting = 2;
-    act(() => tick?.());
+    await act(() => ticks.forEach((f) => f()));
     await settle();
     expect(t.host.querySelector('.bp-dapp-pill')?.textContent).toBe('1 of 2');
     expect(t.host.textContent).toContain('exactly one address');

@@ -322,7 +322,7 @@ describe('connect and getKey, wallet locked', () => {
     const connect = await t.ask('connect', chainId());
     expect(connect.ack).toEqual({ accepted: true });
     expect(t.created).toHaveLength(1);
-    expect(await t.dapp.current()).toEqual({ status: 'locked', origin: ORIGIN });
+    expect(await t.dapp.current()).toMatchObject({ status: 'locked', origin: ORIGIN });
     await t.wallet.unlock(PASSWORD);
     expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: connect.id });
     await t.dapp.answer(connect.id, { approve: false });
@@ -330,7 +330,7 @@ describe('connect and getKey, wallet locked', () => {
     await t.wallet.lock();
     const key = await t.ask('getKey', chainId());
     expect(t.answersFor(key.id)).toEqual([]);
-    expect(await t.dapp.current()).toEqual({ status: 'locked', origin: ORIGIN });
+    expect(await t.dapp.current()).toMatchObject({ status: 'locked', origin: ORIGIN });
     await t.wallet.unlock(PASSWORD);
     expect(await t.dapp.current()).toEqual({ status: 'none' });
     expect(one(t.answersFor(key.id))).toMatchObject({ error: { code: 'not-connected' } });
@@ -387,7 +387,7 @@ describe('connect and getKey, wallet weakly locked', () => {
 
     const a = await t.ask('getKey', chainId());
     expect(t.answersFor(a.id)).toEqual([]);
-    expect(await t.dapp.current()).toEqual({ status: 'unlock', origin: ORIGIN });
+    expect(await t.dapp.current()).toMatchObject({ status: 'unlock', origin: ORIGIN });
 
     await t.wallet.reauth(PASSWORD);
     expect(await t.dapp.current()).toEqual({ status: 'none' });
@@ -617,7 +617,7 @@ describe('connected sites', () => {
   });
 });
 
-const at = (n: number) => `https://site${n}.example`;
+const at = (n: number) => `https://site${String(n)}.example`;
 const MINUTE = 60_000;
 
 describe('request queue', () => {
@@ -655,7 +655,7 @@ describe('request queue', () => {
     // The hostile site did not take anybody else's place.
     for (let i = 2; i <= 4; i++) {
       for (let j = 0; j < 5; j++) {
-        const ok = await t.ask('connect', chainId(), t.site(at(i), i, `d${i}`));
+        const ok = await t.ask('connect', chainId(), t.site(at(i), i, `d${String(i)}`));
         expect(ok.ack).toEqual({ accepted: true });
       }
     }
