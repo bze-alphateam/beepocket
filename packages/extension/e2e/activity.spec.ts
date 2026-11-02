@@ -52,7 +52,7 @@ test('the activity tab pages through 25 rows in three loads and reaches the end 
 
   const rows = page.getByRole('list', { name: 'Activity' }).getByRole('listitem');
   await expect(rows).toHaveCount(10);
-  await expect(rows.first()).toContainText('Received');
+  await expect(rows.first()).toContainText('Receive');
   await expect(rows.first()).toContainText('+1');
   await expect(rows.first()).toContainText('Faucet');
 

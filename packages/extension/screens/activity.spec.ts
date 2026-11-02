@@ -139,7 +139,7 @@ const BOARD: Row[][] = [
 const scanRow = (r: Row, i: number) => ({
   time: new Date(Date.now() - r.hours * HOUR).toISOString(),
   height: 1_000_000 - i,
-  tx_hash: `BOARD${String(i)}`,
+  tx_hash: (i + 1).toString(16).toUpperCase().padStart(64, 'B'),
   kind: r.kind,
   category: r.category,
   is_signer: r.signer,
@@ -252,7 +252,7 @@ async function pickAddress(page: Page, now: string, label: string): Promise<void
 
 test('activity: list, filter sheet, one address, kits', async ({ context, extensionId }) => {
   const { page } = await home(context, extensionId);
-  await openActivity(page, 'Sent');
+  await openActivity(page, 'Swap');
   await shot(page, 'activity');
 
   await page.getByRole('button', { name: 'Filter activity by address, now All addresses' }).click();
@@ -261,17 +261,17 @@ test('activity: list, filter sheet, one address, kits', async ({ context, extens
   await shot(page, 'activity-filter');
   await page.getByRole('radio', { name: 'Trading' }).click();
   await page.getByRole('button', { name: 'Filter activity by address, now Trading' }).waitFor();
-  await page.getByText('Filled orders').waitFor();
+  await page.getByText('Order filled').waitFor();
   await page.waitForTimeout(300);
   await shot(page, 'activity-addr');
   await pickAddress(page, 'Trading', 'All addresses');
 
   await switchTo(page, 'BZE', 'PAGE');
-  await openActivity(page, 'Sent');
+  await openActivity(page, 'Swap');
   await shot(page, 'activity-page');
 
   await switchTo(page, 'PAGE', 'GUILD');
-  await openActivity(page, 'Sent');
+  await openActivity(page, 'Swap');
   await shot(page, 'activity-guild');
 });
 

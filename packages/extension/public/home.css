@@ -176,16 +176,21 @@
 }
 
 .bp-act-address {
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 5px;
   min-width: 0;
 }
 
+/* A short address is already shortened: it never gets a second ellipsis, the label gives way. */
 .bp-act-addr-label {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 24px;
+  overflow: hidden;
   color: var(--bp-text-soft);
   font-weight: 600;
+  text-overflow: ellipsis;
 }
 
 .bp-act-arrow {
@@ -194,11 +199,14 @@
 }
 
 .bp-act-cp {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .bp-act-cp[data-mono] {
+  flex: none;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 

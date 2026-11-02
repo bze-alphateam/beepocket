@@ -26,6 +26,8 @@ interface Feed {
   /** The last read failed; `items` and `cursor` are still good for a retry. */
   error: boolean;
   busy: boolean;
+  /** Pages in a row that came back empty while the list is still empty. */
+  empties: number;
 }
 
 const FRESH: Feed = {
@@ -35,34 +37,59 @@ const FRESH: Feed = {
   explorer: '',
   error: false,
   busy: true,
+  empties: 0,
 };
 
-/** The explorer page of a transaction, next to the account page the service points at. */
-function txUrl(explorer: string, hash: string | null): string {
-  const base = explorer.replace(/\/accounts\/[^/]*$/, '');
-  return hash === null ? explorer : `${base}/txs/${hash}`;
+/** How many empty pages in a row the tab reads on its own before it shows the empty state. */
+const AUTO_PAGES = 3;
+
+/** A CometBFT transaction hash: 32 bytes in hex. */
+const TX_HASH = /^[0-9A-Fa-f]{64}$/;
+
+/**
+ * The explorer page of a transaction, next to the account page the service points at; the
+ * account page for a block-level row, and no link at all for a hash that isn't one.
+ */
+function txUrl(explorer: string, hash: string | null): string | undefined {
+  if (hash === null) return explorer;
+  if (!TX_HASH.test(hash)) return undefined;
+  return `${explorer.replace(/\/accounts\/[^/]*$/, '')}/txs/${hash}`;
 }
+
+/** The wallet's own names for addresses: contacts first, then its own labels. */
+type Names = ReadonlyMap<string, string>;
+
+/** Strips the + or − of an amount whose direction the wallet can't vouch for. */
+const unsigned = (value: string) => value.replace(/^[+−]/, '');
 
 interface CardProps {
   item: ActivityItem;
   explorer: string;
   known: readonly ListedToken[];
+  names: Names;
 }
 
 /** One transaction (`W-Activity`): disc, words over address and counterparty, amounts over time. */
-function ActivityCard({ item, explorer, known }: CardProps) {
+function ActivityCard({ item, explorer, known, names }: CardProps) {
   const look = lookFor({ ...item, success: true });
   const title = item.feeOnly ? t('activity.fee') : look.words;
   const when = whenText(item.time);
+  const href = txUrl(explorer, item.txHash);
   const failed = !item.success;
-  const parts = item.amounts.map((a) => amountParts(a, known));
-  const mono = item.counterparty !== null && /^bze1[0-9a-z…]+$/.test(item.counterparty);
+  // An unknown kind says nothing about which way value moved: its amounts carry no sign.
+  const parts = item.amounts
+    .map((a) => amountParts(a, known))
+    .map((p) => (look.dir === null ? { ...p, value: unsigned(p.value) } : p));
+  const named = item.counterpartyAddress === null ? undefined : names.get(item.counterpartyAddress);
+  const counterparty = named ?? item.counterparty;
+  const mono =
+    named === undefined && counterparty !== null && /^bze1[0-9a-z…]+$/.test(counterparty);
   const label = [
     title,
     parts
       .map((p) => `${p.value} ${p.unknown ? `${t('activity.unknown')} ` : ''}${p.symbol}`)
       .join(', '),
-    `${item.addressLabel}${item.counterparty === null ? '' : ` ${item.counterparty}`}`,
+    `${item.addressLabel}${counterparty === null ? '' : ` ${counterparty}`}`,
     when,
     failed ? t('activity.tag.failed') : '',
   ]
@@ -71,8 +98,8 @@ function ActivityCard({ item, explorer, known }: CardProps) {
   return (
     <FeedRow
       class="bp-act-card"
-      href={txUrl(explorer, item.txHash)}
-      label={`${label}. ${t('activity.opens')}`}
+      href={href}
+      label={href === undefined ? label : `${label}. ${t('activity.opens')}`}
       icon={look.icon}
       tone={failed ? 'bad' : look.dir === null ? 'inset' : 'soft'}
       failed={failed}
@@ -84,7 +111,7 @@ function ActivityCard({ item, explorer, known }: CardProps) {
           {item.feeOnly && item.kind !== 'fee_only' && (
             <span class="bp-act-arrow">· {look.words}</span>
           )}
-          {item.counterparty !== null && (
+          {counterparty !== null && (
             <>
               {look.dir !== null && (
                 <span class="bp-act-arrow" aria-hidden="true">
@@ -92,7 +119,7 @@ function ActivityCard({ item, explorer, known }: CardProps) {
                 </span>
               )}
               <span class="bp-act-cp" data-mono={mono ? '' : null}>
-                {item.counterparty}
+                {counterparty}
               </span>
             </>
           )}
@@ -161,12 +188,34 @@ export function ActivityTab(props: ActivityTabProps) {
   const { tokens, addresses } = props;
   const filter = useAddressFilter(props.filter, addresses);
   const [feed, setFeed] = useState<Feed>(FRESH);
+  const [names, setNames] = useState<Names>(new Map());
   const latest = useRef(0);
+  const loading = useRef(false);
   const cursor = useRef<string | null>(null);
   cursor.current = feed.cursor;
 
+  // Contacts and the wallet's own labels name a counterparty the way the address book does.
+  useEffect(() => {
+    let live = true;
+    void client.call('book.list', {}).then((res) => {
+      if (!live || !res.ok) return;
+      setNames(
+        new Map([
+          ...res.value.own.map((o) => [o.address, o.label] as const),
+          ...res.value.contacts.map((c) => [c.address, c.name] as const),
+        ]),
+      );
+    });
+    return () => {
+      live = false;
+    };
+  }, [client]);
+
   const read = useCallback(
     async (more: boolean) => {
+      // One page at a time: a second press while a page loads does nothing.
+      if (more && loading.current) return;
+      loading.current = true;
       const id = ++latest.current;
       setFeed((f) => ({ ...(more ? f : FRESH), error: false, busy: true }));
       const res = await client.call('activity.page', {
@@ -174,18 +223,20 @@ export function ActivityTab(props: ActivityTabProps) {
         ...(more && cursor.current !== null ? { cursor: cursor.current } : {}),
       });
       if (id !== latest.current) return;
-      setFeed((f) =>
-        res.ok
-          ? {
-              items: more ? [...f.items, ...res.value.items] : res.value.items,
-              cursor: res.value.cursor,
-              done: res.value.done,
-              explorer: res.value.explorer,
-              error: false,
-              busy: false,
-            }
-          : { ...f, error: true, busy: false },
-      );
+      loading.current = false;
+      setFeed((f) => {
+        if (!res.ok) return { ...f, error: true, busy: false };
+        const items = more ? [...f.items, ...res.value.items] : res.value.items;
+        return {
+          items,
+          cursor: res.value.cursor,
+          done: res.value.done,
+          explorer: res.value.explorer,
+          error: false,
+          busy: false,
+          empties: items.length > 0 ? 0 : (more ? f.empties : 0) + 1,
+        };
+      });
     },
     [client, filter],
   );
@@ -207,6 +258,12 @@ export function ActivityTab(props: ActivityTabProps) {
 
   const first = feed.items.length === 0;
   const idle = !feed.busy && !feed.error;
+  // A first page can come back empty with older pages left: read on rather than show no rows.
+  const more = !feed.done && feed.cursor !== null;
+  const reading = idle && first && more && feed.empties < AUTO_PAGES;
+  useEffect(() => {
+    if (reading) void read(true);
+  }, [reading, read]);
 
   return (
     <div class="bp-act">
@@ -214,7 +271,7 @@ export function ActivityTab(props: ActivityTabProps) {
         <ul class="bp-act-list" aria-label={t('activity.list')}>
           {feed.items.map((item, i) => (
             <li key={`${String(item.addressIndex)}-${item.txHash ?? 'block'}-${String(i)}`}>
-              <ActivityCard item={item} explorer={feed.explorer} known={tokens} />
+              <ActivityCard item={item} explorer={feed.explorer} known={tokens} names={names} />
             </li>
           ))}
         </ul>
@@ -237,7 +294,7 @@ export function ActivityTab(props: ActivityTabProps) {
           </Button>
         </div>
       )}
-      {idle && first && feed.done && (
+      {idle && first && (feed.done || !reading) && (
         <EmptyState
           icon="activity"
           tone="inset"
@@ -245,7 +302,7 @@ export function ActivityTab(props: ActivityTabProps) {
           sub={t('activity.empty.sub')}
         />
       )}
-      {idle && !feed.done && feed.cursor !== null && (
+      {idle && more && !reading && (
         <>
           <Button
             variant="secondary"

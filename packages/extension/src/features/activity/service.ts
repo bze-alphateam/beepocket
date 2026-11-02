@@ -104,6 +104,7 @@ function toItem(row: ActivityRow, address: WalletAddress): ActivityItem {
     isSigner: row.isSigner,
     success: row.success,
     counterparty: cp === null ? null : (cp.label?.name ?? cp.moniker ?? shortAddress(cp.address)),
+    counterpartyAddress: cp?.address ?? null,
     amounts: feeOnly ? fees : deltas,
     feeOnly,
   };

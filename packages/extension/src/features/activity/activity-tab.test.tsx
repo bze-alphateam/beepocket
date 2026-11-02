@@ -10,6 +10,8 @@ import {
   type ActivityAmount,
   type ActivityItem,
   type ActivityPageResult,
+  type Contact,
+  type OwnAddress,
   type ListedToken,
   type Method,
   type RequestOf,
@@ -48,16 +50,20 @@ const amt = (amount: string, over: Partial<ActivityAmount> = {}): ActivityAmount
   ...over,
 });
 
+/** A transaction hash the way CometBFT writes it: 64 hex characters. */
+const hash = (n: number) => n.toString(16).toUpperCase().padStart(64, '0');
+
 const item = (n: number, over: Partial<ActivityItem> = {}): ActivityItem => ({
   addressIndex: 0,
   addressLabel: 'Main',
   time: '2026-10-31T13:39:14Z',
-  txHash: `TX${String(n)}`,
+  txHash: hash(n),
   kind: 'send',
   category: 'received',
   isSigner: false,
   success: true,
   counterparty: null,
+  counterpartyAddress: null,
   amounts: [amt('150')],
   feeOnly: false,
   ...over,
@@ -78,10 +84,12 @@ function setup(
   balances: TokenBalances | null = null,
   tokens: ListedToken[] = [PAGE],
   filter: AddressFilter = createAddressFilter(),
+  book: { contacts: Contact[]; own: OwnAddress[] } = { contacts: [], own: [] },
 ) {
   const calls: RequestOf<'activity.page'>[] = [];
   const client: Client = {
     call: vi.fn(<M extends Method>(method: M, req: RequestOf<M>) => {
+      if (method === 'book.list') return Promise.resolve(ok(book) as never);
       calls.push(req as RequestOf<'activity.page'>);
       return Promise.resolve(pages(req as RequestOf<'activity.page'>) as never);
     }),
@@ -140,11 +148,11 @@ describe('ActivityTab card', () => {
       .map((a, i) => ({ ...a, denom: `${a.denom}${String(i)}` }));
     const host = await cards([item(1, { kind: 'dex_swap', counterparty: 'BZE/PAGE', amounts })]);
     const card = host.querySelector('a.bp-act-card');
-    expect(card?.querySelector('.bp-act-what')?.textContent).toBe('Swapped');
+    expect(card?.querySelector('.bp-act-what')?.textContent).toBe('Swap');
     expect(card?.querySelector('.bp-act-address')?.textContent).toContain('Main');
     expect(card?.querySelector('.bp-act-address')?.textContent).toContain('BZE/PAGE');
     expect(host.querySelectorAll('a.bp-act-card .bp-act-asset')).toHaveLength(n);
-    expect(card?.getAttribute('href')).toBe('https://explorer.example/txs/TX1');
+    expect(card?.getAttribute('href')).toBe(`https://explorer.example/txs/${hash(1)}`);
   });
 
   it('renders a 25-digit raw amount of an unknown token in full, with a short muted symbol', async () => {
@@ -228,7 +236,7 @@ describe('ActivityTab card', () => {
     expect(card?.hasAttribute('data-failed')).toBe(true);
     expect(card?.querySelector('.bp-tag-bad')?.textContent).toBe('Failed');
     expect(card?.querySelector('.bp-icon-tile-bad')).not.toBeNull();
-    expect(card?.querySelector('.bp-act-what')?.textContent).toContain('Sent');
+    expect(card?.querySelector('.bp-act-what')?.textContent).toContain('Send');
     expect(card?.getAttribute('aria-label')).toContain('Failed');
     expect(card?.getAttribute('aria-label')).toContain('Opens on Explorer');
   });
@@ -259,11 +267,11 @@ describe('ActivityTab', () => {
     await tick();
     expect(calls[0]).toEqual({});
     const rows = [...host.querySelectorAll('li')].map((li) => li.textContent);
-    expect(rows[0]).toContain('Received');
+    expect(rows[0]).toContain('Receive');
     expect(rows[0]).toContain('+1.50');
     expect(rows[0]).toContain('PAGE');
     expect(rows[0]).toContain('Exchange');
-    expect(rows[1]).toContain('Swapped');
+    expect(rows[1]).toContain('Swap');
     expect(rows[1]).toContain('Failed');
     expect(rows[1]).toContain('−25');
     expect(rows[2]).toContain('Network fee');
@@ -303,7 +311,7 @@ describe('ActivityTab', () => {
     expect(first).toContain('+42');
     expect(first).toContain('factory/…/zzz');
     expect(first.indexOf('−2.00')).toBeLessThan(first.indexOf('+5.00'));
-    expect(rows[1]?.textContent).toContain('Swapped');
+    expect(rows[1]?.textContent).toContain('Swap');
     expect(rows[1]?.textContent).not.toMatch(/\b0\b/);
   });
 
@@ -520,8 +528,8 @@ describe('ActivityTab kinds', () => {
   );
 
   it.each([
-    ['sent', 'send', '→', 'Sent'],
-    ['received', 'receive', '←', 'Received'],
+    ['sent', 'send', '→', 'Send'],
+    ['received', 'receive', '←', 'Receive'],
   ])('reads a send by its %s category', async (category, icon, arrow, words) => {
     const card = await render1({ kind: 'send', category });
     expect(iconOf(card)).toBe(icon);
@@ -542,6 +550,15 @@ describe('ActivityTab kinds', () => {
     expect(card.querySelector('.bp-act-arrow')).toBeNull();
     expect(card.querySelector('.bp-act-what')?.textContent).toBe('Transaction');
     expect(card.querySelector('.bp-act-cp')?.textContent).toBe('Alex');
+    expect(card.querySelector('.bp-act-amount')?.textContent).toBe('1.50');
+  });
+
+  it('keeps the sign of a known kind', async () => {
+    const card = await render1({ kind: 'dex_swap', amounts: [amt('150'), amt('-25')] });
+    expect([...card.querySelectorAll('.bp-act-amount')].map((a) => a.textContent)).toEqual([
+      '+1.50',
+      '−0.25',
+    ]);
   });
 
   it('shows the time under the amounts and colours them by sign', async () => {
@@ -584,5 +601,148 @@ describe('ActivityTab states', () => {
     );
     const retry = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Try again');
     expect(retry?.className).toContain('bp-btn-ghost');
+  });
+});
+
+describe('ActivityTab links', () => {
+  it('links a real transaction hash and leaves any other hash unlinked', async () => {
+    const { host, tick } = setup(() =>
+      reply({
+        items: [
+          item(1),
+          item(2, { txHash: '../../evil?x=1' }),
+          item(3, { txHash: 'ab'.repeat(31) }),
+          item(4, { txHash: null }),
+        ],
+      }),
+    );
+    await tick();
+    const rows = [...host.querySelectorAll('.bp-act-card')];
+    expect(rows.map((r) => r.tagName)).toEqual(['A', 'DIV', 'DIV', 'A']);
+    expect(rows[0]?.getAttribute('href')).toBe(`https://explorer.example/txs/${hash(1)}`);
+    expect(rows[1]?.getAttribute('aria-label')).not.toContain('Opens on Explorer');
+    // A block-level row has no transaction: it opens the account page.
+    expect(rows[3]?.getAttribute('href')).toBe('https://explorer.example/accounts/bze1a');
+    expect(host.querySelector('a[href*="evil"]')).toBeNull();
+  });
+});
+
+describe('ActivityTab names', () => {
+  const ALEX = 'bze1alexalexalexalexalexalexalexalexalexale';
+  const SAVINGS = 'bze1savingssavingssavingssavingssavingssav';
+  const OTHER = 'bze1otherotherotherotherotherotherotherothe';
+
+  it("names a counterparty from the address book or the wallet, else shows Scan's short form once", async () => {
+    const { host, tick } = setup(
+      () =>
+        reply({
+          items: [
+            item(1, { counterparty: 'bze1alex…xale', counterpartyAddress: ALEX }),
+            item(2, { counterparty: 'bze1savi…ssav', counterpartyAddress: SAVINGS }),
+            item(3, { counterparty: 'bze1othe…othe', counterpartyAddress: OTHER }),
+          ],
+        }),
+      undefined,
+      null,
+      [PAGE],
+      undefined,
+      {
+        contacts: [{ name: 'Alex', address: ALEX }],
+        own: [{ label: 'Savings', address: SAVINGS }],
+      },
+    );
+    await tick();
+    const cps = [...host.querySelectorAll('.bp-act-cp')];
+    expect(cps.map((c) => c.textContent)).toEqual(['Alex', 'Savings', 'bze1othe…othe']);
+    expect(cps.map((c) => c.hasAttribute('data-mono'))).toEqual([false, false, true]);
+    expect(host.querySelector('a.bp-act-card')?.getAttribute('aria-label')).toContain('Main Alex');
+  });
+});
+
+describe('ActivityTab paging', () => {
+  it('reads one page per Load more, however often it is pressed', async () => {
+    const { host, tick, calls } = setup((req) =>
+      req.cursor === undefined
+        ? reply({ items: [item(1)], cursor: 'c1', done: false })
+        : reply({ items: [item(2)] }),
+    );
+    await tick();
+    const more = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Load more');
+    if (!more) throw new Error('no Load more');
+    // A double click: both presses land before the button re-renders.
+    void act(() => {
+      more.click();
+      more.click();
+    });
+    await tick();
+    expect(calls).toEqual([{}, { cursor: 'c1' }]);
+    expect(host.querySelectorAll('li')).toHaveLength(2);
+  });
+
+  it('reads on past an empty first page that still has older pages', async () => {
+    const { host, tick, calls } = setup((req) =>
+      req.cursor === undefined
+        ? reply({ items: [], cursor: 'c1', done: false })
+        : reply({ items: [item(1)] }),
+    );
+    await tick();
+    expect(calls).toEqual([{}, { cursor: 'c1' }]);
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+  });
+
+  it('shows the empty state, not a bare Load more, after three empty pages', async () => {
+    const { host, tick, calls } = setup(() => reply({ items: [], cursor: 'c', done: false }));
+    await tick();
+    await tick();
+    expect(calls).toHaveLength(3);
+    expect(host.querySelector('.bp-empty-title')?.textContent).toBe(
+      'No activity in the last 30 days',
+    );
+    expect(host.textContent).toContain('Load more');
+  });
+});
+
+describe('ActivityTab filter by keyboard', () => {
+  it('opens from the focused chip, moves focus into the sheet and picks with the keyboard', async () => {
+    const { host, tick, calls } = setup(
+      () => reply({ items: [item(1)] }),
+      [addr(0, 'Main'), addr(1, 'Savings')],
+    );
+    await tick();
+    const chip = host.querySelector<HTMLButtonElement>('button.bp-dropdown');
+    if (!chip) throw new Error('no chip');
+    expect(chip.tagName).toBe('BUTTON');
+    chip.focus();
+    // Enter or Space on a focused button is a click.
+    fireEvent(chip, 'click');
+    const sheet = host.querySelector('[role="dialog"]');
+    expect(document.activeElement).toBe(sheet);
+    const tab = () => {
+      fireEvent(document.body, 'keydown', { key: 'Tab' });
+    };
+    tab();
+    const radios = [...(sheet?.querySelectorAll('[role="radio"]') ?? [])];
+    expect(document.activeElement).toBe(radios[0]);
+    // Shift+Tab from the first option wraps to the last one (Savings).
+    fireEvent(document.body, 'keydown', { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(radios[2]);
+    fireEvent(document.activeElement, 'click');
+    await tick();
+    expect(calls.at(-1)).toEqual({ addressIndex: 1 });
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(host.querySelector('button.bp-dropdown'));
+  });
+
+  it('closes on Escape without changing the filter', async () => {
+    const { host, tick, calls } = setup(
+      () => reply({ items: [item(1)] }),
+      [addr(0, 'Main'), addr(1, 'Savings')],
+    );
+    await tick();
+    fireEvent(host.querySelector('button.bp-dropdown'), 'click');
+    fireEvent(document.body, 'keydown', { key: 'Escape' });
+    await tick();
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+    expect(calls).toEqual([{}]);
   });
 });
