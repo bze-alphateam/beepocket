@@ -2,7 +2,7 @@ import { shortAddress } from '@beepocket/core';
 import { t } from '../../i18n';
 import type { BookMatch } from '../../protocol';
 import type { SendQuote } from '../../protocol/send';
-import { Banner, Button, Spinner } from '../../ui';
+import { Banner, Button, Card, DetailRow, Icon, ResultLayout } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
 import { exact, feeText, totalText } from './format';
 
@@ -12,93 +12,84 @@ export function matchLabel(match: BookMatch | null): string | null {
   return null;
 }
 
-/** `W-Review`, `W-Review-Fee`, `W-Review-Locked`: exactly what `send.submit` will sign. */
+/**
+ * `W-Review`, `W-Review-Fee`, `W-Review-Locked`: exactly what `send.submit` will sign. The fee
+ * is read-only here: it is chosen on the form, and Edit goes back there.
+ */
 export function ReviewScreen(props: {
   quote: SendQuote;
   fromLabel: string;
   toLabel: string | null;
-  /** The weak lock: the button becomes the password gate. */
+  /** The weak lock: the password field signs, in place of the plain button. */
   locked: boolean;
   busy: boolean;
   /** The fee moved since the last look. */
   changed: boolean;
   error: string | null;
-  onFee: () => void;
   onConfirm: () => void;
   onUnlocked: () => void;
-  onEdit: () => void;
 }) {
   const { quote } = props;
   return (
-    <main class="bp-send">
+    <div class="bp-send bp-send-review">
       <div class="bp-send-hero">
-        <small>{t('send.review.youSend')}</small>
-        <strong>
-          {exact(quote.amount, quote.token.decimals)} <span>{quote.token.symbol}</span>
-        </strong>
+        <span class="bp-send-hero-label">{t('send.review.youSend')}</span>
+        <span class="bp-send-hero-amount">
+          <span>{exact(quote.amount, quote.token.decimals)}</span>
+          <span class="bp-send-hero-sym">{quote.token.symbol}</span>
+        </span>
       </div>
-      <dl class="bp-send-card">
-        <div>
-          <dt>{t('send.from')}</dt>
-          <dd>
+      <Card rows>
+        <DetailRow label={t('send.from')}>
+          <span class="bp-send-party">
             <strong>{props.fromLabel}</strong>
-            <span class="bp-send-mono">{shortAddress(quote.from.address)}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>{t('send.to')}</dt>
-          <dd>
+            <span class="bp-mono">{shortAddress(quote.from.address)}</span>
+          </span>
+        </DetailRow>
+        <DetailRow label={t('send.to')}>
+          <span class="bp-send-party bp-send-party-to">
             {props.toLabel !== null && <strong>{props.toLabel}</strong>}
-            <span class="bp-send-mono">{quote.to}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>{t('send.review.fee')}</dt>
-          <dd>
-            <button
-              type="button"
-              class="bp-send-link"
-              aria-label={t('send.review.fee.change', { fee: feeText(quote.fee) })}
-              onClick={props.onFee}
-            >
-              ≈ {feeText(quote.fee)} ▾
-            </button>
-          </dd>
-        </div>
-        <div>
-          <dt>{t('send.review.total')}</dt>
-          <dd>
-            <strong>{totalText(quote)}</strong>
-          </dd>
-        </div>
-      </dl>
-      <p class="bp-send-note">{t('send.review.warning')}</p>
+            <span class="bp-mono">{quote.to}</span>
+          </span>
+        </DetailRow>
+        <DetailRow label={t('send.review.fee')}>{feeText(quote.fee)}</DetailRow>
+        <DetailRow label={t('send.review.total')} strong>
+          {totalText(quote)}
+        </DetailRow>
+      </Card>
+      <p class="bp-send-info">
+        <Icon name="alert-circle" size={16} />
+        <span>{t('send.review.warning')}</span>
+      </p>
       {props.changed && <Banner tone="amber">{t('send.review.changed')}</Banner>}
       {props.error !== null && <Banner tone="red">{props.error}</Banner>}
-      <div class="bp-send-actions">
-        {props.locked ? (
-          <PasswordGate label={t('send.review.unlock')} onUnlocked={props.onUnlocked} />
-        ) : (
-          <Button disabled={props.busy} onClick={props.onConfirm}>
-            {t('send.review.confirm')}
-          </Button>
-        )}
-        <Button variant="quiet" onClick={props.onEdit}>
-          {t('send.review.edit')}
+      <div class="bp-send-grow" />
+      {props.locked ? (
+        <PasswordGate
+          label={t('send.review.unlock')}
+          submitLabel={t('send.review.confirm')}
+          onUnlocked={props.onUnlocked}
+        />
+      ) : (
+        <Button disabled={props.busy} onClick={props.onConfirm}>
+          {t('send.review.confirm')}
         </Button>
-      </div>
-    </main>
+      )}
+    </div>
   );
 }
 
 /** `W-Pending`. */
 export function PendingScreen({ amount, symbol }: { amount: string; symbol: string }) {
   return (
-    <main class="bp-send bp-send-center" aria-live="polite">
-      <Spinner />
-      <h1>{t('send.pending.title', { amount, symbol })}</h1>
-      <p class="bp-send-note">{t('send.pending.body')}</p>
-    </main>
+    <div aria-live="polite" class="bp-send-fill">
+      <ResultLayout
+        status="pending"
+        title={t('send.pending.title', { amount, symbol })}
+        sub={t('send.pending.body')}
+        pendingLabel={t('send.pending.label')}
+      />
+    </div>
   );
 }
 
@@ -106,9 +97,10 @@ export type Outcome =
   | { kind: 'success'; txHash: string; explorerUrl: string }
   /** `lost`: the broadcast got no answer, so it may never have reached the network. */
   | { kind: 'unconfirmed'; txHash: string; explorerUrl: string | null; lost: boolean }
-  | { kind: 'failed'; message: string | null };
+  /** `txHash` when the chain included it and it failed there (the fee was taken). */
+  | { kind: 'failed'; message: string | null; txHash?: string; explorerUrl?: string };
 
-/** `W-Success`, `W-Failed` and the "still pending" case. */
+/** `W-Success`, `W-Success-PAGE`, `W-Failed`, `W-Failed-GUILD` and the "still pending" case. */
 export function ResultScreen(props: {
   outcome: Outcome;
   quote: SendQuote;
@@ -116,79 +108,91 @@ export function ResultScreen(props: {
   toText: string;
   onDone: () => void;
   onRetry: () => void;
+  onCopy: (text: string) => void;
 }) {
   const { outcome, quote } = props;
   const amount = exact(quote.amount, quote.token.decimals);
   const symbol = quote.token.symbol;
+  const failed = outcome.kind === 'failed';
   const title =
     outcome.kind === 'success'
       ? t('send.success.title')
       : outcome.kind === 'unconfirmed'
         ? t('send.unconfirmed.title')
         : t('send.failed.title');
-  const body =
+  const sub =
     outcome.kind === 'success'
       ? t('send.success.body', { amount, symbol, to: props.toText })
       : outcome.kind === 'unconfirmed'
         ? t(outcome.lost ? 'send.unconfirmed.lost' : 'send.unconfirmed.body')
-        : t('send.failed.body', { amount, symbol });
+        : t(outcome.txHash === undefined ? 'send.failed.body' : 'send.failed.charged', {
+            amount,
+            symbol,
+          });
+  const txHash = outcome.txHash;
+  const explorerUrl = outcome.explorerUrl ?? null;
   return (
-    <main class={`bp-send bp-send-result bp-send-${outcome.kind}`}>
-      <h1>{title}</h1>
-      <p class="bp-send-note">{body}</p>
-      {outcome.kind === 'failed' && outcome.message !== null && (
-        <Banner tone="red">
-          <strong>{t('send.failed.node')}</strong>
-          <span class="bp-send-mono">{outcome.message}</span>
-        </Banner>
-      )}
-      <dl class="bp-send-card">
-        <div>
-          <dt>{t('send.result.from')}</dt>
-          <dd>{props.fromLabel}</dd>
-        </div>
-        {outcome.kind !== 'failed' && (
-          <>
-            <div>
-              <dt>{t('send.result.fee')}</dt>
-              <dd>{feeText(quote.fee)}</dd>
-            </div>
-            <div>
-              <dt>{t('send.result.hash')}</dt>
-              <dd class="bp-send-mono">
-                {outcome.txHash.slice(0, 6)}…{outcome.txHash.slice(-6)}
-                <button
-                  type="button"
-                  class="bp-send-link"
-                  aria-label={t('send.result.copy')}
-                  onClick={() => {
-                    navigator.clipboard.writeText(outcome.txHash).catch(() => undefined);
-                  }}
-                >
-                  ⧉
-                </button>
-              </dd>
-            </div>
-          </>
-        )}
-      </dl>
-      {outcome.kind !== 'failed' && outcome.explorerUrl !== null && (
-        <a class="bp-send-link" href={outcome.explorerUrl} target="_blank" rel="noopener">
-          {t('send.result.explorer')}
-        </a>
-      )}
-      <div class="bp-send-actions">
-        {outcome.kind === 'failed' ? (
+    <ResultLayout
+      status={outcome.kind === 'success' ? 'ok' : failed ? 'bad' : 'pending'}
+      pendingLabel={t('send.pending.label')}
+      title={title}
+      sub={sub}
+      link={
+        explorerUrl === null ? undefined : (
+          <Button
+            variant="ghost"
+            tone="link"
+            icon="search"
+            trailingIcon="external-link"
+            href={explorerUrl}
+          >
+            {t('send.result.explorer')}
+          </Button>
+        )
+      }
+      actions={
+        failed ? (
           <>
             <Button onClick={props.onRetry}>{t('send.retry')}</Button>
-            <Button variant="quiet" onClick={props.onDone}>
+            <Button variant="secondary" onClick={props.onDone}>
               {t('send.back.wallet')}
             </Button>
           </>
         ) : (
           <Button onClick={props.onDone}>{t('send.done')}</Button>
-        )}
-      </div>
-    </main>
+        )
+      }
+    >
+      {failed && outcome.message !== null && (
+        <div class="bp-send-error" role="alert">
+          <strong>{t('send.failed.node')}</strong>
+          <span class="bp-mono">{outcome.message}</span>
+        </div>
+      )}
+      {txHash !== undefined && (
+        <Card rows>
+          <DetailRow label={t('send.result.from')}>
+            <strong>{props.fromLabel}</strong>
+          </DetailRow>
+          <DetailRow label={t('send.result.fee')}>{feeText(quote.fee)}</DetailRow>
+          <DetailRow label={t('send.result.hash')}>
+            <span class="bp-send-hash">
+              <span class="bp-mono">
+                {txHash.slice(0, 6)}…{txHash.slice(-6)}
+              </span>
+              <Button
+                variant="icon"
+                icon="copy"
+                iconSize={16}
+                label={t('send.result.copy')}
+                onClick={() => {
+                  props.onCopy(txHash);
+                }}
+              />
+            </span>
+          </DetailRow>
+        </Card>
+      )}
+    </ResultLayout>
   );
 }

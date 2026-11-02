@@ -1,0 +1,40 @@
+/* SearchField: icon + input in one inset box. */
+.bp-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--bp-soft-line);
+  border-radius: 12px;
+  background: var(--bp-inset);
+  color: var(--bp-faint);
+}
+
+.bp-search:has(input:focus-visible) {
+  border-color: var(--bp-primary);
+  box-shadow: 0 0 0 3px var(--bp-soft);
+}
+
+.bp-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--bp-text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  appearance: none;
+}
+
+.bp-search input::placeholder {
+  color: var(--bp-faint);
+}
+
+.bp-search input::-webkit-search-cancel-button {
+  display: none;
+}

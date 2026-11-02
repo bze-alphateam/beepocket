@@ -1,13 +1,13 @@
 import { deriveAccount } from '@beepocket/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'preact/test-utils';
 import { fail, ok, type Contact, type Result } from '../../protocol';
 import type { Client } from '../../protocol/client';
 import { ClientProvider } from '../../popup/client-context';
 import { Router } from '../../popup/router';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
-import { ContactPicker } from './ContactPicker';
-import { bookRoutes } from './routes';
+import { AddressBookSheet, type AddressBookSheetProps } from './AddressBookSheet';
+import { bookRoutes, type BookRoute } from './routes';
 
 afterEach(cleanup);
 
@@ -58,88 +58,179 @@ const button = (host: HTMLElement, text: string) =>
     (b) => (b.getAttribute('aria-label') ?? b.textContent) === text,
   ) ?? null;
 
-describe('AddressBookScreen', () => {
-  it('lists, searches, adds and deletes contacts', async () => {
-    const { client, calls } = mockClient([{ name: 'Alex', address: A }]);
-    const { host } = render(
-      <ClientProvider client={client}>
-        <Router table={bookRoutes} initial={{ name: 'book' }} />
-      </ClientProvider>,
+type Mode = AddressBookSheetProps['mode'];
+
+function sheet(initial: Contact[], props: Partial<AddressBookSheetProps> & { mode: Mode }) {
+  const { client, calls } = mockClient(initial);
+  const onPick = vi.fn();
+  const onClose = vi.fn();
+  const onChanged = vi.fn();
+  const { host } = render(
+    <ClientProvider client={client}>
+      <AddressBookSheet open onPick={onPick} onClose={onClose} onChanged={onChanged} {...props} />
+    </ClientProvider>,
+  );
+  return { host, calls, onPick, onClose, onChanged };
+}
+
+const title = (host: HTMLElement) => host.querySelector('[role=dialog] h2')?.textContent;
+const fieldByLabel = (host: HTMLElement, label: string) => {
+  const l = [...host.querySelectorAll('label')].find((x) => x.textContent === label);
+  return host.querySelector(`#${l?.getAttribute('for') ?? 'none'}`);
+};
+
+describe('AddressBookSheet, pick mode (Send)', () => {
+  it('groups contacts and own addresses with counts and answers the tapped address', async () => {
+    const { host, onPick } = sheet(
+      [
+        { name: 'Alex', address: A },
+        { name: 'Bo', address: B },
+      ],
+      { mode: 'pick', selected: A },
     );
     await flush();
-    expect(host.textContent).toContain('Alex');
-    expect(host.textContent).toContain('Your addresses');
-    expect(host.textContent).toContain('Main');
+    expect(title(host)).toBe('Address book');
+    const groups = [...host.querySelectorAll('.bp-section-label')].map((h) => h.textContent);
+    expect(groups).toEqual(['Contacts · 2', 'My addresses · 1']);
+    // The address the form holds is highlighted.
+    expect(button(host, 'Choose Alex')?.closest('.bp-list-row-on')).not.toBeNull();
+    expect(button(host, 'Choose Bo')?.closest('.bp-list-row-on')).toBeNull();
+    fireEvent(button(host, 'Choose Bo'), 'click');
+    fireEvent(button(host, 'Choose Main'), 'click');
+    expect(onPick.mock.calls).toEqual([[B], [OWN]]);
+  });
 
-    type(host.querySelector('input'), 'zzz');
-    expect(host.textContent).toContain('Nothing found.');
-    type(host.querySelector('input'), A.slice(-6));
-    expect(host.textContent).toContain('Alex');
-    type(host.querySelector('input'), '');
+  it('searches by name and address and says when nothing matches', async () => {
+    const { host } = sheet([{ name: 'Alex', address: A }], { mode: 'pick' });
+    await flush();
+    type(host.querySelector('input[type=search]'), 'zzz');
+    expect(host.textContent).toContain('No contact matches “zzz”.');
+    type(host.querySelector('input[type=search]'), A.slice(-6));
+    expect(button(host, 'Choose Alex')).not.toBeNull();
+    expect(host.textContent).toContain('Contacts · 1');
+  });
 
-    fireEvent(button(host, 'Add contact'), 'click');
-    const inputs = host.querySelectorAll('input');
-    type(inputs[0] ?? null, 'Bo');
-    type(inputs[1] ?? null, 'bze1nope');
+  it('saves a new contact and answers it with "Save and use"', async () => {
+    const { host, calls, onPick, onChanged } = sheet([], { mode: 'pick' });
+    await flush();
+    fireEvent(button(host, 'New contact'), 'click');
+    expect(title(host)).toBe('New contact');
+    type(fieldByLabel(host, 'Name'), 'Bo');
+    type(fieldByLabel(host, 'Address'), 'bze1nope');
     expect(host.textContent).toContain('This is not a BeeZee address.');
-    type(host.querySelectorAll('input')[1] ?? null, B);
+    type(fieldByLabel(host, 'Address'), B);
+    expect(button(host, 'Save and use')).not.toBeNull();
     fireEvent(host.querySelector('form'), 'submit');
     await flush();
-    expect(calls.some((c) => c.method === 'book.add')).toBe(true);
-    expect(host.textContent).toContain('Bo');
+    expect(calls).toContainEqual({ method: 'book.add', payload: { name: 'Bo', address: B } });
+    expect(onPick).toHaveBeenCalledWith(B);
+    expect(onChanged).toHaveBeenCalled();
+  });
 
-    fireEvent(button(host, 'Delete Bo'), 'click');
+  it('opens on the form with the address filled in, and Cancel closes the sheet', async () => {
+    const { host, onClose } = sheet([], { mode: 'pick', newAddress: B });
     await flush();
-    expect(host.textContent).not.toContain('Bo');
+    expect(title(host)).toBe('New contact');
+    expect((fieldByLabel(host, 'Address') as HTMLInputElement).value).toBe(B);
+    expect(host.textContent).toContain('Contacts are stored only in this browser.');
+    fireEvent(button(host, 'Cancel'), 'click');
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('offers to rename the existing contact on a duplicate', async () => {
-    const { client } = mockClient([{ name: 'Alex', address: A }]);
-    const { host } = render(
-      <ClientProvider client={client}>
-        <Router table={bookRoutes} initial={{ name: 'book' }} />
-      </ClientProvider>,
-    );
+    const { host } = sheet([{ name: 'Alex', address: A }], { mode: 'pick' });
     await flush();
-    fireEvent(button(host, 'Add contact'), 'click');
-    type(host.querySelectorAll('input')[0] ?? null, 'Other');
-    type(host.querySelectorAll('input')[1] ?? null, A);
+    fireEvent(button(host, 'New contact'), 'click');
+    type(fieldByLabel(host, 'Name'), 'Other');
+    type(fieldByLabel(host, 'Address'), A);
     fireEvent(host.querySelector('form'), 'submit');
     await flush();
     expect(host.textContent).toContain('already saved as Alex');
     fireEvent(button(host, 'Rename Alex'), 'click');
-    expect(host.textContent).toContain('Edit contact');
-  });
-});
-
-describe('ContactPicker', () => {
-  it('searches contacts and own addresses and answers the picked address', async () => {
-    const { client } = mockClient([
-      { name: 'Alex', address: A },
-      { name: 'Bo', address: B },
-    ]);
-    const picked: string[] = [];
-    const { host } = render(
-      <ClientProvider client={client}>
-        <ContactPicker open onClose={() => undefined} onPick={(a) => picked.push(a)} />
-      </ClientProvider>,
-    );
-    await flush();
-    expect(host.textContent).toContain('Alex');
-    expect(host.textContent).toContain('Main');
-    type(host.querySelector('input'), 'bo');
-    expect(host.textContent).not.toContain('Alex');
-    fireEvent(button(host, host.querySelector('.bp-book-row')?.textContent ?? ''), 'click');
-    expect(picked).toEqual([B]);
+    expect(title(host)).toBe('Edit contact');
   });
 
   it('renders nothing while closed', () => {
     const { client } = mockClient([]);
     const { host } = render(
       <ClientProvider client={client}>
-        <ContactPicker open={false} onClose={() => undefined} onPick={() => undefined} />
+        <AddressBookSheet open={false} mode="pick" onClose={() => undefined} />
       </ClientProvider>,
     );
     expect(host.textContent).toBe('');
+  });
+});
+
+describe('AddressBookSheet, manage mode (Settings)', () => {
+  it('opens a contact to rename it and never answers an address', async () => {
+    const { host, calls, onPick } = sheet([{ name: 'Alex', address: A }], { mode: 'manage' });
+    await flush();
+    // Own addresses are listed but are not buttons here.
+    expect(host.textContent).toContain('Main');
+    expect(button(host, 'Choose Main')).toBeNull();
+    fireEvent(button(host, 'Edit Alex'), 'click');
+    expect(title(host)).toBe('Edit contact');
+    expect((fieldByLabel(host, 'Address') as HTMLInputElement).disabled).toBe(true);
+    type(fieldByLabel(host, 'Name'), 'Alexandra');
+    fireEvent(host.querySelector('form'), 'submit');
+    await flush();
+    expect(calls).toContainEqual({
+      method: 'book.update',
+      payload: { name: 'Alexandra', address: A },
+    });
+    expect(title(host)).toBe('Address book');
+    expect(button(host, 'Edit Alexandra')).not.toBeNull();
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it('deletes a contact from its edit form', async () => {
+    const { host, calls, onChanged } = sheet(
+      [
+        { name: 'Alex', address: A },
+        { name: 'Bo', address: B },
+      ],
+      { mode: 'manage' },
+    );
+    await flush();
+    fireEvent(button(host, 'Edit Bo'), 'click');
+    fireEvent(button(host, 'Delete contact'), 'click');
+    await flush();
+    expect(calls).toContainEqual({ method: 'book.remove', payload: { address: B } });
+    expect(onChanged).toHaveBeenCalled();
+    expect(title(host)).toBe('Address book');
+    expect(button(host, 'Edit Bo')).toBeNull();
+    expect(button(host, 'Edit Alex')).not.toBeNull();
+  });
+
+  it('adds with a plain Save and goes back to the list', async () => {
+    const { host, onPick } = sheet([], { mode: 'manage' });
+    await flush();
+    expect(host.textContent).toContain('No contacts yet.');
+    fireEvent(button(host, 'New contact'), 'click');
+    type(fieldByLabel(host, 'Name'), 'Bo');
+    type(fieldByLabel(host, 'Address'), B);
+    expect(button(host, 'Save and use')).toBeNull();
+    fireEvent(host.querySelector('form'), 'submit');
+    await flush();
+    expect(button(host, 'Edit Bo')).not.toBeNull();
+    expect(onPick).not.toHaveBeenCalled();
+  });
+});
+
+describe('book route', () => {
+  it('shows the sheet in manage mode and leaves to where it came from', async () => {
+    const { client } = mockClient([{ name: 'Alex', address: A }]);
+    const { host } = render(
+      <ClientProvider client={client}>
+        <Router<BookRoute | { name: 'settings.main' }>
+          table={{ ...bookRoutes, 'settings.main': () => <p>SETTINGS</p> }}
+          initial={{ name: 'book' }}
+        />
+      </ClientProvider>,
+    );
+    await flush();
+    expect(button(host, 'Edit Alex')).not.toBeNull();
+    fireEvent(button(host, 'Back'), 'click');
+    expect(host.textContent).toBe('SETTINGS');
   });
 });

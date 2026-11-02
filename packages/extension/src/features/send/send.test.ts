@@ -258,6 +258,11 @@ describe('send.prepare', () => {
     const both = await quoteOf(setup({ balances: { ubze: 9_000_000n, [FACTORY]: 9_000_000n } }));
     expect(both.fee.denom).toBe('ubze');
     expect(both.options.map((o: { denom: string }) => o.denom)).toEqual(['ubze', FACTORY]);
+    // The fee sheet shows what the payer holds of each option.
+    expect(both.options.map((o: { balance?: string }) => o.balance)).toEqual([
+      '9000000',
+      '9000000',
+    ]);
 
     const sentToken = setup({
       balances: { [FACTORY]: 9_000_000n, [OTHER]: 9_000_000n },

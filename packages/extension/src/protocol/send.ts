@@ -40,6 +40,8 @@ export interface FeeChoice {
   amount: string;
   symbol: string;
   decimals: number;
+  /** Base units of `denom` the paying address holds; set on send quotes (the fee sheet shows it). */
+  balance?: string;
 }
 
 /** What the review screen shows. Everything here is exactly what `send.submit` signs. */

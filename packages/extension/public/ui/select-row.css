@@ -1,0 +1,78 @@
+/* SelectRow: a row that opens a choice sheet. */
+.bp-select-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border-radius: 12px;
+  background: var(--bp-card);
+  color: var(--bp-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.35s ease;
+}
+
+.bp-select-row:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+.bp-select-row:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.bp-select-row-field {
+  padding: 10px 12px;
+  border: 1px solid var(--bp-line-strong);
+}
+
+.bp-select-row-quiet {
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--bp-line);
+  font-size: 13px;
+}
+
+.bp-select-row-caption {
+  flex: 1;
+  color: var(--bp-muted);
+}
+
+.bp-select-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bp-select-row-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bp-select-row-sub {
+  overflow: hidden;
+  color: var(--bp-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bp-select-row-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bp-select-row-field .bp-select-row-value {
+  font-size: 13px;
+}
+
+.bp-select-row > .bp-icon {
+  flex: none;
+  color: var(--bp-muted);
+}

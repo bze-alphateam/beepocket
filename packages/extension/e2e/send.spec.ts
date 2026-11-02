@@ -119,8 +119,8 @@ async function openSend(context: BrowserContext, extensionId: string): Promise<P
   await page.reload();
   await page.getByRole('button', { name: 'Send BZE' }).click();
   await page.getByRole('button', { name: 'Open address book' }).click();
-  await page.getByRole('button', { name: /Alex/ }).click();
-  await expect(page.getByText('Alex · Contact')).toBeVisible();
+  await page.getByRole('button', { name: 'Choose Alex' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'address book' })).toContainText('Alex');
   await page.getByRole('textbox', { name: 'Amount' }).fill('1');
   await page.getByRole('button', { name: 'Review', exact: true }).click();
   return page;
