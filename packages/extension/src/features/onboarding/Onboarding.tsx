@@ -29,6 +29,14 @@ const FLOWS: Record<Path, StepName[]> = {
  * The first-run flow. The recovery phrase lives only in this component's state: it is dropped
  * as soon as the wallet exists, and again when the component unmounts.
  */
+function linkStrip(symbol: string | null, host: string | null): string | undefined {
+  if (symbol === null)
+    return host === null ? undefined : t('onboarding.link.stripNoToken', { host });
+  return host === null
+    ? t('onboarding.link.stripNoSite', { symbol })
+    : t('onboarding.link.strip', { symbol, host });
+}
+
 export function Onboarding({ route }: { route: OnboardingRoute }) {
   const client = useClient();
   const { navigate } = useRoute();
@@ -52,12 +60,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
       live = false;
     };
   }, [client, route.prefillCode, route.link]);
-  const strip =
-    route.link === undefined
-      ? undefined
-      : linkSymbol === null
-        ? t('onboarding.link.stripNoToken', { host: route.link.host })
-        : t('onboarding.link.strip', { symbol: linkSymbol, host: route.link.host });
+  const strip = route.link === undefined ? undefined : linkStrip(linkSymbol, route.link.host);
 
   const generate = () => {
     setPhrase(null);

@@ -26,7 +26,7 @@ interface Tab {
   lastAccessed?: number;
 }
 
-function rig(tabs: Tab[] = []) {
+function rig(tabs: Tab[] = [], opts: { failCreate?: boolean; noTabs?: boolean } = {}) {
   const session = new MemorySession();
   const open = new Set<number>();
   const created: { url: string; width: number; height: number }[] = [];
@@ -35,10 +35,11 @@ function rig(tabs: Tab[] = []) {
   let next = 10;
   const windows: LinkWindowsLike = {
     create: (info) => {
+      if (opts.failCreate) return Promise.reject(new Error('no window'));
       const id = next++;
       open.add(id);
       created.push({ url: info.url, width: info.width, height: info.height });
-      return Promise.resolve({ id, tabs: [{ id: id * 100 }] });
+      return Promise.resolve(opts.noTabs ? { id } : { id, tabs: [{ id: id * 100 }] });
     },
     get: (id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('no window'))),
     update: (id) => {
@@ -117,6 +118,24 @@ describe('a link from the add page', () => {
     expect(await t.service.current()).toMatchObject({ code: 'ubze', host: 'getbze.com' });
   });
 
+  it('opens a fresh window when the open one has no known tab to reload', async () => {
+    const t = rig([], { noTabs: true });
+    await t.service.receive({ documentId: 'd1' }, { code: GOLD, referrer: '' });
+    await t.service.receive({ documentId: 'd2' }, { code: 'ubze', referrer: '' });
+    expect(t.created).toHaveLength(2);
+    expect(t.reloaded).toEqual([]);
+  });
+
+  it('does not remember a document whose window failed to open', async () => {
+    const opts = { failCreate: true };
+    const t = rig([], opts);
+    const message = { code: GOLD, referrer: '' };
+    await expect(t.service.receive({ documentId: 'd1' }, message)).rejects.toThrow();
+    opts.failCreate = false;
+    await t.service.receive({ documentId: 'd1' }, message);
+    expect(t.created).toHaveLength(1);
+  });
+
   it('opens a new window when the old one was closed', async () => {
     const t = rig();
     await t.service.receive({ documentId: 'd1' }, { code: GOLD, referrer: '' });
@@ -185,11 +204,11 @@ describe('first install', () => {
   it('drops a bad from and never calls the link known', async () => {
     const bad = rig([tab(GOLD, 1, 'javascript:alert(1)')]);
     await bad.service.installed('install');
-    expect(await bad.service.current()).toMatchObject({ host: 'getbze.com', known: false });
+    expect(await bad.service.current()).toMatchObject({ host: null, known: false });
 
     const insecure = rig([tab(GOLD, 1, 'http://dex.getbze.com')]);
     await insecure.service.installed('install');
-    expect(await insecure.service.current()).toMatchObject({ host: 'getbze.com', known: false });
+    expect(await insecure.service.current()).toMatchObject({ host: null, known: false });
 
     const claimed = rig([tab(GOLD, 1, 'https://dex.getbze.com')]);
     await claimed.service.installed('install');

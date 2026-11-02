@@ -16,7 +16,7 @@ import type { Client } from '../../protocol/client';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { HomeEnvProvider, type HomeEnv } from '../home/env';
 import { LockEnvProvider } from '../lock/env';
-import { AddTokenScreen, shortCode } from './AddTokenScreen';
+import { AddTokenScreen } from './AddTokenScreen';
 
 afterEach(cleanup);
 
@@ -150,7 +150,7 @@ describe('the Add a token screen', () => {
     expect(t.host.textContent).toContain('dex.getbze.com sent you here');
     expect(t.host.textContent).toContain('GOLD');
     expect(t.host.textContent).toContain('Gold Coin');
-    expect(t.host.textContent).toContain(shortCode(GOLD.denom));
+    expect(t.host.textContent).toContain(GOLD.denom);
     expect(t.host.textContent).toContain(en['addtoken.what']);
     expect(t.applied['--bp-primary']).toBe('#FFB000');
     expect(t.host.textContent).not.toContain(en['addtoken.unknown']);
@@ -177,6 +177,34 @@ describe('the Add a token screen', () => {
   ])('warns for %s', async (_name, view) => {
     const t = await mounted(view);
     expect(t.host.textContent).toContain(en['addtoken.unknown']);
+  });
+
+  it('shows the whole code, not a shortened one', async () => {
+    const long = `factory/bze1${'q'.repeat(38)}/${'a'.repeat(40)}`;
+    const t = await mounted(link({ code: long }), {
+      'tokens.lookup': () => ok({ ...GOLD, denom: long }),
+    });
+    expect(t.host.textContent).toContain(long);
+  });
+
+  it.each([
+    [
+      'a held token',
+      { ...GOLD, symbol: 'Gold' },
+      [BZE, { ...GOLD, denom: 'factory/bze1other/gold' }],
+    ],
+    ['the native coin', { ...GOLD, symbol: 'bze' }, [BZE]],
+  ])('warns when the symbol imitates %s', async (_name, found, held) => {
+    const t = await mounted(link(), {
+      'tokens.lookup': () => ok(found),
+      'tokens.preferred': () => ok(held),
+    });
+    expect(t.host.textContent).toContain('different code');
+  });
+
+  it('does not warn about lookalikes for an ordinary token', async () => {
+    const t = await mounted(link());
+    expect(t.host.textContent).not.toContain('different code');
   });
 
   it('says "A link" when there is no referrer', async () => {
@@ -261,15 +289,5 @@ describe('the Add a token screen', () => {
   it('falls back to the normal wallet when no link waits', async () => {
     const t = await mounted({ status: 'none' });
     expect(t.seen.at(-1)).toEqual({ name: 'lock.root' });
-  });
-});
-
-describe('shortCode', () => {
-  it('keeps short codes and trims long ones in the middle', () => {
-    expect(shortCode('ubze')).toBe('ubze');
-    const short = shortCode(GOLD.denom);
-    expect(short.length).toBeLessThan(GOLD.denom.length);
-    expect(short.startsWith('factory/bze1abcd')).toBe(true);
-    expect(short.endsWith('/gold')).toBe(true);
   });
 });

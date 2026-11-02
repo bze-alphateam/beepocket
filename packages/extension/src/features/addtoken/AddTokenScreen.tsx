@@ -59,7 +59,7 @@ export function AddTokenScreen({ close }: AddTokenScreenProps) {
       navigate({
         name: 'onboarding.welcome',
         prefillCode: link.code,
-        link: { host: link.host ?? 'getbze.com', known: link.known },
+        link: { host: link.host, known: link.known },
       });
       return;
     }
@@ -102,16 +102,25 @@ export function AddTokenScreen({ close }: AddTokenScreenProps) {
   return <AddCard link={load.link} close={close} />;
 }
 
+const NATIVE_SYMBOL = 'BZE';
+
 type Lookup =
   | { status: 'loading' }
   | { status: 'failed' }
   | { status: 'unknown' }
-  | { status: 'found'; token: ListedToken; preferred: boolean; branding: DenomBranding | null };
+  | {
+      status: 'found';
+      token: ListedToken;
+      preferred: boolean;
+      lookalike: boolean;
+      branding: DenomBranding | null;
+    };
 
-/** `factory/bze1…/gold` becomes `factory/bze1abc…/gold`: enough to recognise, short enough to fit. */
-export function shortCode(code: string): string {
-  const max = 28;
-  return code.length <= max ? code : `${code.slice(0, 16)}…${code.slice(-9)}`;
+/** The same symbol as the native token or a token already held, under a different code. */
+function looksLikeAnother(token: ListedToken, held: ListedToken[]): boolean {
+  const symbol = token.symbol.toUpperCase();
+  if (token.kind !== 'native' && symbol === NATIVE_SYMBOL) return true;
+  return held.some((x) => x.denom !== token.denom && x.symbol.toUpperCase() === symbol);
 }
 
 function AddCard({ link, close }: { link: Link; close: () => void }) {
@@ -157,6 +166,7 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
         status: 'found',
         token: found.value,
         preferred: preferred.value.some((x) => x.denom === found.value.denom),
+        lookalike: looksLikeAnother(found.value, preferred.value),
         branding,
       });
     })();
@@ -236,8 +246,8 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
               <b>{lookup.token.symbol}</b> · {lookup.token.name}
               <dl class="bp-dapp-facts">
                 <dt>{t('addtoken.code')}</dt>
-                <dd class="bp-dapp-origin" title={link.code}>
-                  {shortCode(link.code)}{' '}
+                <dd class="bp-dapp-origin">
+                  {link.code}{' '}
                   <button type="button" class="bp-add-copy" onClick={copy}>
                     {copied ? t('addtoken.copied') : t('addtoken.copy')}
                   </button>
@@ -246,6 +256,11 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
             </section>
             <p class="bp-dapp-sub">{t('addtoken.what')}</p>
             {!link.known && <Banner tone="amber">{t('addtoken.unknown')}</Banner>}
+            {lookup.lookalike && (
+              <Banner tone="amber">
+                {t('addtoken.lookalike', { symbol: lookup.token.symbol })}
+              </Banner>
+            )}
             {failed && <Banner tone="red">{t('addtoken.failed')}</Banner>}
             <div class="bp-add-actions">
               <Button variant="quiet" onClick={finish}>

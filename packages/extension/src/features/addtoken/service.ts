@@ -83,11 +83,11 @@ export class AddTokenService {
     const valid = validCode(code);
     if (valid === null) return refuse('Not a token code.');
     if ((await this.deps.session.get(DOCUMENT_KEY)) === from.documentId) return { accepted: true };
-    await this.deps.session.set(DOCUMENT_KEY, from.documentId);
     await this.show(
       { code: valid, referrer: httpsOrigin(referrer) ?? '', source: 'link' },
       LINK_WINDOW_URL,
     );
+    await this.deps.session.set(DOCUMENT_KEY, from.documentId);
     return { accepted: true };
   }
 
@@ -112,7 +112,7 @@ export class AddTokenService {
     if (!isPending(stored)) return { status: 'none' };
     // A link that arrived during install is always unknown: its `from` could be anything.
     const known = stored.source === 'link' && isKnownSite(stored.referrer);
-    const host = hostOf(stored.referrer) ?? (stored.source === 'install' ? 'getbze.com' : null);
+    const host = hostOf(stored.referrer);
     return { status: 'link', source: stored.source, code: stored.code, host, known };
   }
 
@@ -127,10 +127,13 @@ export class AddTokenService {
     if (isWindowRef(stored)) {
       try {
         await this.deps.windows.get(stored.id);
-        // The open window may sit on another screen: reloading makes it read the new link.
-        if (stored.tabId !== undefined) await this.deps.tabs.update(stored.tabId, { url });
-        await this.deps.windows.update(stored.id, { focused: true });
-        return;
+        // Reload so a new link never leaves the old token showing. A window whose tab is not
+        // known cannot be reloaded: a fresh one replaces it below.
+        if (stored.tabId !== undefined) {
+          await this.deps.tabs.update(stored.tabId, { url });
+          await this.deps.windows.update(stored.id, { focused: true });
+          return;
+        }
       } catch {
         // closed since: open a new one
       }
