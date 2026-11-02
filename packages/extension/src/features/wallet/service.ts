@@ -29,6 +29,7 @@ import type { SessionStorage, Storage } from '../../platform';
 import { FULL_LOCK_ALARM, WEAK_LOCK_ALARM, type Alarms } from './alarms';
 import {
   defaultLabel,
+  dropInvalidSites,
   MAX_LABEL_LENGTH,
   newProfile,
   validProfile,
@@ -182,10 +183,11 @@ export class WalletService {
       if ('status' in attempt.value) return ok(attempt.value);
       const { key } = attempt.value;
       try {
-        const profile = await this.loadProfile(key);
-        if (!profile.ok) return profile;
+        const loaded = await this.loadProfile(key);
+        if (!loaded.ok) return loaded;
+        const profile = await this.withPubKeys(key, attempt.value.vault, loaded.value);
         await this.deps.session.set(SESSION_KEY, toBase64(key));
-        await this.deps.session.set(SESSION_PROFILE, profile.value);
+        await this.deps.session.set(SESSION_PROFILE, profile);
         await this.rearm();
         await this.notify();
         return ok({ status: 'ok' });
@@ -203,8 +205,13 @@ export class WalletService {
       const attempt = await this.attempt(password);
       if (!attempt.ok) return attempt;
       if ('status' in attempt.value) return ok(attempt.value);
-      const { key } = attempt.value;
+      const { key, vault } = attempt.value;
       try {
+        const current = await this.sessionProfile();
+        if (current !== null) {
+          const filled = await this.withPubKeys(key, vault, current);
+          if (filled !== current) await this.deps.session.set(SESSION_PROFILE, filled);
+        }
         await this.deps.session.set(SESSION_KEY, toBase64(key));
       } finally {
         key.fill(0);
@@ -455,7 +462,7 @@ export class WalletService {
     const record = await this.deps.storage.get(PROFILE_KEY);
     if (!isRecord(record)) return fail(Codes.profileInvalid, 'The stored wallet data is damaged.');
     try {
-      const profile = await this.deps.vault.openProfile<unknown>(key, record);
+      const profile = dropInvalidSites(await this.deps.vault.openProfile<unknown>(key, record));
       if (!validProfile(profile)) {
         return fail(Codes.profileInvalid, 'The stored wallet data is damaged.');
       }
@@ -469,6 +476,41 @@ export class WalletService {
         return fail(Codes.profileInvalid, 'The stored wallet data is damaged.');
       }
       throw e;
+    }
+  }
+
+  /**
+   * Fills in the public key of every address that lacks one (profiles from before dapps), now
+   * that the recovery phrase can be opened, and stores the sealed result. Returns the same
+   * object when nothing was missing. A failure leaves the profile as it was: it is retried
+   * on the next unlock.
+   */
+  private async withPubKeys(
+    key: Uint8Array,
+    vault: EncryptedRecord,
+    profile: Profile,
+  ): Promise<Profile> {
+    if (profile.addresses.every((a) => a.pubKey !== undefined)) return profile;
+    try {
+      const mnemonic = await this.deps.vault.openMnemonic(key, vault);
+      const filled: Profile = {
+        ...profile,
+        addresses: profile.addresses.map((a) => {
+          if (a.pubKey !== undefined) return a;
+          const account = deriveAccount(mnemonic, a.index);
+          account.privKey.fill(0);
+          return { ...a, pubKey: toBase64(account.pubKey) };
+        }),
+      };
+      const record = await this.deps.storage.get(PROFILE_KEY);
+      if (!isRecord(record) || !validProfile(filled)) return profile;
+      await this.deps.storage.set(
+        PROFILE_KEY,
+        await this.deps.vault.sealProfile(key, record, filled),
+      );
+      return filled;
+    } catch {
+      return profile;
     }
   }
 
@@ -506,7 +548,12 @@ export class WalletService {
   private profileAddress(mnemonic: string, index: number): ProfileAddress {
     const account = deriveAccount(mnemonic, index);
     account.privKey.fill(0);
-    return { index, label: defaultLabel(index), address: account.address };
+    return {
+      index,
+      label: defaultLabel(index),
+      address: account.address,
+      pubKey: toBase64(account.pubKey),
+    };
   }
 
   /** Index 0 plus every of 0…4 that has a balance or an account; a failed lookup proves nothing. */

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createServer, type Server } from 'node:http';
 
 export interface MockReply {
@@ -124,6 +126,27 @@ export function startMockServer(port = 0): Promise<{ server: Server; url: string
       const address = server.address();
       const actual = typeof address === 'object' && address ? address.port : port;
       resolve({ server, url: `http://127.0.0.1:${String(actual)}` });
+    });
+  });
+}
+
+/** Serves the plain test dapp page at `http://localhost:<port>/dapp/`. */
+export function startDappServer(): Promise<{ server: Server; url: string }> {
+  const page = readFileSync(resolve(import.meta.dirname, 'dapp/index.html'));
+  const server = createServer((req, res) => {
+    if (req.url === '/dapp/') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(page);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  return new Promise((done) => {
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      done({ server, url: `http://localhost:${String(port)}/dapp/` });
     });
   });
 }

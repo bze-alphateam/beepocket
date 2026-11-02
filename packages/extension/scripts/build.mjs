@@ -37,6 +37,22 @@ await build({
   logLevel: 'warning',
 });
 
+// Content scripts are classic scripts, not modules.
+await build({
+  entryPoints: {
+    inpage: join(root, 'src/dapp/inpage/main.ts'),
+    relay: join(root, 'src/dapp/relay-main.ts'),
+  },
+  outdir: dist,
+  bundle: true,
+  format: 'iife',
+  target: 'chrome120',
+  minify: true,
+  sourcemap: false,
+  legalComments: 'none',
+  logLevel: 'warning',
+});
+
 cpSync(join(root, 'public'), dist, { recursive: true });
 
 function listFiles(dir) {

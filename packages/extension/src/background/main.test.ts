@@ -38,6 +38,7 @@ class FailingRemove extends FakeArea {
 
 function start(session: FakeArea = new FakeArea()) {
   const local = new FakeArea();
+  const tabMessages: { tabId: number; message: unknown; documentId: string | undefined }[] = [];
   let listener: Listener | undefined;
   let onAlarm: ((alarm: { name: string }) => void) | undefined;
   startBackground({
@@ -50,6 +51,18 @@ function start(session: FakeArea = new FakeArea()) {
             listener = l;
           },
         },
+      },
+      tabs: {
+        sendMessage: (tabId, message, options) => {
+          tabMessages.push({ tabId, message, documentId: options?.documentId });
+          return Promise.resolve();
+        },
+        onRemoved: { addListener: () => undefined },
+      },
+      windows: {
+        create: () => Promise.resolve({ id: 1 }),
+        get: () => Promise.resolve({}),
+        update: () => Promise.resolve({}),
       },
       alarms: {
         create: () => Promise.resolve(),
@@ -75,7 +88,7 @@ function start(session: FakeArea = new FakeArea()) {
       if (async !== true) resolve({ async, reply });
     });
   const alarm = (name: string) => onAlarm?.({ name });
-  return { send, local, session, alarm };
+  return { send, local, session, alarm, tabMessages };
 }
 
 const ping = { method: 'app.ping', payload: { nonce: 'abc' } };
@@ -148,5 +161,84 @@ describe('startBackground', () => {
     await vi.waitFor(() => {
       expect(t.session.data.size).toBe(0);
     });
+  });
+});
+
+const PAGE: MessageSender = {
+  id: 'me',
+  url: 'https://dex.getbze.com/swap',
+  origin: 'https://dex.getbze.com',
+  frameId: 0,
+  documentId: 'doc-1',
+  tab: { id: 4 },
+};
+const ID = 'ab'.repeat(16);
+const connect = (extra: object = {}) => ({
+  dapp: { id: ID, method: 'getKey', params: { chainId: 'beezee-1' }, ...extra },
+});
+
+describe('dapp channel', () => {
+  it('acks a well-formed content script at once and answers the exact document later', async () => {
+    const { send, tabMessages } = start();
+    const { async, reply } = await send(connect(), PAGE);
+    expect(async).toBe(true);
+    expect(reply).toEqual({ accepted: true });
+    await vi.waitFor(() => {
+      expect(tabMessages).toHaveLength(1);
+    });
+    expect(tabMessages[0]).toMatchObject({
+      tabId: 4,
+      documentId: 'doc-1',
+      message: { dapp: { id: ID, error: { code: 'not-connected' } } },
+    });
+  });
+
+  it.each([
+    ['a missing tab', { ...PAGE, tab: undefined }],
+    ['a subframe', { ...PAGE, frameId: 1 }],
+    ['no frame id', { ...PAGE, frameId: undefined }],
+    ['no document id', { ...PAGE, documentId: undefined }],
+    ['a file: page', { ...PAGE, url: 'file:///a.html', origin: 'file://' }],
+    ['a null origin', { ...PAGE, origin: 'null' }],
+    ['a chrome: page', { ...PAGE, url: 'chrome://settings/', origin: 'chrome://settings' }],
+    ['a plain http page', { ...PAGE, url: 'http://example.com/', origin: 'http://example.com' }],
+    [
+      'http on a look-alike of localhost',
+      { ...PAGE, url: 'http://localhost.evil.example/', origin: 'http://localhost.evil.example' },
+    ],
+    ['another extension', { ...PAGE, id: 'other' }],
+    ['an origin with a path', { ...PAGE, origin: 'https://dex.getbze.com/swap' }],
+  ])('ignores dapp messages from %s', async (_name, sender) => {
+    const { send, tabMessages } = start();
+    const { async, reply } = await send(connect(), sender);
+    expect(async).toBeUndefined();
+    expect(reply).toBeUndefined();
+    expect(tabMessages).toHaveLength(0);
+  });
+
+  it('accepts http://localhost with a port', async () => {
+    const { send } = start();
+    const { reply } = await send(connect(), {
+      ...PAGE,
+      url: 'http://localhost:3000/dapp/',
+      origin: 'http://localhost:3000',
+    });
+    expect(reply).toEqual({ accepted: true });
+  });
+
+  it('never lets a content script reach the popup registry', async () => {
+    const { send } = start();
+    expect((await send(ping, PAGE)).reply).toBeUndefined();
+    for (const method of ['app.ping', 'wallet.unlock', 'dapp.answer']) {
+      const { reply } = await send({ dapp: { id: ID, method, params: {} } }, PAGE);
+      expect(reply).toEqual({ error: { code: 'invalid-request', message: 'Unknown method.' } });
+    }
+  });
+
+  it('never lets an own page reach the dapp registry', async () => {
+    const { send, tabMessages } = start();
+    const { reply } = await send(connect(), OWN);
+    expect(reply).toMatchObject({ ok: false, error: { code: 'bad_request' } });
+    expect(tabMessages).toHaveLength(0);
   });
 });

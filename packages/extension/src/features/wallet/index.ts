@@ -7,7 +7,13 @@ import { WalletService, type WalletDeps } from './service';
 export { registerWalletHandlers } from './handlers';
 export { ChromeAlarms, type AlarmEventLike, type AlarmsLike, type Alarms } from './alarms';
 export { SESSION_KEY, SESSION_PROFILE, WalletService, type WalletDeps } from './service';
-export type { Profile, ProfileAddress, ProfileSettings } from './profile';
+export type {
+  ConnectedSite,
+  Profile,
+  ProfileAddress,
+  ProfileSettings,
+  SitesByOrigin,
+} from './profile';
 
 /** Composition root of the wallet: real core `Vault` over the platform adapters. */
 export function createWalletService(

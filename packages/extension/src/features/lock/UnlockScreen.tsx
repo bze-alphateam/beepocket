@@ -10,8 +10,17 @@ import { homeTarget, importTarget } from './targets';
 type Load =
   { status: 'loading' } | { status: 'failed' } | { status: 'ready'; retryAt: number | null };
 
+export interface UnlockPanelProps {
+  /** Replaces going to the home screen (the request window continues with its request). */
+  onUnlocked?: () => void;
+  /** The request window has no way out through Import. */
+  noImport?: boolean;
+  /** Names the site that is waiting, under the title. */
+  subtitle?: string;
+}
+
 /** Full-lock screen: password, throttle countdown, and the quiet way out through Import. */
-export function UnlockScreen() {
+export function UnlockPanel(props: UnlockPanelProps) {
   const client = useClient();
   const { navigate } = useRoute();
   const [load, setLoad] = useState<Load>({ status: 'loading' });
@@ -32,7 +41,7 @@ export function UnlockScreen() {
       <main class="bp-lock">
         <img src="icons/icon-48.png" width="48" height="48" alt="" />
         <h1>{t('lock.title')}</h1>
-        <p class="bp-lock-sub">{t('lock.subtitle')}</p>
+        <p class="bp-lock-sub">{props.subtitle ?? t('lock.subtitle')}</p>
         {load.status === 'loading' && <Spinner />}
         {load.status === 'failed' && <Banner tone="red">{t('lock.loadFailed')}</Banner>}
         {load.status === 'ready' && (
@@ -42,21 +51,31 @@ export function UnlockScreen() {
             retryAt={load.retryAt}
             check={(password) => client.call('wallet.unlock', { password })}
             onSuccess={() => {
-              navigate(homeTarget);
+              if (props.onUnlocked) props.onUnlocked();
+              else navigate(homeTarget);
             }}
           />
         )}
-        <button
-          type="button"
-          class="bp-lock-forgot"
-          onClick={() => {
-            navigate(importTarget);
-          }}
-        >
-          {t('lock.forgot')}
-        </button>
-        <small class="bp-lock-warning">{t('lock.forgotWarning')}</small>
+        {props.noImport !== true && (
+          <>
+            <button
+              type="button"
+              class="bp-lock-forgot"
+              onClick={() => {
+                navigate(importTarget);
+              }}
+            >
+              {t('lock.forgot')}
+            </button>
+            <small class="bp-lock-warning">{t('lock.forgotWarning')}</small>
+          </>
+        )}
       </main>
     </Layout>
   );
+}
+
+/** The unlock route of the popup. */
+export function UnlockScreen() {
+  return <UnlockPanel />;
 }

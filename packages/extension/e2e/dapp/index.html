@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Test dapp</title>
+  </head>
+  <body>
+    <h1>Test dapp</h1>
+    <button id="connect" type="button">Connect wallet</button>
+    <button id="get-key" type="button">Get key</button>
+    <p id="result" role="status"></p>
+    <script>
+      // A plain page that talks to the raw window.beepocket; the connector replaces it later.
+      const CHAIN_ID = 'beezee-1';
+      const result = document.getElementById('result');
+      const show = (call) =>
+        call().then(
+          (key) => {
+            result.textContent = 'address ' + key.address + ' name ' + key.name;
+          },
+          (error) => {
+            result.textContent = 'error ' + error.code;
+          },
+        );
+      document.getElementById('connect').addEventListener('click', () => {
+        void show(() => window.beepocket.connect(CHAIN_ID));
+      });
+      document.getElementById('get-key').addEventListener('click', () => {
+        void show(() => window.beepocket.getKey(CHAIN_ID));
+      });
+    </script>
+  </body>
+</html>
