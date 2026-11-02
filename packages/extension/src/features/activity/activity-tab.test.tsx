@@ -653,7 +653,7 @@ describe('ActivityTab names', () => {
     );
     await tick();
     const cps = [...host.querySelectorAll('.bp-act-cp')];
-    expect(cps.map((c) => c.textContent)).toEqual(['Alex', 'Savings', 'bze1othe…othe']);
+    expect(cps.map((c) => c.textContent)).toEqual(['Alex', 'Savings', 'bze1oth…rothe']);
     expect(cps.map((c) => c.hasAttribute('data-mono'))).toEqual([false, false, true]);
     expect(host.querySelector('a.bp-act-card')?.getAttribute('aria-label')).toContain('Main Alex');
   });

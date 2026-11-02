@@ -59,6 +59,10 @@ function txUrl(explorer: string, hash: string | null): string | undefined {
 /** The wallet's own names for addresses: contacts first, then its own labels. */
 type Names = ReadonlyMap<string, string>;
 
+/** "bze1q7z…2l0yc": the board's form of an address, short enough to leave the label room. */
+const compact = (address: string) =>
+  address.length > 14 ? `${address.slice(0, 7)}…${address.slice(-5)}` : address;
+
 /** Strips the + or − of an amount whose direction the wallet can't vouch for. */
 const unsigned = (value: string) => value.replace(/^[+−]/, '');
 
@@ -80,10 +84,12 @@ function ActivityCard({ item, explorer, known, names }: CardProps) {
   const parts = item.amounts
     .map((a) => amountParts(a, known))
     .map((p) => (look.dir === null ? { ...p, value: unsigned(p.value) } : p));
-  const named = item.counterpartyAddress === null ? undefined : names.get(item.counterpartyAddress);
-  const counterparty = named ?? item.counterparty;
+  const full = item.counterpartyAddress;
+  const named = full === null ? undefined : names.get(full);
+  // Scan's short address, when it has no name for the party: shown in the board's compact form.
   const mono =
-    named === undefined && counterparty !== null && /^bze1[0-9a-z…]+$/.test(counterparty);
+    named === undefined && item.counterparty !== null && /^bze1[0-9a-z…]+$/.test(item.counterparty);
+  const counterparty = named ?? (mono && full !== null ? compact(full) : item.counterparty);
   const label = [
     title,
     parts
