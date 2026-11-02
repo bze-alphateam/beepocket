@@ -183,10 +183,10 @@
   min-width: 0;
 }
 
-/* A short address is already shortened: it never gets a second ellipsis, the label gives way. */
+/* The own label keeps its width (up to a cap); only the counterparty truncates, as on the board. */
 .bp-act-addr-label {
-  flex: 0 1 auto;
-  min-width: 24px;
+  flex-shrink: 0;
+  max-width: 60%;
   overflow: hidden;
   color: var(--bp-text-soft);
   font-weight: 600;
@@ -206,7 +206,6 @@
 }
 
 .bp-act-cp[data-mono] {
-  flex: none;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
