@@ -98,7 +98,12 @@ export function RequestScreen({ close }: RequestScreenProps) {
       void refresh();
     });
   }, [expiresAt, scheduler, clock, refresh]);
-  useEffect(() => () => cancelNext.current(), []);
+  useEffect(
+    () => () => {
+      cancelNext.current();
+    },
+    [],
+  );
   // The window hears about requests queued behind the one on screen by asking now and then.
   useEffect(
     () =>

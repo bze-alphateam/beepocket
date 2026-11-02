@@ -539,7 +539,9 @@ describe('the request queue in the window', () => {
     await settle();
     expect(t.host.querySelector('.bp-dapp-pill')).toBeNull();
     waiting = 2;
-    await act(() => ticks.forEach((f) => f()));
+    await act(() => {
+      for (const f of ticks) f();
+    });
     await settle();
     expect(t.host.querySelector('.bp-dapp-pill')?.textContent).toBe('1 of 2');
     expect(t.host.textContent).toContain('exactly one address');
