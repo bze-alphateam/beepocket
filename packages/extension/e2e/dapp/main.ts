@@ -1,3 +1,4 @@
+import './shim';
 import { beePocketInfo, beePocketWallet } from '@bze/beepocket-connector';
 import { WalletManager, type CosmosWallet } from '@interchain-kit/core';
 

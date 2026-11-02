@@ -134,13 +134,14 @@ export function startMockServer(port = 0): Promise<{ server: Server; url: string
 let dappScript: Promise<string> | undefined;
 
 /**
- * interchain-kit also carries Node-only code for the Solana and Ethereum wallets; a dapp's
- * bundler stubs it out and so does this one. The BeeZee flow never reaches it.
+ * interchain-kit also carries Node-only code for the Solana and Ethereum wallets (`stream`,
+ * `crypto`), which a dapp's bundler stubs out and so does this one, and an `@noble/hashes/sha3`
+ * import without the `.js` its package exports map wants.
  */
-const stubNodeOnly: Plugin = {
-  name: 'stub-node-only',
+const fixInterchainKit: Plugin = {
+  name: 'fix-interchain-kit',
   setup(esbuild) {
-    esbuild.onResolve({ filter: /^(stream|crypto|@noble\/hashes\/sha3)$/ }, (args) => ({
+    esbuild.onResolve({ filter: /^(stream|crypto)$/ }, (args) => ({
       path: args.path,
       namespace: 'stub',
     }));
@@ -148,6 +149,9 @@ const stubNodeOnly: Plugin = {
       contents: 'exports.Transform = class {}; exports.Stream = class {};',
       loader: 'js',
     }));
+    esbuild.onResolve({ filter: /^@noble\/hashes\/sha3$/ }, (args) =>
+      esbuild.resolve('@noble/hashes/sha3.js', { resolveDir: args.resolveDir, kind: args.kind }),
+    );
   },
 };
 
@@ -167,7 +171,7 @@ function bundleDapp(): Promise<string> {
     platform: 'browser',
     define: { global: 'globalThis', 'process.env.NODE_ENV': '"test"' },
     banner: { js: 'globalThis.process ??= { env: {}, versions: {}, browser: true };' },
-    plugins: [stubNodeOnly],
+    plugins: [fixInterchainKit],
     logLevel: 'error',
   }).then((out) => out.outputFiles[0]?.text ?? '');
   return dappScript;
