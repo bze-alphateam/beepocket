@@ -167,9 +167,10 @@ test('in the weak lock the sign screen goes through Unlock and approve', async (
         setup.evaluate(
           async (): Promise<string> =>
             (
-              (await chrome.runtime.sendMessage({ method: 'wallet.state', payload: {} })) as {
-                value: { state: string };
-              }
+              await chrome.runtime.sendMessage<unknown, { value: { state: string } }>({
+                method: 'wallet.state',
+                payload: {},
+              })
             ).value.state,
         ),
       )

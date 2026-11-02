@@ -246,14 +246,12 @@ describe('the sign screen', () => {
     const t = signRig(SIGN);
     await settle();
     fireEvent(
-      [...t.host.querySelectorAll('button')].find((b) => b.textContent.includes('▾')) as Element,
+      [...t.host.querySelectorAll('button')].find((b) => b.textContent.includes('▾')),
       'click',
     );
     await settle();
     fireEvent(
-      [...document.querySelectorAll('button')].find((b) =>
-        b.textContent.startsWith('OTH'),
-      ) as Element,
+      [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('OTH')),
       'click',
     );
     await settle();
