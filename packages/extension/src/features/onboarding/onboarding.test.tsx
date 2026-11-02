@@ -365,13 +365,61 @@ describe('import flow', () => {
     typeWords(host, PHRASE_24);
     await click(host, '12 words');
     expect(cells(host)).toHaveLength(12);
-    // The words past 12 are dropped, not hidden: back on 24 the extra cells are empty.
+    // Back on 24, the words typed into cells 13–24 are still there.
     await click(host, '24 words');
-    expect(
-      cells(host)
-        .slice(12)
-        .every((c) => c.value === ''),
-    ).toBe(true);
+    expect(cells(host).map((c) => c.value)).toEqual(PHRASE_24.split(' '));
+  });
+
+  it('on 12, imports only the first 12 words even with 13–24 kept for later', async () => {
+    const client = mockClient(baseHandlers);
+    const { host } = await toImport(client);
+    await click(host, '24 words');
+    typeWords(host, `${PHRASE_12} ${'zoo '.repeat(11)}zoo`);
+    await click(host, '12 words');
+    await click(host, 'Continue');
+    await submitPassword(host);
+    expect(client.calls.find(([m]) => m === 'wallet.importWallet')?.[1]).toEqual({
+      password: 'longenough1',
+      mnemonic: PHRASE_12,
+    });
+  });
+
+  it.each([
+    ['13 words on 12 cells', 12, 13],
+    ['25 words on 24 cells', 24, 25],
+  ])('a paste of %s writes nothing and gives the count', async (_, length, count) => {
+    const { host } = await toImport(mockClient(baseHandlers));
+    if (length === 24) await click(host, '24 words');
+    type(cells(host)[0], 'marble');
+    paste(cells(host)[3], Array.from({ length: count }, () => 'abandon').join(' '));
+    expect(cells(host)).toHaveLength(length);
+    expect(cells(host).map((c) => c.value)).toEqual([
+      'marble',
+      ...Array.from({ length: length - 1 }, () => ''),
+    ]);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      `${String(count)} words: a phrase has 12 or 24`,
+    );
+    // The next edit clears the line.
+    type(cells(host)[1], 'echo');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('a short paste that runs past the last cell writes nothing', async () => {
+    const { host } = await toImport(mockClient(baseHandlers));
+    paste(cells(host)[10], 'marble echo tribe');
+    expect(cells(host).every((c) => c.value === '')).toBe(true);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      '3 words: a phrase has 12 or 24',
+    );
+  });
+
+  it('the Paste button refuses a phrase that does not fit, too', async () => {
+    const env = mockEnv(Array.from({ length: 13 }, () => 'abandon').join(' '));
+    const { host } = await toImport(mockClient(baseHandlers), env);
+    await click(host, en['onboarding.import.paste']);
+    expect(cells(host).every((c) => c.value === '')).toBe(true);
+    expect(host.textContent).toContain('13 words: a phrase has 12 or 24');
   });
 
   it.each([
@@ -477,10 +525,15 @@ describe('import flow', () => {
 
   it('drops the typed words when going back to Welcome', async () => {
     const { host } = await toImport(mockClient(baseHandlers));
-    paste(cells(host)[0], PHRASE_12);
+    paste(cells(host)[0], PHRASE_24);
+    // On 12, cells 13–24 are out of sight but still held: going back must drop them too.
+    await click(host, '12 words');
     fireEvent(backButton(host), 'click');
     expect(host.textContent).toContain(en['onboarding.welcome.create']);
     await click(host, 'Import a recovery phrase');
+    expect(cells(host)).toHaveLength(12);
+    expect(cells(host).every((c) => c.value === '')).toBe(true);
+    await click(host, '24 words');
     expect(cells(host).every((c) => c.value === '')).toBe(true);
   });
 

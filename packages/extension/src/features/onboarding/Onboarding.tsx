@@ -5,10 +5,11 @@ import { homeTarget } from '../lock/targets';
 import { tokenColor } from '../home/format';
 import {
   Confirm,
+  IMPORT_CELLS,
   ImportPhrase,
   PasswordStep,
   Phrase,
-  resize,
+  phraseOf,
   Start,
   Tokens,
   Welcome,
@@ -25,8 +26,7 @@ const FLOWS: Record<Path, StepName[]> = {
   import: ['import', 'password', 'start', 'tokens'],
 };
 
-/** Import opens on 12 cells, as on the board; the length control switches to 24. */
-const blankWords = () => resize([], 12);
+const blankCells = () => Array.from({ length: IMPORT_CELLS }, () => '');
 
 /**
  * The first-run flow. The recovery phrase (made or typed) lives only in this component's state:
@@ -41,7 +41,9 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const [path, setPath] = useState<Path>(importFirst ? 'import' : 'create');
   const [phrase, setPhrase] = useState<string | null>(null);
   const [phraseFailed, setPhraseFailed] = useState(false);
-  const [importWords, setImportWords] = useState<string[]>(blankWords);
+  const [importCells, setImportCells] = useState<string[]>(blankCells);
+  // Import opens on 12 cells, as on the board; the length control switches to 24.
+  const [importLength, setImportLength] = useState<12 | 24>(12);
   const [importRejected, setImportRejected] = useState(false);
   // A token code that found a token makes the token step unnecessary.
   const [codeFound, setCodeFound] = useState(false);
@@ -80,7 +82,8 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const index = flow.indexOf(step);
   const forget = () => {
     setPhrase(null);
-    setImportWords(blankWords());
+    setImportCells(blankCells());
+    setImportLength(12);
     setImportRejected(false);
   };
   const back = () => {
@@ -161,11 +164,13 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
       return (
         <ImportPhrase
           frame={frame()}
-          words={importWords}
+          cells={importCells}
+          length={importLength}
           error={importRejected}
-          onWords={(words) => {
+          onChange={(cells, length) => {
             setImportRejected(false);
-            setImportWords(words);
+            setImportCells(cells);
+            setImportLength(length);
           }}
           onDone={() => {
             setStep('password');
@@ -177,7 +182,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
         <PasswordStep
           frame={frame()}
           mode={path}
-          mnemonic={path === 'create' ? (phrase ?? '') : importWords.join(' ')}
+          mnemonic={path === 'create' ? (phrase ?? '') : phraseOf(importCells, importLength)}
           onCreated={walletMade}
           onBadPhrase={() => {
             setImportRejected(true);

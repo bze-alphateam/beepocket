@@ -278,45 +278,63 @@ export const wordsOf = (text: string): string[] =>
 
 type PhraseLength = '12' | '24';
 
-/** Cells resized to `length`: extra words are dropped, never kept out of sight. */
-export function resize(words: readonly string[], length: number): string[] {
-  return Array.from({ length }, (_, i) => words[i] ?? '');
-}
+/** Every cell the import step can show; the length control picks how many are in use. */
+export const IMPORT_CELLS = 24;
+
+/** The active length's words, the phrase Continue checks and the wallet is made from. */
+export const phraseOf = (cells: readonly string[], length: 12 | 24): string =>
+  cells.slice(0, length).join(' ');
 
 /**
- * A pasted text spread over the cells: a whole 12- or 24-word phrase replaces them all (and sets
- * the length), anything else fills the cells from `at` on.
- */
-export function spread(words: readonly string[], text: string, at: number): string[] {
-  const parts = wordsOf(text);
-  if (parts.length === 12 || parts.length === 24) return parts;
-  const next = [...words];
-  parts.forEach((w, k) => {
-    if (at + k < next.length) next[at + k] = w;
-  });
-  return next;
-}
-
-/**
- * Import: one cell per word, checked against the BIP-39 list as the user types. The words live in
- * the parent (`Onboarding`), which drops them when the flow leaves the phrase behind.
+ * Import: one cell per word, checked against the BIP-39 list as the user types. All 24 cells live
+ * in the parent (`Onboarding`), which drops them when the flow leaves the phrase behind; on 12,
+ * cells 13–24 are kept out of sight so switching back to 24 restores them.
  */
 export function ImportPhrase(props: {
   frame: StepFrame;
-  words: readonly string[];
+  cells: readonly string[];
+  length: 12 | 24;
   /** The service refused the phrase (bad checksum after the password step). */
   error: boolean;
-  onWords: (words: string[]) => void;
+  onChange: (cells: string[], length: 12 | 24) => void;
   onDone: () => void;
 }) {
   const env = useOnboardingEnv();
-  const { words } = props;
+  const { cells, length } = props;
+  const words = cells.slice(0, length);
   // After a Continue that found unknown words, a word must be complete, not just a prefix.
   const [strict, setStrict] = useState(false);
   const [checksum, setChecksum] = useState(false);
-  const edit = (next: string[]) => {
+  // A paste that did not fit: its word count, shown instead of writing part of it.
+  const [refused, setRefused] = useState<number | null>(null);
+  const edit = (next: string[], nextLength: 12 | 24 = length) => {
     setChecksum(false);
-    props.onWords(next);
+    setRefused(null);
+    props.onChange(next, nextLength);
+  };
+  /**
+   * A whole 12- or 24-word phrase replaces every cell and sets the length. Fewer words fill the
+   * cells from `at` on when they fit; anything else writes nothing and says why.
+   */
+  const place = (text: string, at: number) => {
+    const parts = wordsOf(text);
+    if (parts.length === 12 || parts.length === 24) {
+      edit(
+        Array.from({ length: IMPORT_CELLS }, (_, i) => parts[i] ?? ''),
+        parts.length,
+      );
+      return;
+    }
+    if (at + parts.length > length) {
+      setChecksum(false);
+      setRefused(parts.length);
+      return;
+    }
+    const next = [...cells];
+    parts.forEach((w, k) => {
+      next[at + k] = w;
+    });
+    edit(next);
   };
   const bad = words.flatMap((w, i) =>
     w !== '' && !(strict ? isMnemonicWord(w) : isMnemonicPrefix(w)) ? [i] : [],
@@ -327,19 +345,23 @@ export function ImportPhrase(props: {
     // Read only here, on the user's tap: never on mount or on entering the step.
     void env.clipboard.readText().then(
       (text) => {
-        edit(spread(words, text, 0));
+        place(text, 0);
       },
       () => undefined,
     );
   };
   const submit = () => {
-    const check = validateMnemonic(words.join(' '));
+    const check = validateMnemonic(phraseOf(cells, length));
     if (check.ok) props.onDone();
     else if (check.reason === 'unknown-word') setStrict(true);
     else setChecksum(true);
   };
   let note;
-  if (first !== undefined) {
+  if (refused !== null) {
+    note = (
+      <InlineNote tone="error">{t('onboarding.import.countBad', { count: refused })}</InlineNote>
+    );
+  } else if (first !== undefined) {
     const word = words[first] ?? '';
     const suggestion = suggestMnemonicWord(word);
     const n = first + 1;
@@ -375,9 +397,9 @@ export function ImportPhrase(props: {
             { value: '12', label: t('onboarding.import.words12') },
             { value: '24', label: t('onboarding.import.words24') },
           ]}
-          value={words.length === 24 ? '24' : '12'}
+          value={length === 24 ? '24' : '12'}
           onChange={(v) => {
-            edit(resize(words, Number(v)));
+            edit([...cells], v === '24' ? 24 : 12);
           }}
         />
         <Button
@@ -393,12 +415,12 @@ export function ImportPhrase(props: {
         words={words}
         invalid={bad}
         onWordInput={(i, value) => {
-          const next = [...words];
+          const next = [...cells];
           next[i] = value.toLowerCase();
           edit(next);
         }}
         onPaste={(text, i) => {
-          edit(spread(words, text, i));
+          place(text, i);
         }}
       />
       {note}
