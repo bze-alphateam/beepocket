@@ -18,7 +18,7 @@ import {
   type FeeEstimate,
   type Random,
 } from '@beepocket/core';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 import type { Services } from '../background/services';
 import { ChromeSessionStorage, ChromeStorage } from '../platform';
 import { FakeArea } from '../platform/test-support';
@@ -70,7 +70,7 @@ const TOKENS: Record<string, { symbol: string; decimals: number }> = {
 interface Node {
   account: { accountNumber: bigint; sequence: bigint; pubKey: null } | null;
   estimate: () => Promise<FeeEstimate>;
-  broadcast: ReturnType<typeof vi.fn>;
+  broadcast: Mock<ChainClient['broadcast']>;
 }
 
 const FEES: FeeEstimate = {
@@ -116,15 +116,14 @@ async function rig() {
   const node: Node = {
     account: { accountNumber: ACCOUNT_NUMBER, sequence: SEQUENCE, pubKey: null },
     estimate: () => Promise.resolve(FEES),
-    broadcast: vi.fn(() => Promise.resolve({ txHash: HASH })),
+    broadcast: vi.fn<ChainClient['broadcast']>(() => Promise.resolve({ txHash: HASH })),
   };
   const env: ChainEnv = {
     network: NETWORKS.mainnet,
     chain: {
       account: () => Promise.resolve(node.account),
       balances: () => Promise.resolve(new Map([['ubze', 100_000_000n]])),
-      broadcast: (bytes: Uint8Array) =>
-        node.broadcast(bytes) as ReturnType<ChainClient['broadcast']>,
+      broadcast: (bytes) => node.broadcast(bytes),
       markets: () => Promise.resolve([]),
       liquidityPools: () => Promise.resolve([]),
       marketOrder: () => Promise.resolve(null),
