@@ -171,3 +171,133 @@ describe('the request window', () => {
     expect(t.close).toHaveBeenCalledTimes(1);
   });
 });
+
+const SIGN: Extract<RequestView, { status: 'sign' }> = {
+  status: 'sign',
+  id: 's1',
+  origin: 'https://dex.getbze.com',
+  network: 'mainnet',
+  signer: { label: 'Main', address: ADDRESSES[0]?.address ?? '' },
+  summary: {
+    level: 'normal',
+    title: 'Send',
+    hero: 'Send 1 BZE',
+    sub: 'to Alex',
+    rows: [
+      ['To', 'bze1alex', 'mono'],
+      ['Amount', '1 BZE'],
+    ],
+    messages: [],
+    dangers: [],
+    memo: 'thanks',
+  },
+  rawJson: '[{"typeUrl":"/cosmos.bank.v1beta1.MsgSend"}]',
+  approvable: true,
+  locked: false,
+  fee: { denom: 'ubze', amount: '2000', symbol: 'BZE', decimals: 6 },
+  options: [
+    { denom: 'ubze', amount: '2000', symbol: 'BZE', decimals: 6 },
+    { denom: 'uother', amount: '500', symbol: 'OTH', decimals: 6 },
+  ],
+  gasLimit: '200000',
+};
+
+function signRig(view: RequestView, extra: Partial<Record<Method, Handler>> = {}) {
+  let first = true;
+  return rig({
+    ...base,
+    'dapp.current': () => {
+      const v: RequestView = first ? view : { status: 'none' };
+      first = false;
+      return ok(v);
+    },
+    'dapp.answer': () => ok({}),
+    ...extra,
+  });
+}
+
+describe('the sign screen', () => {
+  it('shows the site, the signer, the hero, the rows, the memo and the fee', async () => {
+    const t = signRig(SIGN);
+    await settle();
+    const text = t.host.textContent;
+    expect(text).toContain('https://dex.getbze.com');
+    expect(text).toContain('Main');
+    expect(text).toContain('Send 1 BZE');
+    expect(text).toContain('bze1alex');
+    expect(text).toContain('thanks');
+    expect(text).toContain('0.002 BZE');
+  });
+
+  it('approves with the fee that is shown', async () => {
+    const t = signRig(SIGN);
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      approve: true,
+      fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
+    });
+    expect(t.close).toHaveBeenCalled();
+  });
+
+  it('approves with the fee token picked on the fee sheet', async () => {
+    const t = signRig(SIGN);
+    await settle();
+    fireEvent(
+      [...t.host.querySelectorAll('button')].find((b) => b.textContent.includes('▾')),
+      'click',
+    );
+    await settle();
+    fireEvent(
+      [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('OTH')),
+      'click',
+    );
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      approve: true,
+      fee: { denom: 'uother', amount: '500', gasLimit: '200000' },
+    });
+  });
+
+  it('opens the raw JSON sheet from Message details', async () => {
+    const t = signRig(SIGN);
+    await settle();
+    fireEvent(button(t.host, 'Message details'), 'click');
+    await settle();
+    expect(document.body.textContent).toContain('/cosmos.bank.v1beta1.MsgSend');
+  });
+
+  it('answers Reject with approve false and no fee', async () => {
+    const t = signRig(SIGN);
+    await settle();
+    fireEvent(button(t.host, 'Reject'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', { id: 's1', approve: false });
+  });
+
+  it('asks for the password in the weak lock, then approves', async () => {
+    const t = signRig({ ...SIGN, locked: true }, { 'wallet.reauth': () => ok({ status: 'ok' }) });
+    await settle();
+    expect(t.host.textContent).toContain('Unlock and approve');
+    expect(button(t.host, 'Approve')).toBeUndefined();
+    expect(button(t.host, 'Reject')).toBeDefined();
+  });
+
+  it('offers only Reject for a request it cannot show yet', async () => {
+    const t = signRig({
+      ...SIGN,
+      approvable: false,
+      summary: { ...SIGN.summary, level: 'unknown' },
+    });
+    await settle();
+    expect(t.host.textContent).toContain("BeePocket can't show this request yet");
+    expect(button(t.host, 'Approve')).toBeUndefined();
+    expect(button(t.host, 'Message details')).toBeUndefined();
+    expect(button(t.host, 'Reject')).toBeDefined();
+  });
+});

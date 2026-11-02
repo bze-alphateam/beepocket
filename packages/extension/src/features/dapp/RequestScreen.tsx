@@ -8,6 +8,7 @@ import { PasswordGate } from '../lock/PasswordGate';
 import { useLockEnv } from '../lock/env';
 import { UnlockPanel } from '../lock/UnlockScreen';
 import { ConnectScreen } from './ConnectScreen';
+import { SignScreen } from './SignScreen';
 
 export interface RequestScreenProps {
   /** Closes the window (`window.close()`); called when nothing waits any more. */
@@ -97,6 +98,8 @@ export function RequestScreen({ close }: RequestScreenProps) {
       );
     case 'connect':
       return <ConnectScreen view={view} done={() => void refresh()} />;
+    case 'sign':
+      return <SignScreen view={view} done={() => void refresh()} />;
     case 'none':
       return null;
   }

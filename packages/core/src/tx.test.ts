@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import {
   txHash,
   buildBody,
+  decodeTxRaw,
   decodeAuthInfo,
   decodeTxBody,
   encodeMsgSend,
@@ -40,5 +41,19 @@ describe('txHash', () => {
       const raw = fromB64(g.txRaw);
       expect(txHash(raw)).toBe(createHash('sha256').update(raw).digest('hex').toUpperCase());
     }
+  });
+});
+
+describe('decodeTxRaw', () => {
+  it('reads the three parts of a signed transaction', () => {
+    for (const g of goldenCases) {
+      const decoded = decodeTxRaw(fromB64(g.txRaw));
+      expect(decoded.bodyBytes).toEqual(fromB64(g.bodyBytes));
+      expect(decoded.signatures).toEqual([fromB64(g.signature)]);
+    }
+  });
+
+  it('throws on bytes that are not a TxRaw', () => {
+    expect(() => decodeTxRaw(Uint8Array.from([0xff, 0xff, 0xff]))).toThrow();
   });
 });

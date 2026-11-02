@@ -132,15 +132,83 @@ describe('the provider', () => {
     expect(first).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects signDirect and sendTx until they are supported', async () => {
+  it('sends signDirect with bytes as base64 and the account number as a decimal string', async () => {
     const t = rig();
-    await expect(t.provider.signDirect('beezee-1', 'bze1', {})).rejects.toMatchObject({
-      code: 'invalid-request',
-      message: 'Not supported yet',
+    const body = Uint8Array.from([1, 2, 3]);
+    const authInfo = Uint8Array.from([4, 5]);
+    const promise = t.provider.signDirect('beezee-1', 'bze1abc', {
+      bodyBytes: body,
+      authInfoBytes: authInfo,
+      chainId: 'beezee-1',
+      accountNumber: 12345678901234567890n,
     });
-    await expect(t.provider.sendTx('beezee-1', new Uint8Array(), 'sync')).rejects.toMatchObject({
-      code: 'invalid-request',
+    const request = t.posted[0];
+    expect(request).toMatchObject({
+      method: 'signDirect',
+      params: {
+        chainId: 'beezee-1',
+        signer: 'bze1abc',
+        signDoc: {
+          bodyBytes: bytesToWire(body),
+          authInfoBytes: bytesToWire(authInfo),
+          chainId: 'beezee-1',
+          accountNumber: '12345678901234567890',
+        },
+      },
     });
+    const signature = {
+      pub_key: { type: 'tendermint/PubKeySecp256k1', value: 'AAAA' },
+      signature: 'c2ln',
+    };
+    t.deliver({
+      channel: WALLET_CHANNEL,
+      id: request?.id,
+      result: {
+        signed: {
+          bodyBytes: bytesToWire(body),
+          authInfoBytes: bytesToWire(Uint8Array.from([9])),
+          chainId: 'beezee-1',
+          accountNumber: '7',
+        },
+        signature,
+      },
+    });
+    const response = await promise;
+    expect(response.signed.bodyBytes).toEqual(body);
+    expect(response.signed.authInfoBytes).toEqual(Uint8Array.from([9]));
+    expect(response.signed.accountNumber).toBe(7n);
+    expect(response.signature).toEqual(signature);
+  });
+
+  it('sends sendTx as base64 and resolves with the hash bytes', async () => {
+    const t = rig();
+    const promise = t.provider.sendTx('beezee-1', Uint8Array.from([7, 8, 9]), 'sync');
+    const request = t.posted[0];
+    expect(request).toMatchObject({
+      method: 'sendTx',
+      params: {
+        chainId: 'beezee-1',
+        txBytes: bytesToWire(Uint8Array.from([7, 8, 9])),
+        mode: 'sync',
+      },
+    });
+    const hash = Uint8Array.from({ length: 32 }, (_, i) => i);
+    t.deliver({ channel: WALLET_CHANNEL, id: request?.id, result: bytesToWire(hash) });
+    await expect(promise).resolves.toEqual(hash);
+  });
+
+  it('rejects malformed signDirect and sendTx input without posting anything', async () => {
+    const t = rig();
+    await expect(
+      t.provider.signDirect(
+        'beezee-1',
+        'bze1',
+        {} as unknown as Parameters<typeof t.provider.signDirect>[2],
+      ),
+    ).rejects.toMatchObject({ code: 'invalid-request' });
+    await expect(
+      t.provider.sendTx('beezee-1', 'abc' as unknown as Uint8Array, 'sync'),
+    ).rejects.toMatchObject({ code: 'invalid-request' });
     expect(t.posted).toHaveLength(0);
   });
 });

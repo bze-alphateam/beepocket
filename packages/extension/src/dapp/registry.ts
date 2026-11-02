@@ -1,4 +1,4 @@
-import type { WalletAddress } from '../protocol';
+import type { ReviewedFee, SignDetails, WalletAddress } from '../protocol';
 import type { Result } from '../protocol';
 import type { Outcome, PendingRequest } from './types';
 
@@ -11,12 +11,16 @@ export type Decision =
   /** The weak lock must be lifted first. */
   | { kind: 'unlock' }
   /** The user picks the one address the site may see. */
-  | { kind: 'connect'; addresses: WalletAddress[] };
+  | { kind: 'connect'; addresses: WalletAddress[] }
+  /** The user reviews a transaction to sign. */
+  | { kind: 'sign'; details: SignDetails };
 
 /** The user's answer from the request window. */
 export interface UserAnswer {
   approve: boolean;
   index?: number;
+  /** The fee the user reviewed, for a request that signs. */
+  fee?: ReviewedFee;
 }
 
 /**

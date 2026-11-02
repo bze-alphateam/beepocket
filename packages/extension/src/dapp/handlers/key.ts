@@ -34,7 +34,7 @@ export function validateKeyParams(params: unknown): Result<KeyParams> {
 }
 
 /** Business Logic §1: the wallet works on one network at a time. */
-function networkRefusal(
+export function networkRefusal(
   request: PendingRequest,
   params: KeyParams,
   activeId: string,
@@ -46,7 +46,7 @@ function networkRefusal(
 }
 
 /** The public key of an address, from the profile or (when unlocked) derived; null when neither. */
-async function pubKeyOf(
+export async function pubKeyOf(
   deps: KeyDeps,
   entry: ProfileAddress,
   unlocked: boolean,
@@ -68,7 +68,10 @@ function wireKey(entry: ProfileAddress, pubKey: string): WireKey {
   };
 }
 
-function connectedAddress(profile: Profile, request: PendingRequest): ProfileAddress | undefined {
+export function connectedAddress(
+  profile: Profile,
+  request: PendingRequest,
+): ProfileAddress | undefined {
   const site = Object.hasOwn(profile.sites[request.network], request.origin)
     ? profile.sites[request.network][request.origin]
     : undefined;

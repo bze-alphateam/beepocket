@@ -1,5 +1,7 @@
 import {
+  bigintToWire,
   bytesFromWire,
+  bytesToWire,
   DappErrorCodes,
   INITIALIZED_EVENT,
   KEYSTORE_EVENT,
@@ -20,14 +22,33 @@ export interface BeePocketKey {
   isNanoLedger: false;
 }
 
+/** What a dapp passes to `signDirect`: the exact bytes it wants signed. */
+export interface SignDoc {
+  bodyBytes: Uint8Array;
+  authInfoBytes: Uint8Array;
+  chainId: string;
+  accountNumber: bigint;
+}
+
+/** What `signDirect` answers. Build the transaction from `signed`, never from the request. */
+export interface DirectSignResponse {
+  signed: SignDoc;
+  signature: {
+    pub_key: { type: 'tendermint/PubKeySecp256k1'; value: string };
+    /** Base64 of the 64-byte signature. */
+    signature: string;
+  };
+}
+
 export type BeePocketEvent = 'accountChanged';
 
 export interface BeePocketProvider {
   readonly version: string;
   connect(chainId: string): Promise<BeePocketKey>;
   getKey(chainId: string): Promise<BeePocketKey>;
-  signDirect(chainId: string, signer: string, signDoc: unknown): Promise<never>;
-  sendTx(chainId: string, txBytes: Uint8Array, mode: 'sync'): Promise<never>;
+  signDirect(chainId: string, signer: string, signDoc: SignDoc): Promise<DirectSignResponse>;
+  /** Broadcasts a signed transaction and answers its 32-byte hash. Poll for inclusion yourself. */
+  sendTx(chainId: string, txBytes: Uint8Array, mode: 'sync'): Promise<Uint8Array>;
   on(event: BeePocketEvent, listener: () => void): void;
   off(event: BeePocketEvent, listener: () => void): void;
 }
@@ -81,6 +102,10 @@ function toKey(raw: unknown): BeePocketKey {
     algo: key.algo,
     isNanoLedger: key.isNanoLedger,
   };
+}
+
+function isBytes(x: unknown): x is Uint8Array {
+  return x instanceof Uint8Array;
 }
 
 function isObject(x: unknown): x is Record<string, unknown> {
@@ -139,15 +164,68 @@ export function createProvider(deps: ProviderDeps): BeePocketProvider {
 
   const key = async (method: 'connect' | 'getKey', chainId: string): Promise<BeePocketKey> =>
     toKey(await request(method, { chainId }));
-  const unsupported = (): Promise<never> =>
-    Promise.reject(new BeePocketError(DappErrorCodes.invalidRequest, 'Not supported yet'));
+  const invalid = (message: string): Promise<never> =>
+    Promise.reject(new BeePocketError(DappErrorCodes.invalidRequest, message));
+
+  const signDirect = async (
+    chainId: string,
+    signer: string,
+    signDoc: SignDoc,
+  ): Promise<DirectSignResponse> => {
+    let wire: unknown;
+    if (!isBytes(signDoc.bodyBytes) || !isBytes(signDoc.authInfoBytes)) {
+      return invalid('The signDoc is malformed.');
+    }
+    try {
+      wire = {
+        chainId,
+        signer,
+        signDoc: {
+          bodyBytes: bytesToWire(signDoc.bodyBytes),
+          authInfoBytes: bytesToWire(signDoc.authInfoBytes),
+          chainId: signDoc.chainId,
+          accountNumber: bigintToWire(signDoc.accountNumber),
+        },
+      };
+    } catch {
+      return invalid('The signDoc is malformed.');
+    }
+    const raw = (await request('signDirect', wire)) as {
+      signed: { bodyBytes: string; authInfoBytes: string; chainId: string; accountNumber: string };
+      signature: DirectSignResponse['signature'];
+    };
+    return {
+      signed: {
+        bodyBytes: bytesFromWire(raw.signed.bodyBytes),
+        authInfoBytes: bytesFromWire(raw.signed.authInfoBytes),
+        chainId: raw.signed.chainId,
+        accountNumber: BigInt(raw.signed.accountNumber),
+      },
+      signature: raw.signature,
+    };
+  };
+
+  const sendTx = async (
+    chainId: string,
+    txBytes: Uint8Array,
+    mode: 'sync',
+  ): Promise<Uint8Array> => {
+    let text: string;
+    if (!isBytes(txBytes)) return invalid('txBytes must be a Uint8Array.');
+    try {
+      text = bytesToWire(txBytes);
+    } catch {
+      return invalid('txBytes must be a Uint8Array.');
+    }
+    return bytesFromWire((await request('sendTx', { chainId, txBytes: text, mode })) as string);
+  };
 
   return Object.freeze({
     version: PROVIDER_VERSION,
     connect: (chainId: string) => key('connect', chainId),
     getKey: (chainId: string) => key('getKey', chainId),
-    signDirect: unsupported,
-    sendTx: unsupported,
+    signDirect,
+    sendTx,
     // `accountChanged` is the only event there is.
     on(_event: BeePocketEvent, listener: () => void) {
       listeners.add(listener);
