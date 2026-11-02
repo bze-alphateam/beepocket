@@ -8,6 +8,9 @@ import {
 } from '../protocol';
 import type { Services } from '../background/services';
 import type { Deliverer } from './deliver';
+import type { AccountChanges } from './account-changes';
+import type { SitesService } from './sites';
+import type { DocumentLog } from './documents';
 import type { Decision, DappRegistry, UserAnswer } from './registry';
 import type { RequestStore } from './requests';
 import { refuse, type DappSender, type Outcome, type PendingRequest } from './types';
@@ -28,6 +31,9 @@ export interface DappServiceDeps {
   requests: RequestStore;
   window: RequestWindow;
   deliverer: Deliverer;
+  documents: Pick<DocumentLog, 'record' | 'removeTab'>;
+  changes: Pick<AccountChanges, 'notify'>;
+  sites: Pick<SitesService, 'list' | 'change' | 'disconnect'>;
   services: Pick<Services, 'activeNetwork'>;
   clock: { now(): number };
 }
@@ -42,6 +48,16 @@ const nothing = (): Promise<void> => Promise.resolve();
  */
 export class DappService {
   constructor(private readonly deps: DappServiceDeps) {}
+
+  /** Settings › Connected sites. */
+  get sites(): DappServiceDeps['sites'] {
+    return this.deps.sites;
+  }
+
+  /** The network switched: every site's view changed, so every open page is told. */
+  networkChanged(): Promise<void> {
+    return this.deps.changes.notify('all');
+  }
 
   /** `message` is the untrusted `dapp` field of a content-script message; `from` is the browser's word. */
   async receive(from: DappSender, message: unknown): Promise<Received> {
@@ -70,6 +86,12 @@ export class DappService {
       documentId: from.documentId,
       createdAt: this.deps.clock.now(),
     };
+    await this.deps.documents.record({
+      tabId: from.tabId,
+      documentId: from.documentId,
+      origin: from.origin,
+      network: network.id,
+    });
     const decision = await handler.decide(request);
     if (decision.kind === 'answer') return this.answered(request, decision.outcome);
     if (!(await this.deps.requests.addIfNone(request))) return bad('Another request is waiting');
@@ -120,7 +142,7 @@ export class DappService {
 
   /** A closed tab leaves nobody to answer. */
   onTabRemoved(tabId: number): Promise<void> {
-    return this.deps.requests.removeTab(tabId);
+    return this.deps.requests.removeTab(tabId).then(() => this.deps.documents.removeTab(tabId));
   }
 
   private answered(request: PendingRequest, outcome: Outcome): Received {

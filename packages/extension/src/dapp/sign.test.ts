@@ -24,12 +24,15 @@ import { ChromeSessionStorage, ChromeStorage } from '../platform';
 import { FakeArea } from '../platform/test-support';
 import { FULL_LOCK_ALARM, WEAK_LOCK_ALARM } from '../features/wallet/alarms';
 import { WalletService } from '../features/wallet/service';
+import { AccountChanges } from './account-changes';
 import { Deliverer } from './deliver';
+import { DocumentLog } from './documents';
 import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
 import { DappRegistry } from './registry';
 import { RequestStore } from './requests';
 import { DappService } from './service';
+import { SitesService } from './sites';
 import type { DappSender } from './types';
 import { RequestWindow } from './window';
 import { bytesFromWire, bytesToWire } from './wire';
@@ -149,6 +152,14 @@ async function rig() {
   const open = new Set<number>();
   const registry = new DappRegistry();
   registerDappHandlers(registry, { wallet, services, clock, env: () => Promise.resolve(env) });
+  const deliverer = new Deliverer({
+    sendMessage: (_tab, message, options) => {
+      delivered.push({ documentId: options?.documentId, message });
+      return Promise.resolve();
+    },
+  });
+  const documents = new DocumentLog(session);
+  const changes = new AccountChanges({ documents, deliverer });
   const dapp = new DappService({
     registry,
     requests: new RequestStore(session),
@@ -164,12 +175,10 @@ async function rig() {
       },
       session,
     ),
-    deliverer: new Deliverer({
-      sendMessage: (_tab, message, options) => {
-        delivered.push({ documentId: options?.documentId, message });
-        return Promise.resolve();
-      },
-    }),
+    deliverer,
+    documents,
+    changes,
+    sites: new SitesService({ wallet, services, changes }),
     services,
     clock,
   });

@@ -119,3 +119,47 @@ test('a fully locked wallet shows unlock first, then the connect screen', async 
     stop();
   }
 });
+
+test('Settings › Connected sites: Change pushes accountChanged, Disconnect makes getKey fail', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const { dapp, stop } = await openDapp(context);
+  try {
+    await dapp.evaluate(() => {
+      const w = window as unknown as { changes: number };
+      w.changes = 0;
+      window.addEventListener('beepocket_keystorechange', () => {
+        w.changes++;
+      });
+    });
+    const request = await connect(context, dapp);
+    await request.getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(dapp.getByRole('status')).toHaveText(/name Main$/);
+
+    const settings = await context.newPage();
+    await settings.goto(`chrome-extension://${extensionId}/popup.html`);
+    await settings.getByRole('button', { name: 'Settings' }).click();
+    await settings.getByRole('button', { name: /Connected sites · 1/ }).click();
+    await settings.getByRole('button', { name: 'Change' }).click();
+    await settings.getByRole('radio', { name: /Address 3/ }).check();
+    await settings.getByRole('button', { name: 'Save' }).click();
+
+    await expect
+      .poll(() => dapp.evaluate(() => (window as unknown as { changes: number }).changes))
+      .toBe(1);
+    await dapp.getByRole('button', { name: 'Get key' }).click();
+    await expect(dapp.getByRole('status')).toHaveText(`address ${THIRD} name Address 3`);
+
+    await settings.getByRole('button', { name: 'Disconnect' }).click();
+    await expect
+      .poll(() => dapp.evaluate(() => (window as unknown as { changes: number }).changes))
+      .toBe(2);
+    await dapp.getByRole('button', { name: 'Get key' }).click();
+    await expect(dapp.getByRole('status')).toHaveText('error not-connected');
+  } finally {
+    stop();
+  }
+});
