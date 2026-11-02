@@ -578,6 +578,16 @@ describe('several messages', () => {
     expect(s.messages[0]?.line).toBe('1.00 BZE · BZE/USDC at 0.3000 USDC');
   });
 
+  it('gives every message its own hero, sub and rows', async () => {
+    const single = await run([order('buy', '1000000', '0.3')]);
+    const both = await run([order('buy', '1000000', '0.3'), grant()]);
+    const [first, second] = both.messages;
+    expect(first).toMatchObject({ hero: single.hero, sub: single.sub, rows: single.rows });
+    expect(first?.rows.length).toBeGreaterThan(0);
+    expect(second?.hero).toContain('Any MsgSend');
+    expect(second?.rows).toContainEqual(['Grantee', ALEX, 'mono']);
+  });
+
   it('has no shared line for different markets, or messages without a market', async () => {
     const other = await run([order('buy'), order('buy', '5', '1', VDL_BZE.id)]);
     expect(other.sub).toBe('All happen, or none does');

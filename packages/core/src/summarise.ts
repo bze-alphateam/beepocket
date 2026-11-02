@@ -61,6 +61,11 @@ export interface MsgSummary {
   title: string;
   /** One line for a message card: the hero and the sub text of the message. */
   line: string;
+  /** What the message does, in a few words, and the detail under it. */
+  hero: string;
+  sub: string;
+  /** The message's own rows, the same ones a single-message summary shows. */
+  rows: SummaryRow[];
   danger: DangerNotice | null;
 }
 
@@ -776,6 +781,9 @@ export async function summarise(
     icon: p.icon,
     title: p.title,
     line: `${p.hero} · ${p.sub}`,
+    hero: p.hero,
+    sub: p.sub,
+    rows: p.rows,
     danger: p.danger ?? null,
   }));
   const level = riskiest(parts.map((p) => p.level));

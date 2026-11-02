@@ -116,7 +116,18 @@ export function SignScreen({ view, done }: SignScreenProps) {
                     {t('dapp.sign.cardNo', { n: String(i + 1), count: String(count) })}
                   </small>
                   <strong>{m.title}</strong>
-                  <span class="bp-dapp-cardline">{m.line}</span>
+                  <span class="bp-dapp-cardhero">{m.hero}</span>
+                  <span class="bp-dapp-cardline">{m.sub}</span>
+                  {m.rows.length > 0 && (
+                    <dl class="bp-dapp-rows">
+                      {m.rows.map(([label, value, mono], row) => (
+                        <Fragment key={row}>
+                          <dt>{label}</dt>
+                          <dd class={mono === 'mono' ? 'bp-dapp-mono' : undefined}>{value}</dd>
+                        </Fragment>
+                      ))}
+                    </dl>
+                  )}
                   <Notice message={m} json={view.messageJson[i]} />
                 </li>
               ))}

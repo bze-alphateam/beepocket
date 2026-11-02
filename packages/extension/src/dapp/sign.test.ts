@@ -28,7 +28,7 @@ import { Deliverer } from './deliver';
 import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
 import { DappRegistry } from './registry';
-import { grantMsg, nothingMsg } from './test-messages';
+import { grantMsg, nothingMsg } from './test-support';
 import { RequestStore } from './requests';
 import { DappService } from './service';
 import type { DappSender } from './types';

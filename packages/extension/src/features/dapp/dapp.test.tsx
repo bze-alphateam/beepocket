@@ -8,7 +8,7 @@ import type { Client } from '../../protocol/client';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { HomeEnvProvider, type HomeEnv } from '../home/env';
 import { LockEnvProvider } from '../lock/env';
-import { grantMsg, nothingMsg } from '../../dapp/test-messages';
+import { grantMsg, nothingMsg } from '../../dapp/test-support';
 import { RequestScreen } from './RequestScreen';
 
 afterEach(cleanup);
@@ -399,7 +399,13 @@ describe('the sign screen: risk levels', () => {
     expect(cards[1]?.className).toContain('bp-dapp-card-unknown');
     expect(cards[0]?.querySelector('.bp-dapp-raw')).toBeNull();
     expect(cards[1]?.querySelector('.bp-dapp-raw')?.textContent).toContain('/test.v1.MsgNothing');
-    expect(t.host.querySelectorAll('.bp-dapp-rows dt')).toHaveLength(1);
+    expect([...(cards[0]?.querySelectorAll('dt') ?? [])].map((d) => d.textContent)).toEqual([
+      'To',
+      'Amount',
+    ]);
+    expect(cards[0]?.textContent).toContain(OTHER);
+    expect(cards[0]?.textContent).toContain('1 BZE');
+    expect(cards[1]?.querySelectorAll('dt')).toHaveLength(0);
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
   });
 
