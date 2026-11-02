@@ -140,6 +140,8 @@ export function RadioCardGroup<V extends string>(props: RadioCardGroupProps<V>) 
       role="radiogroup"
       aria-label={props.label}
       onKeyDown={(e) => {
+        // Keys typed into a card's body (the token-code field) are the field's own.
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         rovingKeyDown(
           e,
           options.map((o) => o.value),

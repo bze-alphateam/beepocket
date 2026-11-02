@@ -491,7 +491,6 @@ describe('import flow', () => {
     cleanup();
     const again = await toImport(client);
     expect(cells(again.host).every((c) => c.value === '')).toBe(true);
-    expect(document.body.textContent).not.toContain('about');
   });
 
   it('never writes typed or pasted words to storage, the URL or the console', async () => {

@@ -10,6 +10,7 @@ import {
   NoticeCard,
   PasswordField,
   PhraseReveal,
+  RadioCardGroup,
   StrengthMeter,
   Swatches,
   TokenRow,
@@ -239,5 +240,30 @@ describe('InlineNote', () => {
     expect(host.querySelector('p')?.hasAttribute('role')).toBe(false);
     expect(host.querySelector('p')?.className).toBe('bp-field-note');
     expect(host.querySelector('[data-icon="link"]')).not.toBeNull();
+  });
+});
+
+describe('RadioCardGroup with a card body', () => {
+  it('leaves arrow and Home/End keys in a body field to the field', () => {
+    const onChange = vi.fn();
+    const { host } = render(
+      <RadioCardGroup<'code' | 'manual'>
+        label="How do you want to start?"
+        value="code"
+        onChange={onChange}
+        options={[
+          { value: 'code', icon: 'ticket', title: 'Code', body: <input aria-label="Token code" /> },
+          { value: 'manual', icon: 'grid', title: 'Manual' },
+        ]}
+      />,
+    );
+    const input = host.querySelector('input');
+    for (const k of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
+      expect(key(input, k).defaultPrevented).toBe(false);
+    }
+    expect(onChange).not.toHaveBeenCalled();
+    // On the cards themselves the arrows still move the choice.
+    key(host.querySelector('[role="radio"]'), 'ArrowDown');
+    expect(onChange).toHaveBeenCalledWith('manual');
   });
 });

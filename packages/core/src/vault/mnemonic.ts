@@ -74,7 +74,7 @@ export function suggestMnemonicWord(word: string): string | null {
   for (const candidate of wordlist) {
     const d = distance(w, candidate, 2);
     if (d > 2) continue;
-    const score = d * 2 + (candidate[0] === w[0] ? 0 : 1);
+    const score = d * 2 + (candidate.startsWith(w.charAt(0)) ? 0 : 1);
     if (score < best) {
       best = score;
       found = candidate;
