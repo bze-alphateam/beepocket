@@ -62,8 +62,12 @@ export function bigintToWire(value: bigint): string {
   return value.toString(10);
 }
 
-/** Throws on anything that is not a plain non-negative decimal number. */
+/** uint256 max has 78 digits: longer text is refused before it reaches `BigInt()`. */
+const MAX_BIGINT_DIGITS = 78;
+
+/** Throws on anything that is not a plain non-negative decimal number of at most 78 digits. */
 export function bigintFromWire(text: string): bigint {
-  if (!/^(0|[1-9][0-9]*)$/.test(text)) throw new TypeError('not a decimal number');
+  if (text.length > MAX_BIGINT_DIGITS || !/^(0|[1-9][0-9]*)$/.test(text))
+    throw new TypeError('not a decimal number');
   return BigInt(text);
 }
