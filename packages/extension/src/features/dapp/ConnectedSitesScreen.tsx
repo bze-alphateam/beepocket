@@ -14,10 +14,11 @@ import { Banner, Button, Sheet, Spinner } from '../../ui';
 
 type Listing = ResponseOf<'sites.list'>;
 
-/** The hostname, plus the port when it is not the default one. */
+/** The hostname, plus the port when it is not the default one; the scheme when it is not https. */
 export function siteName(origin: string): string {
   try {
-    return new URL(origin).host;
+    const url = new URL(origin);
+    return url.protocol === 'https:' ? url.host : `${url.protocol}//${url.host}`;
   } catch {
     return origin;
   }

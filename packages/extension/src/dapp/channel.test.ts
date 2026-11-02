@@ -43,7 +43,11 @@ async function rig() {
     kdf: new Argon2idKdf(),
     params: { alg: 'argon2id', m: 8, t: 1, p: 1 },
   });
-  const clock = { t: 5_000, now: () => 5_000, sleep: () => Promise.resolve() };
+  const clock = {
+    t: 5_000,
+    now: () => clock.t,
+    sleep: () => Promise.resolve(),
+  };
   const wallet = new WalletService({
     storage,
     session,
@@ -119,6 +123,7 @@ async function rig() {
     answersFor,
     delivered,
     unreachable,
+    clock,
     created,
     focused,
     open,
@@ -496,8 +501,9 @@ describe('connected sites', () => {
 
   it('lists the sites of the active network, newest first, with the current address labels', async () => {
     const t = await rig();
-    await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 2);
     await connectSite(t, t.site(OTHER, 2, 'doc-2'), 0);
+    t.clock.t += 1_000;
+    await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 2);
     const listed = await t.dapp.sites.list();
     if (!listed.ok) throw new Error('list failed');
     expect(listed.value.network).toBe('mainnet');

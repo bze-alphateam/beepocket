@@ -15,7 +15,6 @@ export { dappSender, type SenderLike } from './sender';
 export { DappService, type Ack } from './service';
 export { registerDappPopupHandlers } from './popup-handlers';
 export { registerSitesHandlers } from './sites-handlers';
-export { AccountChanges, SitesService };
 export type { TabsLike, WindowsLike };
 
 /** Composition root of the dapp channel: real stores and chrome adapters over the platform. */

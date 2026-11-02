@@ -52,7 +52,7 @@ describe('Connected sites', () => {
   it('lists each site with its host and port, the address it sees and the date', async () => {
     const t = rig({ 'sites.list': () => listing([SITE]) });
     await settle();
-    expect(t.host.textContent).toContain('localhost:5173');
+    expect(t.host.textContent).toContain('http://localhost:5173');
     expect(t.host.textContent).toContain('Sees Savings');
     expect(t.host.textContent).toContain('Connected ');
     expect(button(t.host, 'Change')).toBeDefined();
@@ -104,6 +104,6 @@ describe('Connected sites', () => {
     fireEvent(button(t.host, 'Disconnect'), 'click');
     await settle();
     expect(t.host.textContent).toContain('Unlock the wallet');
-    expect(t.host.textContent).toContain('localhost:5173');
+    expect(t.host.textContent).toContain('http://localhost:5173');
   });
 });

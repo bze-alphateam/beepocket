@@ -18,7 +18,7 @@ export interface SitesDeps {
 }
 
 /**
- * Settings › Connected sites: what the user sees and does to the connections made by BUS-75.
+ * Settings › Connected sites: what the user sees and does to the connections made through `connect`.
  * A site sees one address; Change and Disconnect take effect on its next call, and its open
  * pages are told to ask again. Both need the profile re-sealed, so a weak lock answers
  * `needs-password` like the other settings.
