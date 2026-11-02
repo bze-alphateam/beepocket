@@ -77,7 +77,7 @@ describe('beePocketInfo', () => {
 
 describe('init', () => {
   it('fails without the provider', async () => {
-    await expect(newWallet().init()).rejects.toThrow();
+    await expect(newWallet().init()).rejects.toThrow('Client not exist');
   });
 
   it('passes with the provider', async () => {
@@ -116,13 +116,19 @@ describe('connect', () => {
     await expect(wallet.connect('beezee-1')).rejects.toBe(failure);
   });
 
-  it('never suggests a chain', async () => {
-    install(fakeProvider());
+  it('never suggests a chain, whatever the provider failure', async () => {
+    const provider = fakeProvider();
+    const failure = new Error('something else broke');
+    provider.connect.mockRejectedValue(failure);
+    const suggest = vi.fn();
+    install({ ...provider, experimentalSuggestChain: suggest });
     const wallet = newWallet();
     await wallet.init();
+    await expect(wallet.connect('beezee-1')).rejects.toThrow('something else broke');
     await expect(cosmos(wallet).addSuggestChain('beezee-1')).rejects.toThrow(
       'BeePocket supports BeeZee only',
     );
+    expect(suggest).not.toHaveBeenCalled();
   });
 });
 
@@ -159,6 +165,23 @@ describe('account and signing', () => {
       Uint8Array.from([9, 9]),
     );
     expect(provider.sendTx).toHaveBeenCalledWith('beezee-1', tx, 'sync');
+  });
+
+  it('refuses a signDirect answer for other messages, but accepts a changed fee', async () => {
+    const provider = fakeProvider();
+    install(provider);
+    const wallet = newWallet();
+    await wallet.init();
+    const feeChanged = { ...SIGN_DOC, authInfoBytes: Uint8Array.from([5, 5]) };
+    provider.signDirect.mockResolvedValueOnce({ signed: feeChanged, signature: {} });
+    await expect(cosmos(wallet).signDirect('beezee-1', 'bze1abc', SIGN_DOC)).resolves.toMatchObject(
+      { signed: feeChanged },
+    );
+    const swapped = { ...SIGN_DOC, bodyBytes: Uint8Array.from([1, 1]) };
+    provider.signDirect.mockResolvedValueOnce({ signed: swapped, signature: {} });
+    await expect(cosmos(wallet).signDirect('beezee-1', 'bze1abc', SIGN_DOC)).rejects.toThrow(
+      'different transaction body',
+    );
   });
 
   it('refuses amino and arbitrary signing', async () => {

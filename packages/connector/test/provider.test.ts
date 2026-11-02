@@ -40,3 +40,10 @@ describe('getBeePocket', () => {
     }
   });
 });
+
+describe('window.beepocket typing', () => {
+  it('is typed on Window', () => {
+    const version: string | undefined = window.beepocket?.version;
+    expect(version).toBeUndefined();
+  });
+});

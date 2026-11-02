@@ -5,6 +5,11 @@ import type { BeePocketProvider } from './provider.js';
 /** The chains BeePocket serves: BeeZee mainnet and testnet. */
 const SUPPORTED_CHAIN_IDS: readonly string[] = ['beezee-1', 'bzetestnet-3'];
 
+function sameBytes(a: Uint8Array | null | undefined, b: Uint8Array | null | undefined): boolean {
+  if (!a || !b) return false;
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
 /** The interchain-kit wallet description of the BeePocket extension. */
 export const beePocketInfo: Wallet = {
   windowKey: 'beepocket',
@@ -33,6 +38,20 @@ export class BeePocketCosmosWallet extends CosmosWallet {
       throw new Error('BeePocket supports BeeZee only');
     }
     await this.provider.connect(chainId);
+  }
+
+  /**
+   * Signs through the provider and checks the answer. The wallet may change the fee (so
+   * `authInfoBytes` differ) but never the messages: a response with other `bodyBytes` is refused.
+   */
+  override async signDirect(
+    ...args: Parameters<CosmosWallet['signDirect']>
+  ): ReturnType<CosmosWallet['signDirect']> {
+    const response = await super.signDirect(...args);
+    if (!sameBytes(response.signed.bodyBytes, args[2].bodyBytes)) {
+      throw new Error('BeePocket returned a different transaction body than the one requested');
+    }
+    return response;
   }
 
   override addSuggestChain(): Promise<void> {

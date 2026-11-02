@@ -92,3 +92,10 @@ export function getBeePocket(
     host.addEventListener(BEEPOCKET_INITIALIZED_EVENT, finish);
   });
 }
+
+declare global {
+  interface Window {
+    /** Defined by the BeePocket extension; use `getBeePocket` to wait for it. */
+    beepocket?: BeePocketProvider;
+  }
+}
