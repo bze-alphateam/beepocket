@@ -28,6 +28,7 @@ import { Deliverer } from './deliver';
 import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
 import { DappRegistry } from './registry';
+import { grantMsg, nothingMsg } from './test-messages';
 import { RequestStore } from './requests';
 import { DappService } from './service';
 import type { DappSender } from './types';
@@ -336,7 +337,6 @@ describe('signDirect review and approval', () => {
     const r = await review(t, { memo: 'thanks' });
     expect(r.view).toMatchObject({
       origin: ORIGIN,
-      approvable: true,
       locked: false,
       signer: { label: 'Main', address: MAIN.address },
       fee: { denom: 'ubze', amount: '2000', symbol: 'BZE' },
@@ -346,6 +346,8 @@ describe('signDirect review and approval', () => {
     expect(r.view.summary.memo).toBe('thanks');
     expect(r.view.options.map((o) => o.denom)).toEqual(['ubze', 'uother']);
     expect(JSON.parse(r.view.rawJson)).toHaveLength(1);
+    expect(r.view.messageJson).toHaveLength(1);
+    expect(JSON.parse(r.view.messageJson[0] ?? '')).toMatchObject({ toAddress: OTHER.address });
   });
 
   it('signs the requests body untouched with the wallets own fee', async () => {
@@ -437,14 +439,55 @@ describe('signDirect review and approval', () => {
     expect(t.alarms).toEqual(expect.arrayContaining([WEAK_LOCK_ALARM, FULL_LOCK_ALARM]));
   });
 
-  it('shows a request it cannot put in plain words, and never signs it', async () => {
+  it('shows an unknown message with its own raw JSON, and signs it on Approve', async () => {
     const t = await rig();
     await t.connect();
-    const r = await review(t, { messages: [{ typeUrl: '/foo.v1.MsgBar', value: new Uint8Array() }] });
-    expect(r.view.approvable).toBe(false);
+    const r = await review(t, { messages: [nothingMsg()] });
+    expect(r.view.summary.level).toBe('unknown');
+    expect(r.view.messageJson[0]).toContain('/test.v1.MsgNothing');
+    const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    expect(res.ok).toBe(true);
+    expect(t.signedOf(r.id)).toBeDefined();
+  });
+
+  it('refuses a dangerous request without the tick, and keeps it waiting', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, {
+      messages: [grantMsg(MAIN.address, OTHER.address, '/cosmos.bank.v1beta1.MsgSend')],
+    });
+    expect(r.view.summary.level).toBe('dangerous');
+    expect(r.view.summary.messages[0]?.danger).not.toBeNull();
+    for (const trusted of [undefined, false]) {
+      const res = await t.dapp.answer(r.id, {
+        approve: true,
+        fee: feeFor(r.view),
+        ...(trusted === undefined ? {} : { trusted }),
+      });
+      expect(res).toMatchObject({ ok: false });
+    }
+    expect(t.answerOf(r.id)).toBeUndefined();
+    const ticked = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view), trusted: true });
+    expect(ticked.ok).toBe(true);
+    expect(t.signedOf(r.id)).toBeDefined();
+  });
+
+  it('lets the riskiest message decide when several are signed together', async () => {
+    const t = await rig();
+    await t.connect();
+    const send = encodeMsgSend({
+      fromAddress: MAIN.address,
+      toAddress: OTHER.address,
+      amount: [{ denom: 'ubze', amount: '1' }],
+    });
+    const r = await review(t, {
+      messages: [send, grantMsg(MAIN.address, OTHER.address, '/cosmos.bank.v1beta1.MsgSend')],
+    });
+    expect(r.view.summary.level).toBe('dangerous');
+    expect(r.view.summary.messages.map((m) => m.level)).toEqual(['normal', 'dangerous']);
+    expect(r.view.messageJson).toHaveLength(2);
     const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(res).toMatchObject({ ok: false });
-    expect(t.answerOf(r.id)).toBeUndefined();
   });
 
   it('refuses to sign once the site is no longer connected', async () => {

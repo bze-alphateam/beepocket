@@ -2,6 +2,7 @@ import {
   rawJson,
   summarise,
   verifySignRequest,
+  type AnyMsg,
   type FeeEstimate,
   type TxSummary,
 } from '@beepocket/core';
@@ -77,6 +78,12 @@ export function validateSignParams(params: unknown): Result<SignParams> {
   });
 }
 
+/** The pretty JSON of one message. */
+function messageJsonOf(msg: AnyMsg): string {
+  const [only] = JSON.parse(rawJson([msg])) as unknown[];
+  return JSON.stringify(only, null, 2);
+}
+
 /** What a request is, checked against the chain right now. */
 export interface Prepared {
   entry: ProfileAddress;
@@ -88,6 +95,8 @@ export interface Prepared {
   accountNumber: bigint;
   summary: TxSummary;
   rawJson: string;
+  /** The JSON of each message on its own. */
+  messageJson: string[];
   gasLimit: bigint;
   /** The fee tokens the signer can pay with, priced for `gasLimit`. */
   options: FeeChoice[];
@@ -225,6 +234,7 @@ export async function prepareSign(
       accountNumber,
       summary,
       rawJson: rawJson(verified.messages),
+      messageJson: verified.messages.map(messageJsonOf),
       gasLimit: estimate.gasLimit,
       options,
       defaultFee,
@@ -239,7 +249,7 @@ export function detailsOf(p: Prepared): SignDetails {
     signer: { label: p.entry.label, address: p.entry.address },
     summary: p.summary,
     rawJson: p.rawJson,
-    approvable: p.summary.level === 'normal',
+    messageJson: p.messageJson,
     locked: p.locked,
     fee: p.defaultFee,
     options: p.options,

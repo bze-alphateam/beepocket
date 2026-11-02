@@ -27,11 +27,14 @@ export function registerDappPopupHandlers(registry: HandlerRegistry, dapp: DappS
       if (typeof payload !== 'object' || payload === null) {
         return fail(ErrorCodes.badRequest, 'dapp.answer got a malformed request.');
       }
-      const { id, approve, index, fee } = payload as Record<string, unknown>;
+      const { id, approve, index, fee, trusted } = payload as Record<string, unknown>;
       if (typeof id !== 'string' || typeof approve !== 'boolean') {
         return fail(ErrorCodes.badRequest, 'dapp.answer got a malformed request.');
       }
       if (index !== undefined && (typeof index !== 'number' || !Number.isInteger(index))) {
+        return fail(ErrorCodes.badRequest, 'dapp.answer got a malformed request.');
+      }
+      if (trusted !== undefined && typeof trusted !== 'boolean') {
         return fail(ErrorCodes.badRequest, 'dapp.answer got a malformed request.');
       }
       const reviewed = fee === undefined ? null : reviewedFee(fee);
@@ -43,6 +46,7 @@ export function registerDappPopupHandlers(registry: HandlerRegistry, dapp: DappS
         approve,
         ...(index === undefined ? {} : { index }),
         ...(reviewed === null ? {} : { fee: reviewed }),
+        ...(trusted === undefined ? {} : { trusted }),
       });
     },
     handle: (request) =>
@@ -50,6 +54,7 @@ export function registerDappPopupHandlers(registry: HandlerRegistry, dapp: DappS
         approve: request.approve,
         ...(request.index === undefined ? {} : { index: request.index }),
         ...(request.fee === undefined ? {} : { fee: request.fee }),
+        ...(request.trusted === undefined ? {} : { trusted: request.trusted }),
       }),
   });
 }
