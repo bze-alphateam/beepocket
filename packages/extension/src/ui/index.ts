@@ -17,6 +17,7 @@ export {
 export { CopyButton, type CopyButtonProps } from './CopyButton';
 export { DropdownSheet, type DropdownOption, type DropdownSheetProps } from './DropdownSheet';
 export { Field, FieldSuffix, type FieldProps } from './Field';
+export { FieldAction, type FieldActionProps } from './FieldAction';
 export {
   HomeHeader,
   OnboardingHeader,
@@ -36,6 +37,7 @@ export { Pill } from './Pill';
 export { SearchField, type SearchFieldProps } from './SearchField';
 export { SectionLabel, type SectionLabelProps } from './SectionLabel';
 export { Segmented, type SegmentedOption, type SegmentedProps } from './Segmented';
+export { SelectRow, type SelectRowProps } from './SelectRow';
 export { Sheet, type SheetProps } from './Sheet';
 export { Spinner } from './Spinner';
 export {

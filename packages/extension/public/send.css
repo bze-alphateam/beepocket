@@ -1,16 +1,15 @@
-/* Send flow. Colours come from the --bp-* variables of the theme engine. */
-.bp-send,
-.bp-send-form {
+/* Send flow and the address book sheet. Colours come from the --bp-* variables of the theme engine. */
+.bp-send {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 100%;
   padding: 4px 16px 16px;
 }
 
 .bp-send-center {
   align-items: center;
   justify-content: center;
-  min-height: 100%;
   text-align: center;
 }
 
@@ -26,69 +25,51 @@
   font-weight: 600;
 }
 
-.bp-send-note,
+/* "✓ Alex · address book" / "Not in your address book · Save it" under To. */
 .bp-send-match {
-  margin: 0;
-  color: var(--bp-muted);
-  font-size: 12px;
-}
-
-.bp-send-match {
-  min-height: 16px;
-}
-
-.bp-send-mono {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.bp-send-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.bp-send-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--bp-line-strong);
-  border-radius: 12px;
-  background: var(--bp-card);
-  color: var(--bp-text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.bp-send-row[aria-pressed='true'] {
-  border-color: var(--bp-primary);
-}
-
-.bp-send-row:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.bp-send-row small {
-  display: block;
+  gap: 6px;
+  min-height: 16px;
+  margin: 0;
   color: var(--bp-muted);
+  font-size: 12px;
 }
 
-.bp-send-link {
-  border: 0;
-  background: none;
-  color: var(--bp-link, var(--bp-primary));
-  font: inherit;
+.bp-send-match:empty {
+  display: none;
+}
+
+.bp-send-match > .bp-icon {
+  color: var(--bp-ok);
+}
+
+.bp-send-match strong {
+  color: var(--bp-text);
   font-weight: 600;
-  cursor: pointer;
+}
+
+.bp-send-unknown {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--bp-faint);
+}
+
+.bp-send-unknown .bp-btn-ghost {
+  min-height: 0;
+  padding: 2px 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bp-send-grow {
+  flex: 1;
+}
+
+/* Review: confirm sits at the end of the body, Edit is the pinned footer under it. */
+.bp-send-review {
+  padding-bottom: 8px;
 }
 
 .bp-send-hero {
@@ -96,70 +77,211 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 12px 0;
+  padding: 18px 0 8px;
 }
 
-.bp-send-hero small {
-  color: var(--bp-faint, var(--bp-muted));
+.bp-send-review:has(.bp-lock-form) {
+  gap: 8px;
+  padding-top: 0;
+}
+
+.bp-send-review:has(.bp-lock-form) .bp-send-hero {
+  padding: 0;
+}
+
+.bp-send-review:has(.bp-lock-form) .bp-detail {
+  padding-block: 10px;
+}
+
+.bp-send-review .bp-lock-form {
+  gap: 8px;
+}
+
+.bp-send-hero-label {
+  color: var(--bp-faint);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.bp-send-hero strong {
-  font-size: 32px;
+.bp-send-hero-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
-.bp-send-card {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  border: 1px solid var(--bp-line, var(--bp-line-strong));
-  border-radius: 16px;
-  background: var(--bp-card);
-}
-
-.bp-send-card > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  font-size: 13px;
-}
-
-.bp-send-card > div + div {
-  border-top: 1px solid var(--bp-line, var(--bp-line-strong));
-}
-
-.bp-send-card dt {
+.bp-send-hero-sym {
   color: var(--bp-muted);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
-.bp-send-card dd {
+.bp-send-party {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  max-width: 220px;
-  margin: 0;
-  text-align: right;
+  gap: 2px;
 }
 
-.bp-send-actions {
+.bp-send-party strong {
+  font-weight: 600;
+}
+
+.bp-send-party .bp-mono {
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-send-party-to {
+  max-width: 210px;
+}
+
+.bp-send-party-to .bp-mono {
+  word-break: break-all;
+}
+
+.bp-send-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 0 2px;
+  color: var(--bp-muted);
+  font-size: 12px;
+}
+
+.bp-send-info > .bp-icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+/* Result */
+.bp-send-fill {
+  height: 100%;
+}
+
+.bp-send-error {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: auto;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid var(--bp-bad-line);
+  border-radius: 12px;
+  background: var(--bp-bad-soft);
+  font-size: 12px;
 }
 
-.bp-send-result {
-  align-items: stretch;
+.bp-send-error strong {
+  color: var(--bp-bad-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bp-send-error .bp-mono {
+  color: var(--bp-faint);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.bp-result .bp-detail {
+  padding: 11px 14px;
+}
+
+.bp-result .bp-detail strong {
+  font-weight: 600;
+}
+
+.bp-send-hash {
+  display: flex;
+  align-items: center;
+  margin: -11px -10px -11px 0;
+}
+
+.bp-send-hash .bp-mono {
+  font-size: 12px;
+}
+
+.bp-send-hash .bp-btn-icon {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+}
+
+/* From and fee sheets */
+.bp-send-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bp-send-options .bp-list-row-option {
+  min-height: 56px;
+}
+
+.bp-send-sheet-intro {
+  padding: 0 2px 6px;
+  color: var(--bp-muted);
+  font-size: 13px;
+}
+
+.bp-send-sheet-note {
+  padding: 6px 2px 0;
+  color: var(--bp-faint);
+  font-size: 12px;
+}
+
+/* Address book sheet */
+.bp-book {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bp-book-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bp-book-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bp-book-group .bp-list-row-option {
+  min-height: 50px;
+  padding: 0 10px;
+  border-color: transparent;
+}
+
+.bp-book-group .bp-list-row-on {
+  border-color: var(--bp-soft-line);
+}
+
+.bp-book-empty {
+  padding: 24px 0;
+  color: var(--bp-muted);
+  font-size: 13px;
   text-align: center;
 }
 
-.bp-send-result h1 {
-  padding-top: 24px;
-  font-size: 22px;
+.bp-book-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bp-book-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }

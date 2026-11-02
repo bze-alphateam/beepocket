@@ -58,6 +58,8 @@ export function ResultLayout(props: ResultLayoutProps) {
           {props.sub !== undefined && <p>{props.sub}</p>}
         </div>
         {props.children}
+        {props.link !== undefined && <div class="bp-result-link">{props.link}</div>}
+        {props.actions !== undefined && <div class="bp-bottom">{props.actions}</div>}
       </div>
     );
   }

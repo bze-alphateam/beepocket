@@ -1,11 +1,9 @@
 import { shortAddress } from '@beepocket/core';
-import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { WalletAddress } from '../../protocol';
 import type { FeeChoice } from '../../protocol/send';
-import { useClient } from '../../popup/client-context';
-import { Banner, Button, Sheet, TextField } from '../../ui';
-import { exact, feeText } from './format';
+import { Avatar, ListRow, Sheet } from '../../ui';
+import { exact } from './format';
 
 export interface FromRow {
   address: WalletAddress;
@@ -13,7 +11,7 @@ export interface FromRow {
   balance: bigint;
 }
 
-/** `W-From`: the addresses that hold the token, with their balances. */
+/** `W-From`: every address with its balance; the empty ones cannot be picked. */
 export function FromSheet(props: {
   open: boolean;
   rows: FromRow[];
@@ -25,29 +23,27 @@ export function FromSheet(props: {
 }) {
   return (
     <Sheet open={props.open} title={t('send.from.pick')} onClose={props.onClose}>
-      <ul class="bp-send-list">
-        {props.rows.map(({ address, balance }) => (
-          <li key={address.index}>
-            <button
-              type="button"
-              class="bp-send-row"
-              aria-pressed={address.index === props.selected}
+      <div class="bp-send-options">
+        {props.rows.map(({ address, balance }) => {
+          const amount = `${exact(balance.toString(), props.decimals)} ${props.symbol}`;
+          return (
+            <ListRow
+              key={address.index}
+              size="option"
+              title={address.label}
+              subtitle={shortAddress(address.address)}
+              value={amount}
+              selected={address.index === props.selected}
               disabled={balance === 0n}
+              label={t('send.from.option', { label: address.label, amount })}
               onClick={() => {
                 props.onPick(address.index);
               }}
-            >
-              <span>
-                <strong>{address.label}</strong>
-                <small>{shortAddress(address.address)}</small>
-              </span>
-              <span>
-                {exact(balance.toString(), props.decimals)} {props.symbol}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+            />
+          );
+        })}
+        <p class="bp-send-sheet-note">{t('send.from.empty', { symbol: props.symbol })}</p>
+      </div>
     </Sheet>
   );
 }
@@ -63,60 +59,35 @@ export function FeeSheet(props: {
 }) {
   return (
     <Sheet open={props.open} title={t('send.fee.title')} onClose={props.onClose}>
-      <p class="bp-send-note">{t('send.fee.intro', { label: props.label })}</p>
-      <ul class="bp-send-list">
-        {props.options.map((o) => (
-          <li key={o.denom}>
-            <button
-              type="button"
-              class="bp-send-row"
-              aria-pressed={o.denom === props.selected}
+      <div class="bp-send-options">
+        <p class="bp-send-sheet-intro">{t('send.fee.intro', { label: props.label })}</p>
+        {props.options.map((o) => {
+          const on = o.denom === props.selected;
+          const fee = `≈ ${exact(o.amount, o.decimals)} ${o.symbol}`;
+          return (
+            <ListRow
+              key={o.denom}
+              size="option"
+              title={o.symbol}
+              plainSubtitle
+              subtitle={
+                o.balance === undefined
+                  ? undefined
+                  : t('send.fee.balance', { amount: exact(o.balance, o.decimals) })
+              }
+              leading={<Avatar label={o.symbol} size={30} />}
+              value={fee}
+              unit={on ? t('send.fee.selected') : undefined}
+              selected={on}
+              label={t('send.fee.option', { symbol: o.symbol, fee })}
               onClick={() => {
                 props.onPick(o.denom);
               }}
-            >
-              <strong>{o.symbol}</strong>
-              <span>≈ {feeText(o)}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </Sheet>
-  );
-}
-
-/** `W-Contact-New` from the Send form: the address is known, only the name is asked. */
-export function SaveContactSheet(props: {
-  open: boolean;
-  address: string;
-  onSaved: () => void;
-  onClose: () => void;
-}) {
-  const client = useClient();
-  const [name, setName] = useState('');
-  const [failed, setFailed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const submit = (e: Event) => {
-    e.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setFailed(false);
-    void client.call('book.add', { name: name.trim(), address: props.address }).then((r) => {
-      setBusy(false);
-      if (r.ok) props.onSaved();
-      else setFailed(true);
-    });
-  };
-  return (
-    <Sheet open={props.open} title={t('send.save.title')} onClose={props.onClose}>
-      <form class="bp-send-form" onSubmit={submit}>
-        <p class="bp-send-note bp-send-mono">{props.address}</p>
-        <TextField label={t('send.save.name')} value={name} onInput={setName} autoFocus />
-        {failed && <Banner tone="red">{t('send.save.failed')}</Banner>}
-        <Button type="submit" disabled={busy || name.trim() === ''}>
-          {t('send.save.confirm')}
-        </Button>
-      </form>
+            />
+          );
+        })}
+        <p class="bp-send-sheet-note">{t('send.fee.note')}</p>
+      </div>
     </Sheet>
   );
 }

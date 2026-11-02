@@ -1,0 +1,19 @@
+/* FieldAction: the accent icon button at the end of a field box. */
+.bp-field-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--bp-accent-text);
+  cursor: pointer;
+}
+
+.bp-field-action:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: -2px;
+}
