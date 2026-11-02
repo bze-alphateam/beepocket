@@ -26,6 +26,8 @@ export function AddAddressSheet(props: AddAddressSheetProps) {
   const [label, setLabel] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [failed, setFailed] = useState(false);
+  // The previewed address was taken by another add; the preview now shows the next one.
+  const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -50,6 +52,7 @@ export function AddAddressSheet(props: AddAddressSheetProps) {
     busyRef.current = true;
     setBusy(true);
     setFailed(false);
+    setStale(false);
     const res = await client.call(
       'wallet.deriveNext',
       trimmed === '' ? { index: preview.index } : { index: preview.index, label: trimmed },
@@ -61,11 +64,13 @@ export function AddAddressSheet(props: AddAddressSheetProps) {
       props.onClose();
       return;
     }
-    setFailed(true);
     if (res.error.code === WalletErrorCodes.staleIndex) {
+      setStale(true);
       setPreview(null);
       void load();
+      return;
     }
+    setFailed(true);
   };
 
   return (
@@ -99,6 +104,11 @@ export function AddAddressSheet(props: AddAddressSheetProps) {
               }}
             />
           </>
+        )}
+        {stale && (
+          <p class="bp-home-note" role="status">
+            {t('home.add.stale')}
+          </p>
         )}
         {failed && <p role="alert">{t('home.add.failed')}</p>}
         <Button type="submit" disabled={preview === null || busy}>

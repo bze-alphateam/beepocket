@@ -409,9 +409,19 @@ describe('addresses tab', () => {
     fireEvent(s.host.querySelector('[role="dialog"] form'), 'submit');
     await s.tick();
     const dialog = s.host.querySelector('[role="dialog"]');
-    expect(dialog?.querySelector('[role="alert"]')).not.toBeNull();
+    // Not an error: the sheet says why the address changed and offers the new next one.
+    expect(dialog?.querySelector('[role="alert"]')).toBeNull();
+    expect(dialog?.textContent).not.toContain('Could not add the address');
+    expect(dialog?.querySelector('[role="status"]')?.textContent).toBe(
+      'Another address was added meanwhile. This is the next one.',
+    );
     expect(dialog?.textContent).toContain("It's address #4 in this wallet.");
     expect(s.w.addresses).toHaveLength(3);
+    // Adding now stores the new next address.
+    fireEvent(dialog?.querySelector('form'), 'submit');
+    await s.tick();
+    expect(s.w.addresses).toHaveLength(4);
+    expect(s.host.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('renames within 1–32 characters and refuses the rest', async () => {

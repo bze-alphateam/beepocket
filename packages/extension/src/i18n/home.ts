@@ -42,6 +42,7 @@ export const home = {
   'home.add.invalid': 'Use at most 32 characters.',
   'home.add.save': 'Add address',
   'home.add.failed': 'Could not add the address. Try again.',
+  'home.add.stale': 'Another address was added meanwhile. This is the next one.',
   'home.add.loading': 'Preparing the next address',
   'home.switcher.title': 'Switch token',
   'home.switcher.search': 'Search tokens',

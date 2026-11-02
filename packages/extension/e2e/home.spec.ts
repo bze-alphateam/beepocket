@@ -6,21 +6,28 @@ const PASSWORD = 'correct horse';
 const PHRASE = `${'abandon '.repeat(23)}art`;
 const GOLD = 'factory/bze1recorded/gold';
 const MAIN = deriveAccount(PHRASE, 0).address;
+const SECOND = deriveAccount(PHRASE, 1).address;
 
-/** Plays the BZE node: the main address holds 1.5 BZE and 2 GOLD, everything else is empty. */
+/**
+ * Plays the BZE node: the main address holds 1.5 BZE and 2 GOLD, the second one 1 GOLD,
+ * everything else is empty.
+ */
 async function mockNode(context: BrowserContext): Promise<void> {
   await context.route('https://rest.getbze.com/**', (route) => {
     const url = new URL(route.request().url());
     const notFound = { status: 404, json: { code: 5, message: 'not found', details: [] } };
     const balances = /\/cosmos\/bank\/v1beta1\/balances\/(.+)$/.exec(url.pathname);
     if (balances?.[1] !== undefined) {
-      const mine = decodeURIComponent(balances[1]) === MAIN;
-      const coins = mine
-        ? [
-            { denom: 'ubze', amount: '1500000' },
-            { denom: GOLD, amount: '2000000' },
-          ]
-        : [];
+      const holder = decodeURIComponent(balances[1]);
+      const coins =
+        holder === MAIN
+          ? [
+              { denom: 'ubze', amount: '1500000' },
+              { denom: GOLD, amount: '2000000' },
+            ]
+          : holder === SECOND
+            ? [{ denom: GOLD, amount: '1000000' }]
+            : [];
       return route.fulfill({
         json: { balances: coins, pagination: { next_key: null, total: String(coins.length) } },
       });
@@ -116,13 +123,14 @@ test('home shows balances, derives, renames and re-themes per token', async ({
   const before = await primary();
   await page.getByRole('button', { name: 'Switch token, current BZE' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'GOLD', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('2.00');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('3.00');
   await expect.poll(primary).not.toBe(before);
 
-  // A row opens Send with that address as the sender.
-  // Tap the amount side of the row, clear of the copy and rename buttons.
+  // A row opens Send with that address as the sender, not the default (the richest, Daily).
   await page
-    .getByRole('button', { name: 'Send GOLD from Daily' })
+    .getByRole('button', { name: 'Send GOLD from Savings' })
     .click({ position: { x: 290, y: 30 } });
-  await expect(page.getByRole('button', { name: 'Send GOLD from Daily' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Send GOLD from Savings' })).toBeHidden();
+  await expect(page.getByRole('button', { name: /Savings/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Daily/ })).toHaveCount(0);
 });
