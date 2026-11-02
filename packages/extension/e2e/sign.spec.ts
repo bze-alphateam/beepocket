@@ -129,7 +129,7 @@ test('signs and sends 1 BZE: sign screen, Approve, then the hash from the node',
       dapp.getByRole('button', { name: 'Send 1 BZE' }).click(),
     ]);
     await expect(sign.getByRole('heading', { name: 'Approve a transaction' })).toBeVisible();
-    await expect(sign.getByText(/1 BZE/).first()).toBeVisible();
+    await expect(sign.getByText(/1\.00 BZE/).first()).toBeVisible();
     await sign.getByRole('button', { name: 'Approve' }).click();
     await expect(dapp.getByRole('status')).toHaveText(`hash ${HASH.toLowerCase()}`);
   } finally {
@@ -166,9 +166,11 @@ test('in the weak lock the sign screen goes through Unlock and approve', async (
       .poll(async () =>
         setup.evaluate(
           async (): Promise<string> =>
-            ((await chrome.runtime.sendMessage({ method: 'wallet.state', payload: {} })) as {
-              value: { state: string };
-            }).value.state,
+            (
+              (await chrome.runtime.sendMessage({ method: 'wallet.state', payload: {} })) as {
+                value: { state: string };
+              }
+            ).value.state,
         ),
       )
       .toBe('weakLocked');

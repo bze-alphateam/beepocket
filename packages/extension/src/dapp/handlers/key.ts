@@ -68,7 +68,10 @@ function wireKey(entry: ProfileAddress, pubKey: string): WireKey {
   };
 }
 
-export function connectedAddress(profile: Profile, request: PendingRequest): ProfileAddress | undefined {
+export function connectedAddress(
+  profile: Profile,
+  request: PendingRequest,
+): ProfileAddress | undefined {
   const site = Object.hasOwn(profile.sites[request.network], request.origin)
     ? profile.sites[request.network][request.origin]
     : undefined;

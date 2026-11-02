@@ -41,7 +41,9 @@ export function SignScreen({ view, done }: SignScreenProps) {
     const res = await client.call('dapp.answer', {
       id: view.id,
       approve,
-      ...(approve ? { fee: { denom: fee.denom, amount: fee.amount, gasLimit: view.gasLimit } } : {}),
+      ...(approve
+        ? { fee: { denom: fee.denom, amount: fee.amount, gasLimit: view.gasLimit } }
+        : {}),
     });
     setBusy(false);
     if (res.ok || res.error.code === 'unknown-request') {

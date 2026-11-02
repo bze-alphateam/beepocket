@@ -251,7 +251,9 @@ describe('the sign screen', () => {
     );
     await settle();
     fireEvent(
-      [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('OTH')) as Element,
+      [...document.querySelectorAll('button')].find((b) =>
+        b.textContent.startsWith('OTH'),
+      ) as Element,
       'click',
     );
     await settle();
@@ -281,10 +283,7 @@ describe('the sign screen', () => {
   });
 
   it('asks for the password in the weak lock, then approves', async () => {
-    const t = signRig(
-      { ...SIGN, locked: true },
-      { 'wallet.reauth': () => ok({ status: 'ok' }) },
-    );
+    const t = signRig({ ...SIGN, locked: true }, { 'wallet.reauth': () => ok({ status: 'ok' }) });
     await settle();
     expect(t.host.textContent).toContain('Unlock and approve');
     expect(button(t.host, 'Approve')).toBeUndefined();
@@ -304,4 +303,3 @@ describe('the sign screen', () => {
     expect(button(t.host, 'Reject')).toBeDefined();
   });
 });
-
