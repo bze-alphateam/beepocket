@@ -551,7 +551,7 @@ describe('the request queue in the window', () => {
     const t = rig({
       ...base,
       'dapp.current': () => ok({ ...CONNECT, count: 2 }),
-      'dapp.answer': () => ok({}),
+      'dapp.answer': () => fail('internal', 'Try again.'),
     });
     await settle();
     await settle();

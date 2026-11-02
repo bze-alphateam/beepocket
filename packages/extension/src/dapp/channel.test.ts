@@ -642,7 +642,7 @@ describe('request queue', () => {
     expect(await t.dapp.current()).toEqual({ status: 'none' });
   });
 
-  it('keeps 5 requests per site and 20 in all, answering the rest invalid-request', async () => {
+  it('keeps 5 requests per site, answering the rest invalid-request', async () => {
     const t = await rig();
     for (let i = 0; i < 5; i++) {
       const ok = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
@@ -660,10 +660,44 @@ describe('request queue', () => {
       }
     }
     expect((await t.dapp.queue()).count).toBe(20);
-    const last = await t.ask('connect', chainId(), t.site(at(5), 5, 'd5'));
-    expect(last.ack).toEqual({
-      error: { code: 'invalid-request', message: 'Too many requests waiting' },
+  });
+
+  it("lets a new site in when other sites fill the queue, ending the busiest one's oldest", async () => {
+    const t = await rig();
+    const first = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    for (let i = 1; i <= 4; i++) {
+      for (let j = i === 1 ? 1 : 0; j < 5; j++) {
+        await t.ask('connect', chainId(), t.site(at(i), i, `d${String(i)}`));
+      }
+    }
+    expect((await t.dapp.queue()).count).toBe(20);
+    const fresh = await t.ask('connect', chainId(), t.site(at(5), 5, 'd5'));
+    expect(fresh.ack).toEqual({ accepted: true });
+    const queue = await t.dapp.queue();
+    expect(queue.count).toBe(20);
+    expect(queue.origins).toContain(at(5));
+    expect(one(t.answersFor(first.id))).toMatchObject({ error: { code: 'invalid-request' } });
+  });
+
+  it('opens one window when requests arrive together', async () => {
+    const t = await rig();
+    await Promise.all([
+      t.ask('connect', chainId(), t.site(at(1), 1, 'd1')),
+      t.ask('connect', chainId(), t.site(at(2), 2, 'd2')),
+    ]);
+    expect(t.created).toHaveLength(1);
+  });
+
+  it('refuses a request id that is already waiting', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    const again = await t.dapp.receive(t.site(at(1), 1, 'd1'), {
+      id: a.id,
+      method: 'connect',
+      params: chainId(),
     });
+    expect(again.ack).toMatchObject({ error: { code: 'invalid-request' } });
+    expect((await t.dapp.queue()).count).toBe(1);
   });
 
   it('does not queue what needs no window', async () => {

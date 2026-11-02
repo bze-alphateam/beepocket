@@ -98,8 +98,15 @@ export class DappService {
     });
     const decision = await handler.decide(request);
     if (decision.kind === 'answer') return this.answered(request, decision.outcome);
-    if ((await this.deps.requests.add(request)) !== 'added')
-      return bad('Too many requests waiting');
+    const added = await this.deps.requests.add(request);
+    if (added.status === 'duplicate') return bad('Duplicate request.');
+    if (added.status !== 'added') return bad('Too many requests waiting');
+    if (added.evicted) {
+      await this.deliver(
+        added.evicted,
+        refuse(DappErrorCodes.invalidRequest, 'Too many requests waiting'),
+      );
+    }
     await this.deps.window.show();
     return { ack: { accepted: true }, after: nothing };
   }

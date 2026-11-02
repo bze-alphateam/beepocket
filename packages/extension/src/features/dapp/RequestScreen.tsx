@@ -72,6 +72,7 @@ export function RequestScreen({ close }: RequestScreenProps) {
         from !== undefined &&
         view.id !== from
       ) {
+        cancelNext.current();
         setNext(view.count ?? 1);
         cancelNext.current = scheduler.after(NEXT_MS, () => {
           setNext(null);

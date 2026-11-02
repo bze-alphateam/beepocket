@@ -11,7 +11,9 @@ export const REQUEST_TTL_MS = 10 * 60_000;
 export const MAX_PENDING = 20;
 export const MAX_PER_ORIGIN = 5;
 
-export type AddResult = 'added' | 'queue-full' | 'origin-full';
+export type AddResult =
+  | { status: 'added'; evicted?: PendingRequest }
+  | { status: 'queue-full' | 'origin-full' | 'duplicate' };
 
 function valid(x: unknown): x is PendingRequest {
   if (typeof x !== 'object' || x === null) return false;
@@ -68,16 +70,36 @@ export class RequestStore {
     return this.exclusive(() => this.read());
   }
 
-  /** Appends the request unless the queue or the site's share of it is full. */
+  /**
+   * Appends the request unless the id is already queued or the site's share is full. When the
+   * queue is full, a site with fewer waiting than the busiest one takes the place of that busiest
+   * site's oldest request (handed back as `evicted`), so many sites cannot starve a new one.
+   */
   add(request: PendingRequest): Promise<AddResult> {
     return this.exclusive(async () => {
       const all = await this.read();
-      if (all.length >= MAX_PENDING) return 'queue-full';
-      if (all.filter((r) => r.origin === request.origin).length >= MAX_PER_ORIGIN) {
-        return 'origin-full';
+      if (all.some((r) => r.id === request.id)) return { status: 'duplicate' };
+      const mine = all.filter((r) => r.origin === request.origin).length;
+      if (mine >= MAX_PER_ORIGIN) return { status: 'origin-full' };
+      if (all.length < MAX_PENDING) {
+        await this.write([...all, request]);
+        return { status: 'added' };
       }
-      await this.write([...all, request]);
-      return 'added';
+      const counts = new Map<string, number>();
+      for (const r of all) counts.set(r.origin, (counts.get(r.origin) ?? 0) + 1);
+      let heaviest = '';
+      let most = 0;
+      for (const [origin, n] of counts) {
+        if (n > most) {
+          heaviest = origin;
+          most = n;
+        }
+      }
+      if (mine + 1 >= most) return { status: 'queue-full' };
+      const evicted = all.find((r) => r.origin === heaviest);
+      if (!evicted) return { status: 'queue-full' };
+      await this.write([...all.filter((r) => r !== evicted), request]);
+      return { status: 'added', evicted };
     });
   }
 
