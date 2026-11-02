@@ -3,10 +3,17 @@ import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ClientProvider } from '../../popup/client-context';
 import { Router } from '../../popup/router';
-import { fail, ok, type Method, type RequestView, type Result } from '../../protocol';
+import {
+  fail,
+  ok,
+  type CurrentRequest,
+  type Method,
+  type RequestView,
+  type Result,
+} from '../../protocol';
 import type { Client } from '../../protocol/client';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
-import { HomeEnvProvider, type HomeEnv } from '../home/env';
+import { HomeEnvProvider, type HomeEnv, type Scheduler } from '../home/env';
 import { LockEnvProvider } from '../lock/env';
 import { grantMsg, nothingMsg } from '../../dapp/test-support';
 import { RequestScreen } from './RequestScreen';
@@ -36,14 +43,18 @@ const BZE = {
 
 type Handler = (req: unknown) => Result<unknown>;
 
-function rig(handlers: Partial<Record<Method, Handler>>) {
+function rig(
+  handlers: Partial<Record<Method, Handler>>,
+  after: Scheduler['after'] = () => () => undefined,
+  every: Scheduler['every'] = () => () => undefined,
+) {
   const call = vi.fn((method: Method, req: unknown) => {
     const handler = handlers[method];
     return Promise.resolve(handler ? handler(req) : fail('unexpected', method));
   });
   const close = vi.fn();
   const env = {
-    scheduler: { every: () => () => undefined, after: () => () => undefined },
+    scheduler: { every, after },
     themeTarget: { style: { setProperty: () => undefined }, dataset: {} },
     scheme: { current: () => 'dark', subscribe: () => () => undefined },
     clipboard: { writeText: () => Promise.resolve() },
@@ -452,5 +463,102 @@ describe('the sign screen: risk levels', () => {
     setTick(t.host);
     await settle();
     expect(submit().disabled).toBe(false);
+  });
+});
+
+describe('the request queue in the window', () => {
+  it('shows "1 of N" while several wait, and "Next request" before the next one', async () => {
+    let timer: (() => void) | undefined;
+    const views: CurrentRequest[] = [
+      { ...CONNECT, count: 2 },
+      { ...CONNECT, id: 'r2', count: 1 },
+    ];
+    const t = rig(
+      {
+        ...base,
+        'dapp.current': () => ok(views.shift() ?? { status: 'none' }),
+        'dapp.answer': () => ok({}),
+      },
+      (_ms, fn) => {
+        timer = fn;
+        return () => undefined;
+      },
+    );
+    await settle();
+    await settle();
+    await settle();
+    expect(t.host.querySelector('.bp-dapp-pill')?.textContent).toBe('1 of 2');
+
+    fireEvent(button(t.host, 'Cancel'), 'click');
+    await settle();
+    expect(t.host.textContent).toContain('Next request · 1 waiting');
+    expect(button(t.host, 'Connect')).toBeUndefined();
+
+    await act(() => timer?.());
+    await settle();
+    await settle();
+    expect(t.host.querySelector('.bp-dapp-pill')).toBeNull();
+    expect(t.host.textContent).toContain('exactly one address');
+  });
+
+  it('asks the worker again when the head expires', async () => {
+    const refresh: (() => void)[] = [];
+    const t = rig(
+      { ...base, 'dapp.current': () => ok({ ...CONNECT, count: 1, expiresAt: 5_000 }) },
+      (_ms, fn) => {
+        refresh.push(fn);
+        return () => undefined;
+      },
+    );
+    await settle();
+    await settle();
+    const before = t.call.mock.calls.filter(([m]) => m === 'dapp.current').length;
+    await act(() => refresh.at(-1)?.());
+    await settle();
+    const after = t.call.mock.calls.filter(([m]) => m === 'dapp.current').length;
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('counts requests that arrive while one is on screen, without touching the view', async () => {
+    const ticks: (() => void)[] = [];
+    let waiting = 1;
+    const t = rig(
+      {
+        ...base,
+        'dapp.current': () => ok({ ...CONNECT, count: 1 }),
+        'dapp.queue': () => ok({ head: CONNECT.origin, count: waiting, origins: [CONNECT.origin] }),
+      },
+      undefined,
+      (_ms, fn) => {
+        ticks.push(fn);
+        return () => undefined;
+      },
+    );
+    await settle();
+    await settle();
+    await settle();
+    expect(t.host.querySelector('.bp-dapp-pill')).toBeNull();
+    waiting = 2;
+    await act(() => {
+      for (const f of ticks) f();
+    });
+    await settle();
+    expect(t.host.querySelector('.bp-dapp-pill')?.textContent).toBe('1 of 2');
+    expect(t.host.textContent).toContain('exactly one address');
+  });
+
+  it('keeps showing a request that stays waiting after a failed answer', async () => {
+    const t = rig({
+      ...base,
+      'dapp.current': () => ok({ ...CONNECT, count: 2 }),
+      'dapp.answer': () => fail('internal', 'Try again.'),
+    });
+    await settle();
+    await settle();
+    await settle();
+    fireEvent(button(t.host, 'Cancel'), 'click');
+    await settle();
+    await settle();
+    expect(t.host.textContent).not.toContain('Next request');
   });
 });

@@ -43,6 +43,7 @@ function start(tabs: { url: string; lastAccessed: number }[] = []) {
         update: () => Promise.resolve({}),
       },
       windows: {
+        onRemoved: { addListener: () => undefined },
         create: (info) => {
           created.push(info.url);
           return Promise.resolve({ id: 1 });

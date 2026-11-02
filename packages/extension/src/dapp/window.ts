@@ -22,7 +22,19 @@ export class RequestWindow {
     private readonly session: SessionStorage,
   ) {}
 
-  async show(): Promise<void> {
+  private tail: Promise<unknown> = Promise.resolve();
+
+  /** Calls run one after another, so requests arriving together open one window, not two. */
+  show(): Promise<void> {
+    const run = this.tail.then(
+      () => this.open(),
+      () => this.open(),
+    );
+    this.tail = run.catch(() => undefined);
+    return run;
+  }
+
+  private async open(): Promise<void> {
     const id = await this.session.get(WINDOW_KEY);
     if (typeof id === 'number') {
       try {
@@ -41,5 +53,12 @@ export class RequestWindow {
       focused: true,
     });
     if (created?.id !== undefined) await this.session.set(WINDOW_KEY, created.id);
+  }
+
+  /** The browser closed a window; says whether it was the request window (and forgets it). */
+  async closed(windowId: number): Promise<boolean> {
+    if ((await this.session.get(WINDOW_KEY)) !== windowId) return false;
+    await this.session.remove(WINDOW_KEY);
+    return true;
   }
 }

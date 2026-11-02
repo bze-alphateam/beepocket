@@ -162,7 +162,11 @@ async function rig() {
   const changes = new AccountChanges({ documents, deliverer });
   const dapp = new DappService({
     registry,
-    requests: new RequestStore(session),
+    requests: new RequestStore(
+      session,
+      { set: () => Promise.resolve(), clear: () => Promise.resolve() },
+      clock,
+    ),
     window: new RequestWindow(
       {
         create: () => {
@@ -652,5 +656,20 @@ describe('sendTx', () => {
     await t.wallet.weakLock();
     const a = await t.ask('sendTx', params());
     expect(bytesFromWire(t.answerOf(a.id)?.result as string)).toHaveLength(32);
+  });
+});
+
+describe('a sign request waiting in the queue', () => {
+  it('is skipped with not-connected when its site was disconnected before it reached the head', async () => {
+    const t = await rig();
+    await t.connect();
+    const first = await t.ask('signDirect', request().params);
+    const second = await t.ask('signDirect', request().params);
+    expect(await t.dapp.current()).toMatchObject({ status: 'sign', id: first.id, count: 2 });
+
+    await t.dapp.answer(first.id, { approve: false });
+    expect(await t.dapp.sites.disconnect(ORIGIN)).toEqual({ ok: true, value: {} });
+    expect(await t.dapp.current()).toEqual({ status: 'none' });
+    expect(t.answerOf(second.id)).toMatchObject({ error: { code: 'not-connected' } });
   });
 });

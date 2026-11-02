@@ -1,5 +1,6 @@
 import { FeeEstimator, TokenResolver } from '@beepocket/core';
 import type { Platform } from '../platform';
+import type { Alarms } from '../features/wallet/alarms';
 import type { Services } from '../background/services';
 import type { WalletService } from '../features/wallet';
 import { AccountChanges } from './account-changes';
@@ -24,7 +25,7 @@ export function createDappService(
   platform: Platform,
   services: Services,
   wallet: WalletService,
-  chrome: { tabs: TabsLike; windows: WindowsLike },
+  chrome: { tabs: TabsLike; windows: WindowsLike; alarms: Alarms },
 ): DappService {
   const registry = new DappRegistry();
   // Built per request over the active network's clients, like the send flow's service.
@@ -45,7 +46,7 @@ export function createDappService(
   const changes = new AccountChanges({ documents, deliverer });
   return new DappService({
     registry,
-    requests: new RequestStore(platform.session),
+    requests: new RequestStore(platform.session, chrome.alarms, platform.clock),
     window: new RequestWindow(chrome.windows, platform.session),
     deliverer,
     documents,

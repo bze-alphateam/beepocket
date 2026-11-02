@@ -5,6 +5,7 @@ import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
 import { Banner, Spinner } from '../../ui';
 import { PasswordForm } from './PasswordForm';
+import { WaitingRequests } from './WaitingRequests';
 import { homeTarget, importTarget } from './targets';
 
 type Load =
@@ -15,6 +16,8 @@ export interface UnlockPanelProps {
   onUnlocked?: () => void;
   /** The request window has no way out through Import. */
   noImport?: boolean;
+  /** Shows who is waiting for the wallet (the toolbar popup; the request window names it itself). */
+  waiting?: boolean;
   /** Names the site that is waiting, under the title. */
   subtitle?: string;
 }
@@ -42,6 +45,7 @@ export function UnlockPanel(props: UnlockPanelProps) {
         <img src="icons/icon-48.png" width="48" height="48" alt="" />
         <h1>{t('lock.title')}</h1>
         <p class="bp-lock-sub">{props.subtitle ?? t('lock.subtitle')}</p>
+        {props.waiting === true && <WaitingRequests />}
         {load.status === 'loading' && <Spinner />}
         {load.status === 'failed' && <Banner tone="red">{t('lock.loadFailed')}</Banner>}
         {load.status === 'ready' && (
@@ -75,7 +79,25 @@ export function UnlockPanel(props: UnlockPanelProps) {
   );
 }
 
-/** The unlock route of the popup. */
+/**
+ * The unlock route of the popup. With requests waiting, a full lock has no other screen to
+ * keep: unlocking opens the request window and closes the popup.
+ */
 export function UnlockScreen() {
-  return <UnlockPanel />;
+  const client = useClient();
+  const { navigate } = useRoute();
+  return (
+    <UnlockPanel
+      waiting
+      onUnlocked={() => {
+        void client.call('dapp.queue', {}).then(async (queue) => {
+          if (queue.ok && queue.value.count > 0 && (await client.call('dapp.open', {})).ok) {
+            window.close();
+            return;
+          }
+          navigate(homeTarget);
+        });
+      }}
+    />
+  );
 }

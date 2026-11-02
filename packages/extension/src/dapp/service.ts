@@ -3,6 +3,8 @@ import {
   fail,
   ok,
   DappProtocolCodes,
+  type CurrentRequest,
+  type QueueView,
   type RequestView,
   type Result,
 } from '../protocol';
@@ -12,7 +14,7 @@ import type { AccountChanges } from './account-changes';
 import type { SitesService } from './sites';
 import type { DocumentLog } from './documents';
 import type { Decision, DappRegistry, UserAnswer } from './registry';
-import type { RequestStore } from './requests';
+import { REQUEST_TTL_MS, type RequestStore } from './requests';
 import { refuse, type DappSender, type Outcome, type PendingRequest } from './types';
 import type { RequestWindow } from './window';
 import { DappErrorCodes, type WireError } from './wire';
@@ -75,6 +77,8 @@ export class DappService {
     const valid = handler.validate(params);
     if (!valid.ok) return bad(valid.error.message);
 
+    // Requests that waited their 10 minutes make room before the caps are checked.
+    await this.expireDue();
     const network = await this.deps.services.activeNetwork();
     const request: PendingRequest = {
       id,
@@ -94,29 +98,87 @@ export class DappService {
     });
     const decision = await handler.decide(request);
     if (decision.kind === 'answer') return this.answered(request, decision.outcome);
-    if (!(await this.deps.requests.addIfNone(request))) return bad('Another request is waiting');
+    const added = await this.deps.requests.add(request);
+    if (added.status === 'duplicate') return bad('Duplicate request.');
+    if (added.status !== 'added') return bad('Too many requests waiting');
+    if (added.evicted) {
+      await this.deliver(
+        added.evicted,
+        refuse(DappErrorCodes.invalidRequest, 'Too many requests waiting'),
+      );
+    }
     await this.deps.window.show();
     return { ack: { accepted: true }, after: nothing };
   }
 
-  /** The request the window should show; answers it instead when the wallet can already. */
-  async current(): Promise<RequestView> {
-    const [request] = await this.deps.requests.list();
-    if (!request) return { status: 'none' };
-    const handler = this.deps.registry.get(request.method);
-    if (!handler) {
-      await this.finish(request, refuse(DappErrorCodes.invalidRequest, 'Unknown method.'));
-      return { status: 'none' };
+  /**
+   * The request the window should show: the head of the queue. A head the wallet can already
+   * answer (or must refuse, such as a site disconnected meanwhile) is settled and the next one shown.
+   */
+  async current(): Promise<CurrentRequest> {
+    await this.expireDue();
+    for (;;) {
+      const queue = await this.deps.requests.list();
+      const request = queue[0];
+      if (!request) return { status: 'none' };
+      const handler = this.deps.registry.get(request.method);
+      if (!handler) {
+        await this.finish(request, refuse(DappErrorCodes.invalidRequest, 'Unknown method.'));
+        continue;
+      }
+      const decision = await handler.decide(request);
+      if (decision.kind === 'answer') {
+        if (await this.deps.requests.claim(request.id))
+          await this.deliver(request, decision.outcome);
+        continue;
+      }
+      return {
+        ...view(request, decision),
+        count: queue.length,
+        expiresAt: request.createdAt + REQUEST_TTL_MS,
+      };
     }
-    const decision = await handler.decide(request);
-    if (decision.kind === 'answer') {
-      if (await this.deps.requests.claim(request.id)) await this.deliver(request, decision.outcome);
-      return { status: 'none' };
-    }
-    return view(request, decision);
+  }
+
+  /** Who is waiting, for the unlock screen. Reveals no request details. */
+  async queue(): Promise<QueueView> {
+    await this.expireDue();
+    const queue = await this.deps.requests.list();
+    return {
+      head: queue[0]?.origin ?? null,
+      count: queue.length,
+      origins: [...new Set(queue.map((r) => r.origin))],
+    };
+  }
+
+  /** Opens (or focuses) the request window when something waits; the unlock screen calls it. */
+  async openWindow(): Promise<void> {
+    if ((await this.deps.requests.list()).length > 0) await this.deps.window.show();
+  }
+
+  /** The expiry alarm fired. */
+  onExpiry(): Promise<void> {
+    return this.expireDue();
+  }
+
+  /** The user closed the request window: nothing they have not seen is approved. */
+  async onWindowRemoved(windowId: number): Promise<void> {
+    if (!(await this.deps.window.closed(windowId))) return;
+    const all = await this.deps.requests.takeAll();
+    await Promise.all(
+      all.map((r) => this.deliver(r, refuse(DappErrorCodes.rejected, 'The request was rejected.'))),
+    );
+  }
+
+  private async expireDue(): Promise<void> {
+    const gone = await this.deps.requests.takeExpired();
+    await Promise.all(
+      gone.map((r) => this.deliver(r, refuse(DappErrorCodes.expired, 'The request expired.'))),
+    );
   }
 
   async answer(id: string, user: UserAnswer): Promise<Result<Record<string, never>>> {
+    await this.expireDue();
     const request = await this.deps.requests.claim(id);
     if (!request)
       return fail(DappProtocolCodes.unknownRequest, 'This request is no longer waiting.');
