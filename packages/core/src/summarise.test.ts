@@ -738,6 +738,7 @@ describe('invisible characters', () => {
           kind: 'native' as const,
           source: 'chain' as const,
           branding: null,
+          logo: null,
         }),
     };
     const s = await run([send()], { tokens });

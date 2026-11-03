@@ -40,7 +40,11 @@ function fakeScan(feeds: Record<string, ActivityRow[]>) {
     const end = from + items.length;
     return Promise.resolve({ items, nextCursor: end < all.length ? String(end) : null });
   });
-  const scan: ScanClient = { activity, token: () => Promise.resolve(null) };
+  const scan: ScanClient = {
+    activity,
+    token: () => Promise.resolve(null),
+    asset: () => Promise.resolve(null),
+  };
   return { scan, activity };
 }
 

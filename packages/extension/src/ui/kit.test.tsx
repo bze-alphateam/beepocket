@@ -457,6 +457,37 @@ describe('Avatar and IconTile', () => {
     expect(render(<Avatar label=" " />).host.textContent).toBe('?');
   });
 
+  it('falls back to the letter when the logo fails to load, and tries a new logo again', () => {
+    function Swap() {
+      const [src, setSrc] = useState('https://raw.githubusercontent.com/x/vdl.png');
+      return (
+        <>
+          <Avatar label="vdl" src={src} />
+          <button
+            type="button"
+            onClick={() => {
+              setSrc('https://raw.githubusercontent.com/x/vdl2.png');
+            }}
+          />
+        </>
+      );
+    }
+    const { host } = render(<Swap />);
+    fireEvent(host.querySelector('img'), 'error');
+    expect(host.querySelector('img')).toBeNull();
+    expect(host.querySelector('.bp-avatar')?.textContent).toBe('V');
+    fireEvent(host.querySelector('button'), 'click');
+    expect(host.querySelector('img')?.getAttribute('src')).toBe(
+      'https://raw.githubusercontent.com/x/vdl2.png',
+    );
+  });
+
+  it('shows the letter for a null logo', () => {
+    const { host } = render(<Avatar label="vdl" src={null} />);
+    expect(host.querySelector('img')).toBeNull();
+    expect(host.textContent).toBe('V');
+  });
+
   it('IconTile sizes its icon and radius', () => {
     const tile = render(<IconTile icon="link" tone="inset" size={52} />).host.firstElementChild;
     expect(tile?.className).toBe('bp-icon-tile bp-icon-tile-inset');

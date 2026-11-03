@@ -14,6 +14,10 @@ export const PHRASE = `${'abandon '.repeat(23)}art`;
 /** A factory token with a brand kit (the canvas's PAGE colours). */
 export const PAGE = 'factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pf7k/upage';
 
+/** PAGE's logo as Scan lists it; the screens serve the extension icon in its place. */
+const PAGE_LOGO =
+  'https://raw.githubusercontent.com/cosmos/chain-registry/master/beezee/images/page.png';
+
 /** Four addresses: three hold funds, Cold is empty. Amounts in base units (6 decimals). */
 export const ADDRESSES = [
   { label: 'Main', ubze: '12480520000', upage: '2000000000' },
@@ -64,6 +68,21 @@ const fixture = (name: string): unknown =>
 export async function mockNetwork(context: BrowserContext): Promise<void> {
   await context.route('https://explorer.getbze.com/**', (route) =>
     route.fulfill({ status: 404, json: {} }),
+  );
+  // PAGE has a GitHub-hosted logo (the extension icon stands in for it); nothing else has one.
+  await context.route('https://explorer.getbze.com/api/v1/registry/assets/**', (route) => {
+    const denom = decodeURIComponent(
+      new URL(route.request().url()).pathname.split('/').pop() ?? '',
+    );
+    return denom === PAGE
+      ? route.fulfill({ json: { denom, logo: PAGE_LOGO } })
+      : route.fulfill({ status: 404, json: { error: { code: 'not_found' } } });
+  });
+  await context.route(PAGE_LOGO, (route) =>
+    route.fulfill({
+      contentType: 'image/png',
+      body: readFileSync(join(import.meta.dirname, '../public/icons/icon-128.png')),
+    }),
   );
   await context.route('https://rest.getbze.com/**', (route) => {
     const url = new URL(route.request().url());

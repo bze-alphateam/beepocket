@@ -31,6 +31,7 @@ const tok = (denom: string, symbol: string, decimals = 6): ListedToken => ({
   kind: 'native',
   source: 'chain',
   branding: null,
+  logo: null,
 });
 const BZE = tok('ubze', 'BZE');
 const PAGE = tok('factory/bze1x/page', 'PAGE', 2);
@@ -523,6 +524,20 @@ describe('token switcher', () => {
       title: g.querySelector('h3')?.textContent,
       rows: [...g.querySelectorAll('.bp-list-row-title')].map((r) => r.textContent),
     }));
+
+  it('shows token logos in the header and the switcher rows', async () => {
+    const page = 'https://raw.githubusercontent.com/x/page.png';
+    const s = setup({
+      tokens: [
+        { ...BZE, logo: '/tokens/bze.png' },
+        { ...PAGE, logo: page },
+      ],
+    });
+    await open(s);
+    expect(s.host.querySelector('.bp-token-pill img')?.getAttribute('src')).toBe('/tokens/bze.png');
+    const rows = [...(dialog(s)?.querySelectorAll('.bp-avatar img') ?? [])];
+    expect(rows.map((i) => i.getAttribute('src'))).toEqual(['/tokens/bze.png', page]);
+  });
 
   it('lists preferred tokens with balances and switches', async () => {
     const s = setup();

@@ -140,6 +140,7 @@ async function rig() {
               kind: 'native',
               source: 'builtin',
               branding: null,
+              logo: null,
               ...known,
             })
           : Promise.reject(new Error('unknown token'));

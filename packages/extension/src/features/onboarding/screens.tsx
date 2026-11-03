@@ -87,6 +87,7 @@ function Step(
 export interface WelcomeLink {
   symbol: string | null;
   color?: string | undefined;
+  logo?: string | null | undefined;
   host: string | null;
 }
 
@@ -98,7 +99,7 @@ function LinkNotice({ link }: { link: WelcomeLink }) {
   }
   return (
     <NoticeCard
-      leading={<Avatar label={link.symbol} color={link.color} />}
+      leading={<Avatar label={link.symbol} color={link.color} src={link.logo} />}
       title={t('onboarding.link.title', { symbol: link.symbol })}
       sub={host}
     />
@@ -655,6 +656,7 @@ export function Start(props: {
           symbol={found.symbol}
           name={found.name}
           color={look.color}
+          logo={found.logo}
           swatches={look.swatches}
           caption={look.hasKit ? t('onboarding.start.kit') : t('onboarding.start.noKit')}
         />

@@ -1,7 +1,13 @@
 import type { Cache } from './cache';
 import { stripUnsafeText } from './text';
 import { TOKEN_TTL_MS } from './cache';
-import type { ChainClient, DenomBranding, ScanClient } from './net';
+import {
+  SystemClock,
+  type ChainClient,
+  type Clock,
+  type DenomBranding,
+  type ScanClient,
+} from './net';
 
 export type Branding = DenomBranding;
 
@@ -18,6 +24,11 @@ export interface TokenInfo {
   kind: TokenKind;
   source: TokenSource;
   branding: Branding | null;
+  /**
+   * Logo image URL: for ubze the wallet's own copy, otherwise an `https://raw.githubusercontent.com/`
+   * URL from Scan's asset list. Null shows the letter avatar.
+   */
+  logo: string | null;
 }
 
 /** The denom is not something a chain could hold (too long, odd characters). */
@@ -31,6 +42,17 @@ const MAX_DENOM_LENGTH = 128;
 const DENOM_PATTERN = /^[A-Za-z][A-Za-z0-9/:._-]*$/;
 const MAX_SYMBOL_LENGTH = 32;
 const MAX_NAME_LENGTH = 64;
+/** The only host token logos are loaded from (the chain registry's files). */
+const LOGO_HOST = 'raw.githubusercontent.com';
+const MAX_LOGO_LENGTH = 2048;
+/** Whitespace, control characters and backslashes, which URL parsing would quietly drop or fix. */
+const LOGO_UNSAFE_CHARS = /[\s\p{Cc}\\]/u;
+/** How long a token waits for its logo; past this it shows without one. */
+const LOGO_TIMEOUT_MS = 3_000;
+/** Scan did not answer a logo lookup in time, or failed. */
+const TIMED_OUT = Symbol('timed out');
+/** How long Scan is not asked again for a logo after it failed to answer. */
+const LOGO_RETRY_MS = 60_000;
 
 function kindOf(denom: string): TokenKind {
   if (denom === NATIVE_DENOM) return 'native';
@@ -51,6 +73,31 @@ function fallbackSymbol(denom: string, kind: TokenKind): string {
   return (cleanText(last, MAX_SYMBOL_LENGTH) ?? denom.slice(0, MAX_SYMBOL_LENGTH)).toUpperCase();
 }
 
+/**
+ * A logo URL from Scan, kept only when it is plain `https://raw.githubusercontent.com/…`: no
+ * other host or look-alike, no userinfo, no port. Anything else means no logo.
+ */
+function safeLogo(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length > MAX_LOGO_LENGTH || LOGO_UNSAFE_CHARS.test(raw)) {
+    return null;
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  const plain =
+    url.protocol === 'https:' &&
+    url.hostname === LOGO_HOST &&
+    url.port === '' &&
+    url.username === '' &&
+    url.password === '' &&
+    // `https://raw.githubusercontent.com:443/` parses with an empty port: keep the URL as written.
+    raw.startsWith(`https://${LOGO_HOST}/`);
+  return plain ? url.href : null;
+}
+
 function isTokenInfo(value: unknown, denom: string): value is TokenInfo {
   if (typeof value !== 'object' || value === null) return false;
   const t = value as Record<string, unknown>;
@@ -69,16 +116,32 @@ function isTokenInfo(value: unknown, denom: string): value is TokenInfo {
   );
 }
 
+/** A stored logo answer: Scan's (filtered) URL, or the time Scan last failed to answer. */
+type StoredLogo = { url: string | null } | { failedAt: number };
+
+function isStoredLogo(value: unknown): value is StoredLogo {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if ('url' in v) return v.url === null || (typeof v.url === 'string' && safeLogo(v.url) === v.url);
+  return typeof v.failedAt === 'number';
+}
+
 export interface TokenResolverOptions {
   cache?: Cache;
   /** Prefix of every cache key, so one store can serve several networks. */
   cacheKeyPrefix?: string;
+  /** The logo of ubze, a URL of the wallet's own (Scan is never asked); none by default. */
+  nativeLogo?: string;
+  /** Times the logo lookup and its retry; the system clock by default. */
+  clock?: Clock;
 }
 
 /** Name, symbol, decimals and brand kit of any denom. */
 export class TokenResolver {
   private readonly cache: Cache | undefined;
   private readonly prefix: string;
+  private readonly nativeLogo: string | null;
+  private readonly clock: Clock;
 
   constructor(
     private readonly chain: ChainClient,
@@ -87,21 +150,33 @@ export class TokenResolver {
   ) {
     this.cache = options.cache;
     this.prefix = options.cacheKeyPrefix ?? '';
+    this.nativeLogo = options.nativeLogo ?? null;
+    this.clock = options.clock ?? new SystemClock();
   }
 
-  /** Chain errors propagate; a missing or unreachable Scan only degrades to the fallback. */
+  /**
+   * Chain errors propagate; a missing or unreachable Scan only degrades to the fallback and to
+   * no logo. The logo is looked up alongside and never holds the rest up past `LOGO_TIMEOUT_MS`.
+   */
   async resolve(denom: string): Promise<TokenInfo> {
     assertDenom(denom);
+    const kind = kindOf(denom);
+    const logo = this.logo(denom, kind);
+    const [info, url] = await Promise.all([this.info(denom, kind), logo]);
+    return { ...info, logo: url };
+  }
+
+  /** Everything but the logo, cached on its own. */
+  private async info(denom: string, kind: TokenKind): Promise<Omit<TokenInfo, 'logo'>> {
     const key = `${this.prefix}token:${denom}`;
     const cached = await this.cache?.get(key);
     if (isTokenInfo(cached, denom)) return cached;
 
-    const kind = kindOf(denom);
     const [display, branding] = await Promise.all([
       this.displayData(denom, kind),
       this.chain.denomBranding(denom),
     ]);
-    const info: TokenInfo = { denom, kind, ...display, branding };
+    const info = { denom, kind, ...display, branding };
     // A fallback is a guess (and often a symptom of Scan being down): never keep it.
     if (info.source !== 'fallback') await this.cache?.set(key, info, TOKEN_TTL_MS);
     return info;
@@ -111,6 +186,35 @@ export class TokenResolver {
   async tokenCodeExists(denom: string): Promise<boolean> {
     assertDenom(denom);
     return (await this.chain.supply(denom)) > 0n;
+  }
+
+  /**
+   * ubze never asks Scan. Scan's answer is kept for the token TTL; a failure or a timeout means
+   * no logo, and Scan is not asked again for `LOGO_RETRY_MS`.
+   */
+  private async logo(denom: string, kind: TokenKind): Promise<string | null> {
+    if (kind === 'native') return this.nativeLogo;
+    const key = `${this.prefix}logo:${denom}`;
+    const stored = await this.cache?.get(key);
+    if (isStoredLogo(stored)) {
+      if ('url' in stored) return stored.url;
+      const since = this.clock.now() - stored.failedAt;
+      if (since >= 0 && since < LOGO_RETRY_MS) return null;
+    }
+
+    const timedOut = this.clock.sleep(LOGO_TIMEOUT_MS).then((): typeof TIMED_OUT => TIMED_OUT);
+    const answer = await Promise.race([
+      // Async, so even a client that throws on the spot only means no logo.
+      (async () => this.scan.asset(denom))(),
+      timedOut,
+    ]).catch((): typeof TIMED_OUT => TIMED_OUT);
+    if (answer === TIMED_OUT) {
+      await this.cache?.set(key, { failedAt: this.clock.now() }, LOGO_RETRY_MS);
+      return null;
+    }
+    const url = safeLogo(answer?.logo);
+    await this.cache?.set(key, { url }, TOKEN_TTL_MS);
+    return url;
   }
 
   private async displayData(

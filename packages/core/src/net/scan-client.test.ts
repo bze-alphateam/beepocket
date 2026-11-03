@@ -71,6 +71,45 @@ describe('HttpScanClient.token', () => {
   });
 });
 
+describe('HttpScanClient.asset', () => {
+  const VDL = tokenFactory.body.denom;
+  const path = `/api/v1/registry/assets/${encodeURIComponent(VDL)}`;
+  const logo =
+    'https://raw.githubusercontent.com/cosmos/chain-registry/master/beezee/images/vdl.png';
+
+  it('reads the logo, URL-encoding the denom', async () => {
+    const t = mainnet().on('GET', path, json(200, { denom: VDL, kind: 'factory', logo }));
+    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toEqual({ denom: VDL, logo });
+    expect(t.requests[0]?.url).toContain('%2F');
+  });
+
+  it('accepts a null logo', async () => {
+    const t = mainnet().on('GET', path, json(200, { denom: VDL, logo: null }));
+    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toEqual({ denom: VDL, logo: null });
+  });
+
+  it('is null when Scan answers for another denom', async () => {
+    const t = mainnet().on('GET', path, json(200, { denom: 'ubze', logo }));
+    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toBeNull();
+  });
+
+  it("is null on Scan's not_found", async () => {
+    const t = mainnet().on('GET', path, json(404, { error: { code: 'not_found' } }));
+    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toBeNull();
+  });
+
+  it('fails on a server error and on a logo that is not a string', async () => {
+    const down = mainnet().on('GET', path, { status: 500, body: '' });
+    await expect(new HttpScanClient(down, MAINNET).asset(VDL)).rejects.toBeInstanceOf(
+      HttpStatusError,
+    );
+    const odd = mainnet().on('GET', path, json(200, { denom: VDL, logo: 7 }));
+    await expect(new HttpScanClient(odd, MAINNET).asset(VDL)).rejects.toMatchObject({
+      path: 'logo',
+    });
+  });
+});
+
 describe('HttpScanClient.activity', () => {
   it('maps the rows and sends denom and limit', async () => {
     const t = mainnet().on(

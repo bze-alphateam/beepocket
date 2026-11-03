@@ -432,7 +432,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
         <ScreenHeader
           title={t('send.title', { symbol: token.symbol })}
           onBack={home}
-          right={<Avatar label={token.symbol} size={26} />}
+          right={<Avatar label={token.symbol} src={token.logo} size={26} />}
         />
       }
       footer={
@@ -551,7 +551,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
           tone="quiet"
           label={shownFee === null ? t('send.fee.row.empty') : t('send.fee.row', { fee: feeShort })}
           caption={t('send.review.fee')}
-          valueIcon={shownFee && <Avatar label={shownFee.symbol} size={18} />}
+          valueIcon={shownFee && <Avatar label={shownFee.symbol} src={shownFee.logo} size={18} />}
           value={feeValue}
           disabled={estimate === null}
           onClick={() => {

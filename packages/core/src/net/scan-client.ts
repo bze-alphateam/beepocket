@@ -15,6 +15,13 @@ export interface ScanToken {
   halted: boolean;
 }
 
+/** The part of Scan's registry asset the wallet uses. */
+export interface ScanAsset {
+  denom: string;
+  /** Logo URL as Scan lists it: untrusted, may point anywhere. Null when there is none. */
+  logo: string | null;
+}
+
 export interface ScanBalance {
   denom: string;
   /** Signed: deltas are net balance changes. */
@@ -69,6 +76,8 @@ export interface ActivityPage {
 export interface ScanClient {
   /** `null` when Scan does not know the denom. */
   token(denom: string): Promise<ScanToken | null>;
+  /** The registry asset of a denom; `null` when Scan does not list it (or answers for another). */
+  asset(denom: string): Promise<ScanAsset | null>;
   activity(address: string, query: ActivityQuery): Promise<ActivityPage>;
 }
 
@@ -90,6 +99,18 @@ export class HttpScanClient implements ScanClient {
       kind: v.string(v.field(t, 'kind', '$'), 'kind'),
       halted: v.boolean(v.field(t, 'halted', '$'), 'halted'),
     };
+  }
+
+  async asset(denom: string): Promise<ScanAsset | null> {
+    const body = await this.getJson(`/api/v1/registry/assets/${encodeURIComponent(denom)}`, true);
+    if (body === null) return null;
+    const a = v.object(body, '$');
+    const asset = {
+      denom: v.string(v.field(a, 'denom', '$'), 'denom'),
+      logo: v.nullable(v.field(a, 'logo', '$'), 'logo', v.string),
+    };
+    // An answer about another denom is not an answer about this one.
+    return asset.denom === denom ? asset : null;
   }
 
   async activity(address: string, query: ActivityQuery): Promise<ActivityPage> {

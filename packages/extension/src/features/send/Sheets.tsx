@@ -75,7 +75,7 @@ export function FeeSheet(props: {
                   ? undefined
                   : t('send.fee.balance', { amount: exact(o.balance, o.decimals) })
               }
-              leading={<Avatar label={o.symbol} size={30} />}
+              leading={<Avatar label={o.symbol} src={o.logo} size={30} />}
               value={fee}
               unit={on ? t('send.fee.selected') : undefined}
               selected={on}

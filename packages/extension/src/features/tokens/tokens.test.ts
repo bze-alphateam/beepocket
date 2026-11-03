@@ -32,6 +32,13 @@ interface Chain {
   brokenAddresses: Set<string>;
 }
 
+const GOLD_LOGO =
+  'https://raw.githubusercontent.com/cosmos/chain-registry/master/beezee/images/gold.png';
+const SCAN_LOGOS: Record<string, string> = {
+  [FACTORY]: GOLD_LOGO,
+  ubze: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/beezee/images/bze.png',
+};
+
 function setup(
   opts: { addresses?: WalletAddress[]; scanDown?: boolean; preferred?: string[] } = {},
 ) {
@@ -83,6 +90,11 @@ function setup(
             halted: false,
           });
     },
+    // Scan lists a GitHub logo for GOLD and, wrongly, a remote one for ubze.
+    asset: (d: string) =>
+      scanDown
+        ? Promise.reject(new Error('scan down'))
+        : Promise.resolve({ denom: d, logo: SCAN_LOGOS[d] ?? null }),
   };
 
   let active: NetworkId = 'mainnet';
@@ -180,6 +192,26 @@ describe('tokens.lookup', () => {
     expect(r).toMatchObject({
       ok: true,
       value: { symbol: 'GOLD', source: 'fallback', branding: null },
+    });
+  });
+
+  it('gives BZE the logo shipped with the extension and other tokens the Scan logo', async () => {
+    const t = setup();
+    expect(await t.call<TokenInfo>('tokens.lookup', { code: 'ubze' })).toMatchObject({
+      ok: true,
+      value: { logo: '/tokens/bze.png' },
+    });
+    expect(await t.call<TokenInfo>('tokens.lookup', { code: FACTORY })).toMatchObject({
+      ok: true,
+      value: { symbol: 'GOLD', logo: GOLD_LOGO },
+    });
+  });
+
+  it('still resolves a token without its logo while Scan is down', async () => {
+    const t = setup({ scanDown: true });
+    expect(await t.call<TokenInfo>('tokens.lookup', { code: FACTORY })).toMatchObject({
+      ok: true,
+      value: { symbol: 'GOLD', logo: null },
     });
   });
 

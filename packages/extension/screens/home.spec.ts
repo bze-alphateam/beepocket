@@ -2,6 +2,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 import {
   ADDRESSES,
   call,
+  expect,
   openPopup,
   PAGE,
   PASSWORD,
@@ -147,6 +148,14 @@ test('home: tokens, copy, rename, add, switcher', async ({ context, extensionId 
   await shot(page, 'home-usdc');
 
   await switchTo(page, 'USDC', 'PAGE');
+  // The remote logo really loads under the manifest CSP (a blocked one falls back to the letter).
+  await expect
+    .poll(() =>
+      page
+        .locator('.bp-token-pill img')
+        .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+    )
+    .toBe(true);
   await shot(page, 'home-page');
   await page.getByRole('button', { name: 'Add address' }).click();
   await page.getByText("It's address #5 in this wallet.").waitFor();

@@ -40,6 +40,8 @@ export interface FeeChoice {
   amount: string;
   symbol: string;
   decimals: number;
+  /** The fee token's logo URL (see `TokenInfo.logo`). */
+  logo?: string | null;
   /** Base units of `denom` the paying address holds; set on send quotes (the fee sheet shows it). */
   balance?: string;
 }
