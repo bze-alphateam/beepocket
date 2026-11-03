@@ -11,10 +11,15 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { zipSync } from 'fflate';
+import { checkVersion } from './manifest-version.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
 const zipPath = join(root, 'beepocket.zip');
+
+// The version lives in package.json only; the manifest gets it at build time.
+const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+checkVersion(version);
 
 rmSync(dist, { recursive: true, force: true });
 rmSync(zipPath, { force: true });
@@ -55,6 +60,10 @@ await build({
 });
 
 cpSync(join(root, 'public'), dist, { recursive: true });
+
+const manifestPath = join(dist, 'manifest.json');
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, version }, null, 2)}\n`);
 
 function listFiles(dir) {
   return readdirSync(dir).flatMap((name) => {
