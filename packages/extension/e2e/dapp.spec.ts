@@ -63,7 +63,7 @@ test('connects with the picked address, then getKey answers without a window', a
   try {
     const request = await connect(context, dapp);
     await expect(request.getByText(new URL(dapp.url()).origin)).toBeVisible();
-    await expect(request.getByText('exactly one address')).toBeVisible();
+    await expect(request.getByText('Sees this address and its balances')).toBeVisible();
     await request.getByRole('radio', { name: /Address 3/ }).check();
     await request.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(dapp.getByRole('status')).toHaveText(`address ${THIRD} name Address 3`);
@@ -112,7 +112,7 @@ test('a fully locked wallet shows unlock first, then the connect screen', async 
     await expect(request.getByRole('button', { name: /Forgot|Import/ })).toHaveCount(0);
     await request.getByLabel('Password').fill(PASSWORD);
     await request.getByRole('button', { name: 'Unlock' }).click();
-    await expect(request.getByRole('heading', { name: 'Connect to a site' })).toBeVisible();
+    await expect(request.getByRole('heading', { name: 'Connection request' })).toBeVisible();
     await request.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(dapp.getByRole('status')).toHaveText(/^address bze1\w+ name Main$/);
   } finally {
@@ -186,7 +186,7 @@ test('a fully locked wallet shows the waiting card in the popup; unlocking there
     await expect(lockPage.getByText('It stays connected.')).toBeVisible();
     await lockPage.getByLabel('Password').fill(PASSWORD);
     await lockPage.getByRole('button', { name: 'Unlock' }).click();
-    await expect(request.getByRole('heading', { name: 'Connect to a site' })).toBeVisible();
+    await expect(request.getByRole('heading', { name: 'Connection request' })).toBeVisible();
   } finally {
     stop();
   }

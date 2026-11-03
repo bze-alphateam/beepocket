@@ -104,6 +104,12 @@ export function Toast({ message, bottom = 20 }: ToastProps) {
  * The action stack at the bottom of a flow screen: primary over secondary. Pass it as the
  * `footer` of `Layout`, which pins it under the scrolling body.
  */
-export function BottomActions(props: { children: ComponentChildren }) {
-  return <div class="bp-bottom">{props.children}</div>;
+export function BottomActions(props: {
+  children: ComponentChildren;
+  /** Two buttons side by side, the secondary on the left (Cancel / Connect, Reject / Approve). */
+  row?: boolean | undefined;
+}) {
+  return (
+    <div class={props.row === true ? 'bp-bottom bp-bottom-row' : 'bp-bottom'}>{props.children}</div>
+  );
 }

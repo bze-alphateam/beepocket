@@ -174,3 +174,12 @@ element('grant').addEventListener('click', () => {
 element('send-unknown').addEventListener('click', () => {
   signAndSend((key, to) => [sendMsg(key, to), nothingMsg()]);
 });
+
+// The screens walker signs messages it encodes itself: `[typeUrl, value as hex]` pairs.
+const fromHex = (hex: string): Uint8Array =>
+  Uint8Array.from(hex.match(/../g) ?? [], (b) => parseInt(b, 16));
+(window as unknown as { signMessages: (messages: [string, string][]) => void }).signMessages = (
+  messages,
+) => {
+  signAndSend(() => messages.map(([typeUrl, value]) => any(typeUrl, fromHex(value))));
+};

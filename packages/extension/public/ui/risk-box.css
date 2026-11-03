@@ -1,0 +1,66 @@
+/* RiskBox: the red alert box with its trust tick, and the amber warning line. */
+.bp-risk-red {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--bp-bad-line);
+  border-radius: 12px;
+  background: var(--bp-bad-soft);
+}
+
+.bp-risk-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--bp-bad-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bp-risk-title > .bp-icon,
+.bp-risk-amber > .bp-icon {
+  flex: none;
+}
+
+.bp-risk-text {
+  color: var(--bp-text-soft);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* The trust tick: 40 px tall, a red box once ticked. */
+.bp-risk-red .bp-check {
+  min-height: 40px;
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bp-risk-red .bp-check-box {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--bp-bad-line);
+  border-radius: 5px;
+}
+
+.bp-risk-red .bp-check[aria-checked='true'] .bp-check-box {
+  border-color: var(--bp-bad);
+  background: var(--bp-bad);
+  color: #ffffff;
+}
+
+.bp-risk-amber {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 2px;
+  color: var(--bp-warn-text);
+  font-size: 12px;
+}
+
+.bp-risk-amber > .bp-icon {
+  margin-top: 1px;
+}

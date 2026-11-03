@@ -1,0 +1,25 @@
+/* CheckList: green ticks on an inset card. */
+.bp-check-list {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bp-inset);
+  color: var(--bp-muted);
+  font-size: 12px;
+  list-style: none;
+}
+
+.bp-check-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bp-check-list .bp-icon {
+  flex: none;
+  color: var(--bp-ok);
+}

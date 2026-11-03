@@ -1,0 +1,39 @@
+/* GhostRow: a borderless row that opens a sheet ("Message details"). */
+.bp-ghost-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--bp-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bp-ghost-row:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+.bp-ghost-row > .bp-icon {
+  flex: none;
+}
+
+.bp-ghost-row-title {
+  flex: 1;
+}
+
+.bp-ghost-row-hint {
+  overflow: hidden;
+  color: var(--bp-faint);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

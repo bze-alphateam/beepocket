@@ -128,7 +128,7 @@ test('signs and sends 1 BZE: sign screen, Approve, then the hash from the node',
       context.waitForEvent('page'),
       dapp.getByRole('button', { name: 'Send 1 BZE' }).click(),
     ]);
-    await expect(sign.getByRole('heading', { name: 'Approve a transaction' })).toBeVisible();
+    await expect(sign.getByRole('heading', { name: 'Approve transaction' })).toBeVisible();
     await expect(sign.getByText(/1\.00 BZE/).first()).toBeVisible();
     await sign.getByRole('button', { name: 'Approve' }).click();
     await expect(dapp.getByRole('status')).toHaveText(`hash ${HASH.toLowerCase()}`);
@@ -206,7 +206,9 @@ test('a MsgGrant shows the red sign screen and Approve waits for the tick', asyn
     await expect(sign.getByRole('alert')).toContainText('power over your address');
     await expect(approve).toHaveClass(/bp-btn-danger/);
     await expect(approve).toBeDisabled();
-    await sign.getByLabel('I set this up myself and trust this address').check();
+    await sign
+      .getByRole('checkbox', { name: 'I set this up myself and trust this address' })
+      .check();
     await expect(approve).toBeEnabled();
     await approve.click();
     await expect(dapp.getByRole('status')).toHaveText(`hash ${HASH.toLowerCase()}`);
@@ -227,7 +229,7 @@ test('a send plus an unknown message shows two cards, the second with its raw JS
       context.waitForEvent('page'),
       dapp.getByRole('button', { name: 'Send + unknown message' }).click(),
     ]);
-    await expect(sign.getByText('Signed together: both happen, or neither does')).toBeVisible();
+    await expect(sign.getByText('Both happen, or neither does')).toBeVisible();
     const cards = sign.locator('.bp-dapp-card');
     await expect(cards).toHaveCount(2);
     await expect(cards.nth(0)).toContainText('1 of 2');
@@ -257,7 +259,7 @@ test('two sign requests share one window: 1 of 2, Next request, then the second'
     await expect(sign.getByText('1 of 2')).toBeVisible();
     await sign.getByRole('button', { name: 'Approve' }).click();
     await expect(sign.getByText('Next request · 1 waiting')).toBeVisible();
-    await expect(sign.getByRole('heading', { name: 'Approve a transaction' })).toBeVisible();
+    await expect(sign.getByRole('heading', { name: 'Approve transaction' })).toBeVisible();
     await expect(sign.getByText('1 of 2')).toHaveCount(0);
     await sign.getByRole('button', { name: 'Reject' }).click();
     await expect(dapp.locator('#log li')).toHaveText([

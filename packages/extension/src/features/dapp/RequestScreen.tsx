@@ -3,11 +3,13 @@ import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
 import type { CurrentRequest } from '../../protocol';
-import { Banner, Button, Spinner } from '../../ui';
+import { Banner, Button, DetailCard, ResultLayout, SiteCard, Spinner } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
 import { useHomeEnv } from '../home/env';
 import { useLockEnv } from '../lock/env';
 import { UnlockPanel } from '../lock/UnlockScreen';
+import { feeText } from '../send/format';
+import type { Answer } from './answers';
 import { ConnectScreen } from './ConnectScreen';
 import { SignScreen } from './SignScreen';
 
@@ -19,13 +21,60 @@ export interface RequestScreenProps {
 const NEXT_MS = 600;
 const POLL_MS = 1_000;
 
-/** "1 of N" while more than one request waits; the head is always the first. */
-function QueuePill({ count }: { count: number | undefined }) {
-  if (count === undefined || count < 2) return null;
+/** The host of an origin, for the result line ("dex.getbze.com shows the result"). */
+function hostOf(origin: string): string {
+  try {
+    return new URL(origin).host || origin;
+  } catch {
+    return origin;
+  }
+}
+
+/** What was just answered, shown while the next request loads (`W-Sign-Done`, `W-Sign-Next`). */
+function Answered({ answer, waiting }: { answer: Answer | null; waiting: number }) {
+  const status = (
+    <p class="bp-dapp-next" role="status">
+      {t('dapp.queue.next', { n: String(waiting) })}
+    </p>
+  );
+  if (answer === null) {
+    return (
+      <Layout>
+        <div class="bp-dapp-center">{status}</div>
+      </Layout>
+    );
+  }
+  const site = hostOf(answer.origin);
+  const title = !answer.approved
+    ? t('dapp.done.rejected')
+    : answer.kind === 'sign'
+      ? t('dapp.done.approved')
+      : t('dapp.done.connected');
+  const sub = !answer.approved
+    ? t('dapp.done.rejectSub', { site })
+    : answer.kind === 'sign'
+      ? t('dapp.done.signSub', { site })
+      : t('dapp.done.connectSub', { site, label: answer.label });
   return (
-    <span class="bp-dapp-pill" aria-label={t('dapp.queue.pill', { n: '1', count: String(count) })}>
-      {t('dapp.queue.pill', { n: '1', count: String(count) })}
-    </span>
+    <Layout>
+      <ResultLayout
+        status={answer.approved ? 'ok' : 'bad'}
+        title={title}
+        sub={sub}
+        actions={status}
+      >
+        {answer.approved && answer.kind === 'sign' ? (
+          <DetailCard
+            rows={[
+              [t('dapp.done.from'), answer.label],
+              [t('dapp.done.fee'), feeText(answer.fee)],
+            ]}
+          />
+        ) : (
+          <SiteCard origin={answer.origin} />
+        )}
+      </ResultLayout>
+    </Layout>
   );
 }
 
@@ -40,8 +89,9 @@ export function RequestScreen({ close }: RequestScreenProps) {
   const client = useClient();
   const { events, clock } = useLockEnv();
   const { scheduler } = useHomeEnv();
-  // The "Next request" state: how many wait behind the one just answered.
+  // The "Next request" state: how many wait behind the one just answered, and that answer.
   const [next, setNext] = useState<number | null>(null);
+  const answered = useRef<Answer | null>(null);
   const cancelNext = useRef<() => void>(() => undefined);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const closed = useRef(false);
@@ -118,16 +168,12 @@ export function RequestScreen({ close }: RequestScreenProps) {
     [client, scheduler, refresh],
   );
   const count = live ?? ready?.count;
+  const answeredThen = (id: string, answer: Answer | undefined) => {
+    answered.current = answer ?? null;
+    return refresh(id);
+  };
 
-  if (next !== null) {
-    return (
-      <Layout>
-        <div class="bp-dapp-center">
-          <p role="status">{t('dapp.queue.next', { n: String(next) })}</p>
-        </div>
-      </Layout>
-    );
-  }
+  if (next !== null) return <Answered answer={answered.current} waiting={next} />;
   if (load.status === 'loading') {
     return (
       <Layout>
@@ -176,17 +222,21 @@ export function RequestScreen({ close }: RequestScreenProps) {
       );
     case 'connect':
       return (
-        <>
-          <QueuePill count={count} />
-          <ConnectScreen view={view} done={() => void refresh(view.id)} />
-        </>
+        <ConnectScreen
+          key={view.id}
+          view={view}
+          queue={count}
+          done={(a) => void answeredThen(view.id, a)}
+        />
       );
     case 'sign':
       return (
-        <>
-          <QueuePill count={count} />
-          <SignScreen view={view} done={() => void refresh(view.id)} />
-        </>
+        <SignScreen
+          key={view.id}
+          view={view}
+          queue={count}
+          done={(a) => void answeredThen(view.id, a)}
+        />
       );
     case 'none':
       return null;

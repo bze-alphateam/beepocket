@@ -3,17 +3,18 @@
 .bp-dapp-center {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px 16px;
+  gap: 10px;
+  padding: 0 16px 12px;
   min-height: 100%;
 }
 
 .bp-dapp-center {
   align-items: center;
   justify-content: center;
+  padding: 20px 16px;
 }
 
-.bp-dapp h1 {
+.bp-dapp > h1 {
   font-size: 18px;
 }
 
@@ -22,202 +23,91 @@
   font-size: 13px;
 }
 
-.bp-dapp-facts {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  margin: 0;
-  font-size: 13px;
+.bp-dapp .bp-section-label {
+  padding: 4px 2px 0;
 }
 
-.bp-dapp-facts dt {
-  color: var(--bp-muted);
+/* The pinned password form of a weak-locked sign request. */
+.bp-dapp-foot {
+  padding: 0 16px 16px;
 }
 
-.bp-dapp-facts dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.bp-dapp-origin {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-}
-
-.bp-dapp-picker {
-  display: flex;
-  flex-direction: column;
+.bp-dapp-foot .bp-lock-form {
   gap: 6px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.bp-dapp-picker legend {
-  margin-bottom: 6px;
-  color: var(--bp-muted);
-  font-size: 12px;
-}
-
-.bp-dapp-option {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 2px 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--bp-line);
-  border-radius: 10px;
-  background: var(--bp-card);
-  cursor: pointer;
-}
-
-.bp-dapp-option:has(input:checked) {
-  border-color: var(--bp-primary);
-}
-
-.bp-dapp-label {
-  font-weight: 600;
-}
-
-.bp-dapp-short,
-.bp-dapp-amount {
-  color: var(--bp-muted);
-  font-size: 12px;
-}
-
-.bp-dapp-short {
-  grid-column: 2;
-}
-
-.bp-dapp-amount {
-  grid-column: 3;
-  grid-row: 1 / span 2;
-  text-align: right;
-}
-
-.bp-dapp-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: auto;
-}
-
-/* Sign screen. */
-.bp-dapp-hero {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px;
-  border: 1px solid var(--bp-line);
-  border-radius: 12px;
-  background: var(--bp-card);
-}
-
-.bp-dapp-hero strong {
-  font-size: 18px;
-  overflow-wrap: anywhere;
-}
-
-.bp-dapp-hero small {
-  color: var(--bp-muted);
-  overflow-wrap: anywhere;
-}
-
-.bp-dapp-rows {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 6px 12px;
-  margin: 0;
-  font-size: 13px;
-}
-
-.bp-dapp-rows dt {
-  color: var(--bp-muted);
-}
-
-.bp-dapp-rows dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.bp-dapp-mono {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-}
-
-.bp-dapp-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--bp-primary);
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
 }
 
 .bp-dapp-json {
   margin: 0;
-  max-height: 320px;
-  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--bp-line);
+  border-radius: 10px;
+  background: var(--bp-inset);
+  color: var(--bp-text-soft);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.5;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .bp-dapp-raw {
-  max-height: 140px;
-  padding: 8px;
-  border: 1px solid var(--bp-line);
-  border-radius: 8px;
-  background: var(--bp-card);
-}
-
-.bp-dapp-together {
-  margin: 0;
-  font-weight: 600;
+  flex: none;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .bp-dapp-cards {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.bp-dapp-card {
+/* A message's own rows, inside its card. */
+.bp-dapp-cards .bp-detail-card {
+  border: 0;
+  background: var(--bp-inset);
+}
+
+/* Message details: the type, the raw JSON, what it is, Back. */
+.bp-dapp-rawsheet {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid var(--bp-line);
-  border-radius: 12px;
-  background: var(--bp-card);
+  gap: 10px;
 }
 
-.bp-dapp-card-unknown {
-  border-color: var(--bp-warn-line);
-}
-
-.bp-dapp-card-dangerous {
-  border-color: var(--bp-bad-line);
-}
-
-.bp-dapp-cardno,
-.bp-dapp-cardline {
+.bp-dapp-rawtype {
   color: var(--bp-muted);
-  overflow-wrap: anywhere;
+  font-size: 12px;
+  word-break: break-all;
 }
 
-.bp-dapp-cardhero {
-  font-size: 16px;
-  overflow-wrap: anywhere;
+.bp-dapp-rawsheet .bp-dapp-json {
+  max-height: 330px;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 12px;
+  line-height: 1.55;
 }
 
-.bp-dapp-trust {
+.bp-dapp-rawnote {
+  color: var(--bp-faint);
+  font-size: 12px;
+}
+
+/* "Next request · N waiting" in place of the result's button. */
+.bp-dapp-next {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-radius: 12px;
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .bp-sites {

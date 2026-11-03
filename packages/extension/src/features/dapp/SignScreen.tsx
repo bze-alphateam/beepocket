@@ -1,58 +1,105 @@
-import { shortAddress, type MsgSummary } from '@beepocket/core';
-import { Fragment } from 'preact';
+import { NETWORKS, type MsgIcon, type MsgSummary } from '@beepocket/core';
 import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
 import { WalletErrorCodes, type SignView } from '../../protocol';
 import { SendErrorCodes } from '../../protocol/send';
-import { Banner, Button, Sheet } from '../../ui';
+import {
+  Avatar,
+  Banner,
+  BottomActions,
+  Button,
+  Check,
+  DappHeader,
+  DetailCard,
+  GhostRow,
+  MessageCard,
+  RequestHero,
+  RiskBox,
+  SelectRow,
+  Sheet,
+  SiteCard,
+  type DetailCardRow,
+  type IconName,
+} from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
 import { feeText } from '../send/format';
 import { FeeSheet } from '../send/Sheets';
+import { requestBadge, type Answer } from './answers';
+import { useFirstToken } from './theme';
 
 export interface SignScreenProps {
   view: SignView;
   /** The request was answered (or may be): ask the worker what is next. */
-  done: () => void;
+  done: (answer?: Answer) => void;
+  /** Requests waiting in all, this one included; 2 or more shows "1 of N". */
+  queue?: number | undefined;
 }
 
-interface NoticeProps {
+const ICONS: Record<MsgIcon, IconName> = {
+  send: 'send',
+  swap: 'swap',
+  order: 'order',
+  cancel: 'x',
+  liquidity: 'liquidity',
+  burn: 'burn',
+  raffle: 'ticket',
+  vote: 'check',
+  grant: 'grant',
+  unknown: 'question',
+};
+
+/** The last part of a type URL: `/bze.tradebin.MsgMultiSwap` → `MsgMultiSwap`. */
+const typeTail = (typeUrl: string): string => typeUrl.split('.').pop() ?? typeUrl;
+
+/** The raw JSON of an unknown message, inline and focusable so it can be scrolled. */
+function RawJson({ json }: { json: string | undefined }) {
+  return (
+    <pre class="bp-dapp-json bp-dapp-raw" tabIndex={0}>
+      {json ?? ''}
+    </pre>
+  );
+}
+
+/** One message of a multi-message request: its line, its rows and, when unknown, its raw JSON. */
+function MessageItem(props: {
   message: MsgSummary;
   json: string | undefined;
-}
-
-/** What a message needs the user to know: nothing for a normal one, the raw message for an unknown one, a red box for a dangerous one. */
-function Notice({ message, json }: NoticeProps) {
-  if (message.level === 'unknown') {
-    return (
-      <>
-        <Banner tone="amber">{t('dapp.sign.unknown')}</Banner>
-        <pre class="bp-dapp-json bp-dapp-raw" tabIndex={0}>
-          {json ?? ''}
-        </pre>
-      </>
-    );
-  }
-  if (message.level === 'dangerous') {
-    return (
-      <Banner tone="red">
-        <strong>{message.danger?.title ?? t('dapp.sign.dangerFallback')}</strong>{' '}
-        {message.danger?.text ?? ''}
-      </Banner>
-    );
-  }
-  return null;
+  n: number;
+  count: number;
+}) {
+  const { message: m } = props;
+  const tone = m.level === 'dangerous' ? 'bad' : m.level === 'unknown' ? 'warn' : 'accent';
+  return (
+    <MessageCard
+      class={`bp-dapp-card bp-dapp-card-${m.level}`}
+      icon={ICONS[m.icon]}
+      title={m.title}
+      line={m.line}
+      position={t('dapp.sign.cardNo', { n: String(props.n), count: String(props.count) })}
+      tone={tone}
+    >
+      {m.rows.length > 0 && <DetailCard rows={m.rows} />}
+      {m.level === 'unknown' && (
+        <>
+          <RiskBox tone="amber">{t('dapp.sign.unknown')}</RiskBox>
+          <RawJson json={props.json} />
+        </>
+      )}
+    </MessageCard>
+  );
 }
 
 /**
- * The sign screen: the site, the signing address, the plain-word summary, the fee and, behind
+ * The sign screen: the site and the signing address, the plain-word summary, the fee and, behind
  * "Message details", the decoded messages. Every message is shown and numbered; an unknown one
  * shows its raw JSON and a dangerous one needs a tick before Approve works. The worker checks
  * the tick again when the answer arrives.
  */
-export function SignScreen({ view, done }: SignScreenProps) {
+export function SignScreen({ view, done, queue }: SignScreenProps) {
   const client = useClient();
+  useFirstToken();
   const [picked, setPicked] = useState(view.fee.denom);
   const [feeOpen, setFeeOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -66,6 +113,7 @@ export function SignScreen({ view, done }: SignScreenProps) {
   const dangerous = summary.level === 'dangerous';
   const count = summary.messages.length;
   const many = count > 1;
+  const only = summary.messages[0];
   const canApprove = !dangerous || trusted;
 
   const answer = async (approve: boolean) => {
@@ -81,7 +129,9 @@ export function SignScreen({ view, done }: SignScreenProps) {
       ...(approve && dangerous ? { trusted: true } : {}),
     });
     setBusy(false);
-    if (res.ok || res.error.code === 'unknown-request') {
+    if (res.ok) {
+      done({ kind: 'sign', approved: approve, origin: view.origin, label: view.signer.label, fee });
+    } else if (res.error.code === 'unknown-request') {
       done();
     } else if (res.error.code === SendErrorCodes.reviewChanged) {
       setError(t('dapp.sign.changed'));
@@ -93,153 +143,140 @@ export function SignScreen({ view, done }: SignScreenProps) {
     }
   };
 
+  const reject = (
+    <Button
+      variant="secondary"
+      disabled={busy}
+      onClick={() => {
+        void answer(false);
+      }}
+    >
+      {t('dapp.sign.reject')}
+    </Button>
+  );
+  const variant = dangerous ? 'danger' : 'primary';
+  const footer = view.locked ? (
+    <div class="bp-dapp-foot">
+      <PasswordGate
+        label={t('dapp.sign.password')}
+        labelIcon="lock"
+        placeholder={t('lock.password')}
+        submitLabel={t('dapp.sign.unlock')}
+        hold={!canApprove}
+        variant={variant}
+        secondary={reject}
+        onUnlocked={() => {
+          void answer(true);
+        }}
+      />
+    </div>
+  ) : (
+    <BottomActions row>
+      {reject}
+      <Button
+        variant={variant}
+        disabled={busy || !canApprove}
+        onClick={() => {
+          void answer(true);
+        }}
+      >
+        {busy ? t('dapp.sign.approving') : t('dapp.sign.approve')}
+      </Button>
+    </BottomActions>
+  );
+
+  const rows: DetailCardRow[] = many ? [] : [...summary.rows];
+  if (summary.memo !== null) rows.push([t('dapp.sign.memo'), summary.memo]);
+
   return (
-    <Layout>
-      <main class="bp-dapp">
-        <h1>{t('dapp.sign.title')}</h1>
-        <dl class="bp-dapp-facts">
-          <dt>{t('dapp.sign.site')}</dt>
-          <dd class="bp-dapp-origin">{view.origin}</dd>
-          <dt>{t('dapp.sign.signer')}</dt>
-          <dd>
-            <strong>{view.signer.label}</strong>{' '}
-            <span class="bp-dapp-mono">{shortAddress(view.signer.address)}</span>
-          </dd>
-        </dl>
-        {many ? (
-          <>
-            <p class="bp-dapp-together">
-              {t(count === 2 ? 'dapp.sign.together.two' : 'dapp.sign.together.many')}
-            </p>
-            <ol class="bp-dapp-cards">
-              {summary.messages.map((m, i) => (
-                <li key={i} class={`bp-dapp-card bp-dapp-card-${m.level}`}>
-                  <small class="bp-dapp-cardno">
-                    {t('dapp.sign.cardNo', { n: String(i + 1), count: String(count) })}
-                  </small>
-                  <strong>{m.title}</strong>
-                  <span class="bp-dapp-cardhero">{m.hero}</span>
-                  <span class="bp-dapp-cardline">{m.sub}</span>
-                  {m.rows.length > 0 && (
-                    <dl class="bp-dapp-rows">
-                      {m.rows.map(([label, value, mono], row) => (
-                        <Fragment key={row}>
-                          <dt>{label}</dt>
-                          <dd class={mono === 'mono' ? 'bp-dapp-mono' : undefined}>{value}</dd>
-                        </Fragment>
-                      ))}
-                    </dl>
-                  )}
-                  <Notice message={m} json={view.messageJson[i]} />
-                </li>
-              ))}
-            </ol>
-          </>
-        ) : (
-          <>
-            <div class="bp-dapp-hero">
-              <strong>{summary.hero}</strong>
-              <small>{summary.sub}</small>
-            </div>
-            {summary.messages.map((m, i) => (
-              <Notice key={i} message={m} json={view.messageJson[i]} />
-            ))}
-            <dl class="bp-dapp-rows">
-              {summary.rows.map(([label, value, mono]) => (
-                <Fragment key={label}>
-                  <dt>{label}</dt>
-                  <dd class={mono === 'mono' ? 'bp-dapp-mono' : undefined}>{value}</dd>
-                </Fragment>
-              ))}
-            </dl>
-          </>
-        )}
-        <dl class="bp-dapp-rows">
-          {summary.memo !== null && (
+    <Layout
+      header={
+        <DappHeader
+          title={t('dapp.sign.title')}
+          chainId={NETWORKS[view.network].chainId}
+          badge={requestBadge(queue)}
+        />
+      }
+      footer={footer}
+    >
+      <main class="bp-dapp bp-dapp-sign">
+        <SiteCard
+          origin={view.origin}
+          aside={
             <>
-              <dt>{t('dapp.sign.memo')}</dt>
-              <dd>{summary.memo}</dd>
+              {t('dapp.sign.signer')}
+              <strong>{view.signer.label}</strong>
             </>
-          )}
-          <dt>{t('dapp.sign.fee')}</dt>
-          <dd>
-            <button
-              type="button"
-              class="bp-dapp-link"
-              aria-label={t('dapp.sign.fee.change', { fee: feeText(fee) })}
+          }
+        />
+        <RequestHero
+          icon={many || !only ? 'order' : ICONS[only.icon]}
+          kind={summary.title}
+          hero={many ? t('dapp.sign.together') : summary.hero}
+          sub={
+            many
+              ? t(count === 2 ? 'dapp.sign.together.two' : 'dapp.sign.together.many')
+              : summary.sub
+          }
+          tone={dangerous ? 'bad' : 'accent'}
+        />
+        {dangerous && (
+          <RiskBox
+            tone="red"
+            title={summary.dangers[0]?.title ?? t('dapp.sign.dangerFallback')}
+            action={
+              <Check checked={trusted} onChange={setTrusted}>
+                {t('dapp.sign.trust')}
+              </Check>
+            }
+          >
+            {summary.dangers.map((d, i) => (
+              <p key={i}>
+                {i > 0 && <strong>{d.title}. </strong>}
+                {d.text}
+              </p>
+            ))}
+          </RiskBox>
+        )}
+        {!many && only?.level === 'unknown' && (
+          <RiskBox tone="amber">{t('dapp.sign.unknown')}</RiskBox>
+        )}
+        {many && (
+          <ol class="bp-dapp-cards" aria-label={t('dapp.sign.messages', { count: String(count) })}>
+            {summary.messages.map((m, i) => (
+              <MessageItem key={i} message={m} json={view.messageJson[i]} n={i + 1} count={count} />
+            ))}
+          </ol>
+        )}
+        <DetailCard
+          rows={rows}
+          footer={
+            <SelectRow
+              tone="quiet"
+              label={t('dapp.sign.fee.change', { fee: feeText(fee) })}
+              caption={t('dapp.sign.fee')}
+              valueIcon={<Avatar label={fee.symbol} size={18} />}
+              value={`≈ ${feeText(fee)}`}
               onClick={() => {
                 setFeeOpen(true);
               }}
-            >
-              ≈ {feeText(fee)} ▾
-            </button>
-          </dd>
-        </dl>
-        <button
-          type="button"
-          class="bp-dapp-link"
+            />
+          }
+        />
+        <GhostRow
+          icon="code"
+          title={t('dapp.sign.details')}
+          hint={
+            many || !only
+              ? t('dapp.sign.messages', { count: String(count) })
+              : typeTail(only.typeUrl)
+          }
           onClick={() => {
             setDetailsOpen(true);
           }}
-        >
-          {t('dapp.sign.details')}
-        </button>
-        {dangerous && (
-          <label class="bp-dapp-trust">
-            <input
-              type="checkbox"
-              checked={trusted}
-              onChange={(e) => {
-                setTrusted(e.currentTarget.checked);
-              }}
-            />
-            <span>{t('dapp.sign.trust')}</span>
-          </label>
-        )}
+        />
+        {!many && only?.level === 'unknown' && <RawJson json={view.messageJson[0]} />}
         {error !== null && <Banner tone="red">{error}</Banner>}
-        {view.locked ? (
-          <>
-            <p class="bp-dapp-sub">{t('dapp.sign.unlockHint')}</p>
-            <PasswordGate
-              submitLabel={t('dapp.sign.unlock')}
-              hold={!canApprove}
-              variant={dangerous ? 'danger' : 'primary'}
-              onUnlocked={() => {
-                void answer(true);
-              }}
-            />
-            <Button
-              variant="quiet"
-              disabled={busy}
-              onClick={() => {
-                void answer(false);
-              }}
-            >
-              {t('dapp.sign.reject')}
-            </Button>
-          </>
-        ) : (
-          <div class="bp-dapp-actions">
-            <Button
-              variant="quiet"
-              disabled={busy}
-              onClick={() => {
-                void answer(false);
-              }}
-            >
-              {t('dapp.sign.reject')}
-            </Button>
-            <Button
-              variant={dangerous ? 'danger' : 'primary'}
-              disabled={busy || !canApprove}
-              onClick={() => {
-                void answer(true);
-              }}
-            >
-              {busy ? t('dapp.sign.approving') : t('dapp.sign.approve')}
-            </Button>
-          </div>
-        )}
       </main>
       <FeeSheet
         open={feeOpen}
@@ -262,7 +299,19 @@ export function SignScreen({ view, done }: SignScreenProps) {
           setDetailsOpen(false);
         }}
       >
-        <pre class="bp-dapp-json">{view.rawJson}</pre>
+        <div class="bp-dapp-rawsheet">
+          {!many && only && <p class="bp-dapp-rawtype bp-mono">{only.typeUrl}</p>}
+          <pre class="bp-dapp-json">{view.rawJson}</pre>
+          <p class="bp-dapp-rawnote">{t('dapp.sign.rawNote')}</p>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setDetailsOpen(false);
+            }}
+          >
+            {t('dapp.sign.rawBack')}
+          </Button>
+        </div>
       </Sheet>
     </Layout>
   );

@@ -1,6 +1,7 @@
 import { encodeMsgSend, rawJson, summarise, type AnyMsg } from '@beepocket/core';
 import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { en } from '../../i18n';
 import { ClientProvider } from '../../popup/client-context';
 import { Router } from '../../popup/router';
 import {
@@ -102,6 +103,10 @@ const base: Partial<Record<Method, Handler>> = {
 
 const button = (host: HTMLElement, name: string) =>
   [...host.querySelectorAll('button')].find((b) => b.textContent === name);
+const feeRow = (host: HTMLElement) =>
+  [...host.querySelectorAll('button')].find((b) =>
+    b.getAttribute('aria-label')?.startsWith('Network fee'),
+  );
 
 describe('the request window', () => {
   it('shows the site and one address to pick, and answers with the picked index', async () => {
@@ -115,12 +120,12 @@ describe('the request window', () => {
     await settle();
     await settle();
     expect(t.host.textContent).toContain('https://dex.getbze.com');
-    expect(t.host.textContent).toContain('exactly one address');
+    expect(t.host.textContent).toContain(en['dapp.connect.sees']);
     expect(t.host.textContent).toContain('2.50 BZE');
 
-    const radios = t.host.querySelectorAll('input[type=radio]');
-    expect((radios[0] as HTMLInputElement).checked).toBe(true);
-    fireEvent(radios[1], 'change');
+    const radios = t.host.querySelectorAll('[role=radio]');
+    expect(radios[0]?.getAttribute('aria-checked')).toBe('true');
+    fireEvent(radios[1], 'click');
     fireEvent(button(t.host, 'Connect'), 'click');
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', { id: 'r1', approve: true, index: 1 });
@@ -258,10 +263,7 @@ describe('the sign screen', () => {
   it('approves with the fee token picked on the fee sheet', async () => {
     const t = signRig(SIGN);
     await settle();
-    fireEvent(
-      [...t.host.querySelectorAll('button')].find((b) => b.textContent.includes('▾')),
-      'click',
-    );
+    fireEvent(feeRow(t.host), 'click');
     await settle();
     fireEvent(
       [...document.querySelectorAll('button')].find((b) =>
@@ -282,9 +284,13 @@ describe('the sign screen', () => {
   it('opens the raw JSON sheet from Message details', async () => {
     const t = signRig(SIGN);
     await settle();
-    fireEvent(button(t.host, 'Message details'), 'click');
+    fireEvent(t.host.querySelector('.bp-ghost-row'), 'click');
     await settle();
     expect(document.body.textContent).toContain('/cosmos.bank.v1beta1.MsgSend');
+    expect(document.body.textContent).toContain(en['dapp.sign.rawNote']);
+    fireEvent(button(t.host, en['dapp.sign.rawBack']), 'click');
+    await settle();
+    expect(document.body.textContent).not.toContain(en['dapp.sign.rawNote']);
   });
 
   it('answers Reject with approve false and no fee', async () => {
@@ -344,30 +350,31 @@ async function signView(
 
 const disabled = (host: HTMLElement, name: string) => button(host, name)?.disabled;
 function setTick(host: HTMLElement): void {
-  const box = tick(host);
-  box.checked = true;
-  fireEvent(box, 'change');
+  fireEvent(tick(host), 'click');
 }
+/** The trust tick: the kit `Check`, a `role="checkbox"` button inside the red risk box. */
 const tick = (host: HTMLElement) =>
-  found(host.querySelector<HTMLInputElement>('input[type=checkbox]'));
+  found(host.querySelector<HTMLButtonElement>('[role=alert] [role=checkbox]'));
+const ticked = (host: HTMLElement) => tick(host).getAttribute('aria-checked') === 'true';
 
 describe('the sign screen: risk levels', () => {
   it('shows an unknown message with the amber line and its raw JSON open', async () => {
     const t = signRig(await signView([nothingMsg()]));
     await settle();
-    expect(t.host.textContent).toContain(
-      "BeePocket can't put this message in plain words. Check the details before approving.",
-    );
+    expect(t.host.querySelector('[role=note]')?.textContent).toBe(en['dapp.sign.unknown']);
+    expect(t.host.querySelector('[role=alert]')).toBeNull();
     expect(t.host.querySelector('.bp-dapp-raw')?.textContent).toContain('/test.v1.MsgNothing');
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
     expect(disabled(t.host, 'Approve')).toBe(false);
-    expect(t.host.querySelector('input[type=checkbox]')).toBeNull();
+    expect(t.host.querySelector('[role=checkbox]')).toBeNull();
   });
 
   it('keeps a dangerous request disabled until the tick, and approves with trusted', async () => {
     const t = signRig(await signView([grant()]));
     await settle();
-    expect(t.host.textContent).toContain('power over your address');
+    expect(t.host.querySelectorAll('[role=alert]')).toHaveLength(1);
+    expect(t.host.querySelector('[role=alert]')?.textContent).toContain('power over your address');
+    expect(ticked(t.host)).toBe(false);
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
     expect(disabled(t.host, 'Approve')).toBe(true);
     fireEvent(button(t.host, 'Approve'), 'click');
@@ -394,10 +401,7 @@ describe('the sign screen: risk levels', () => {
     setTick(t.host);
     await settle();
     expect(disabled(t.host, 'Approve')).toBe(false);
-    fireEvent(
-      [...t.host.querySelectorAll('button')].find((b) => b.textContent.includes('▾')),
-      'click',
-    );
+    fireEvent(feeRow(t.host), 'click');
     await settle();
     fireEvent(
       [...document.querySelectorAll('button')].find((b) =>
@@ -406,15 +410,56 @@ describe('the sign screen: risk levels', () => {
       'click',
     );
     await settle();
-    expect(tick(t.host).checked).toBe(false);
+    expect(ticked(t.host)).toBe(false);
     expect(disabled(t.host, 'Approve')).toBe(true);
+  });
+
+  it('drops the tick when another dangerous request replaces the one on screen', async () => {
+    const a = await signView([grant()]);
+    const b = { ...(await signView([grant()])), id: 's2' };
+    const views: RequestView[] = [a, b];
+    const polls: (() => void)[] = [];
+    const t = rig(
+      {
+        ...base,
+        'dapp.current': () => ok(views.length > 1 ? (views.shift() ?? b) : b),
+        // Nothing waits behind it, so the poll asks the worker for the head again.
+        'dapp.queue': () => ok({ head: null, count: 0, origins: [] }),
+        'dapp.answer': () => ok({}),
+      },
+      undefined,
+      (_ms, fn) => {
+        polls.push(fn);
+        return () => undefined;
+      },
+    );
+    await settle();
+    await settle();
+    setTick(t.host);
+    await settle();
+    expect(disabled(t.host, 'Approve')).toBe(false);
+
+    await act(() => {
+      for (const poll of polls) poll();
+    });
+    await settle();
+    await settle();
+    expect(ticked(t.host)).toBe(false);
+    expect(disabled(t.host, 'Approve')).toBe(true);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).not.toHaveBeenCalledWith(
+      'dapp.answer',
+      expect.objectContaining({ trusted: true }),
+    );
   });
 
   it('numbers a normal and an unknown message and says both happen', async () => {
     const t = signRig(await signView([sendMsg(), nothingMsg()]));
     await settle();
     const text = t.host.textContent;
-    expect(text).toContain('Signed together: both happen, or neither does');
+    expect(text).toContain(en['dapp.sign.together']);
+    expect(text).toContain(en['dapp.sign.together.two']);
     expect(text).toContain('1 of 2');
     expect(text).toContain('2 of 2');
     const cards = [...t.host.querySelectorAll('.bp-dapp-card')];
@@ -423,13 +468,12 @@ describe('the sign screen: risk levels', () => {
     expect(cards[1]?.className).toContain('bp-dapp-card-unknown');
     expect(cards[0]?.querySelector('.bp-dapp-raw')).toBeNull();
     expect(cards[1]?.querySelector('.bp-dapp-raw')?.textContent).toContain('/test.v1.MsgNothing');
-    expect([...(cards[0]?.querySelectorAll('dt') ?? [])].map((d) => d.textContent)).toEqual([
-      'To',
-      'Amount',
-    ]);
+    expect(
+      [...(cards[0]?.querySelectorAll('.bp-detail-label') ?? [])].map((d) => d.textContent),
+    ).toEqual(['To', 'Amount']);
     expect(cards[0]?.textContent).toContain(OTHER);
     expect(cards[0]?.textContent).toContain('1.00 BZE');
-    expect(cards[1]?.querySelectorAll('dt')).toHaveLength(0);
+    expect(cards[1]?.querySelectorAll('.bp-detail-label')).toHaveLength(0);
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
   });
 
@@ -437,17 +481,32 @@ describe('the sign screen: risk levels', () => {
     const t = signRig(await signView([sendMsg(), grant()]));
     await settle();
     expect(t.host.querySelectorAll('.bp-dapp-card-dangerous')).toHaveLength(1);
+    expect(t.host.querySelectorAll('.bp-dapp-card-normal')).toHaveLength(1);
+    // One red box and one tick for the whole request; the riskiest message sets Approve's style.
+    expect(t.host.querySelectorAll('[role=alert]')).toHaveLength(1);
+    expect(t.host.querySelectorAll('[role=checkbox]')).toHaveLength(1);
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
     expect(disabled(t.host, 'Approve')).toBe(true);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).not.toHaveBeenCalledWith('dapp.answer', expect.anything());
     setTick(t.host);
     await settle();
     expect(disabled(t.host, 'Approve')).toBe(false);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      approve: true,
+      fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
+      trusted: true,
+    });
   });
 
   it('says all of these for more than two messages', async () => {
     const t = signRig(await signView([sendMsg(), sendMsg(), sendMsg()]));
     await settle();
-    expect(t.host.textContent).toContain('Signed together: all of these happen, or none does');
+    expect(t.host.textContent).toContain(en['dapp.sign.together.many']);
     expect(t.host.textContent).toContain('3 of 3');
   });
 
@@ -491,18 +550,21 @@ describe('the request queue in the window', () => {
     await settle();
     await settle();
     await settle();
-    expect(t.host.querySelector('.bp-dapp-pill')?.textContent).toBe('1 of 2');
+    const badge = t.host.querySelector('.bp-dapp-header-badge');
+    expect(badge?.textContent).toBe('1 of 2');
+    expect(badge?.getAttribute('aria-label')).toBe('Request 1 of 2');
 
     fireEvent(button(t.host, 'Cancel'), 'click');
     await settle();
-    expect(t.host.textContent).toContain('Next request · 1 waiting');
+    expect(t.host.querySelector('[role=status]')?.textContent).toBe('Next request · 1 waiting');
+    expect(t.host.querySelector('h1')?.textContent).toBe(en['dapp.done.rejected']);
     expect(button(t.host, 'Connect')).toBeUndefined();
 
     await act(() => timer?.());
     await settle();
     await settle();
-    expect(t.host.querySelector('.bp-dapp-pill')).toBeNull();
-    expect(t.host.textContent).toContain('exactly one address');
+    expect(t.host.querySelector('.bp-dapp-header-badge')).toBeNull();
+    expect(t.host.textContent).toContain(en['dapp.connect.sees']);
   });
 
   it('asks the worker again when the head expires', async () => {
@@ -541,14 +603,37 @@ describe('the request queue in the window', () => {
     await settle();
     await settle();
     await settle();
-    expect(t.host.querySelector('.bp-dapp-pill')).toBeNull();
+    expect(t.host.querySelector('.bp-dapp-header-badge')).toBeNull();
     waiting = 2;
     await act(() => {
       for (const f of ticks) f();
     });
     await settle();
-    expect(t.host.querySelector('.bp-dapp-pill')?.textContent).toBe('1 of 2');
-    expect(t.host.textContent).toContain('exactly one address');
+    const badge = t.host.querySelector('.bp-dapp-header-badge');
+    expect(badge?.textContent).toBe('1 of 2');
+    expect(badge?.getAttribute('aria-label')).toBe('Request 1 of 2');
+    expect(t.host.textContent).toContain(en['dapp.connect.sees']);
+  });
+
+  it('says what was approved, from where and the fee, before the next request', async () => {
+    const views: CurrentRequest[] = [
+      { ...SIGN, count: 2 },
+      { ...CONNECT, id: 'r2', count: 1 },
+    ];
+    const t = rig({
+      ...base,
+      'dapp.current': () => ok(views.shift() ?? { status: 'none' }),
+      'dapp.answer': () => ok({}),
+    });
+    await settle();
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.host.querySelector('h1')?.textContent).toBe(en['dapp.done.approved']);
+    expect(t.host.textContent).toContain('dex.getbze.com');
+    const rows = [...t.host.querySelectorAll('.bp-detail')].map((r) => r.textContent);
+    expect(rows).toEqual(['FromMain', 'Network fee0.002 BZE']);
+    expect(t.host.querySelector('[role=status]')?.textContent).toBe('Next request · 1 waiting');
   });
 
   it('keeps showing a request that stays waiting after a failed answer', async () => {

@@ -1,0 +1,51 @@
+/* DetailCard: label … value rows and the Network fee row, in one card. */
+.bp-detail-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--bp-line);
+  border-radius: 14px;
+  background: var(--bp-card);
+  transition: background 0.35s ease;
+}
+
+.bp-detail-card .bp-detail {
+  align-items: baseline;
+  padding: 10px 14px;
+}
+
+.bp-detail-card .bp-detail-label {
+  flex: none;
+}
+
+.bp-detail-card .bp-detail-value {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.bp-detail-card .bp-detail-value .bp-mono {
+  font-size: 12px;
+}
+
+.bp-detail-card-footer {
+  border-top: 1px solid var(--bp-line);
+}
+
+.bp-detail-card > .bp-detail-card-footer:first-child {
+  border-top: 0;
+}
+
+/* The fee row sits flush inside the card. */
+.bp-detail-card-footer .bp-select-row {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px 0 14px;
+  border: 0;
+  border-radius: 0 0 13px 13px;
+  background: transparent;
+}
+
+.bp-detail-card > .bp-detail-card-footer:first-child .bp-select-row {
+  border-radius: 13px;
+}

@@ -1,0 +1,67 @@
+/* MessageCard: one message of a multi-message request. */
+.bp-msg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--bp-line);
+  border-radius: 14px;
+  background: var(--bp-card);
+  transition: background 0.35s ease;
+}
+
+.bp-msg-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+}
+
+.bp-msg-card-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+}
+
+.bp-msg-card-bad .bp-msg-card-icon {
+  background: var(--bp-bad-soft);
+  color: var(--bp-bad-text);
+}
+
+.bp-msg-card-warn .bp-msg-card-icon {
+  background: var(--bp-warn-soft);
+  color: var(--bp-warn-text);
+}
+
+.bp-msg-card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bp-msg-card-text strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.bp-msg-card-text span {
+  color: var(--bp-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.bp-msg-card-pos {
+  flex: none;
+  color: var(--bp-faint);
+  font-size: 11px;
+  font-weight: 600;
+}

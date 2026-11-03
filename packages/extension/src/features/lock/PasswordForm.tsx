@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { PasswordOutcome, Result } from '../../protocol';
@@ -22,6 +23,8 @@ export interface PasswordFormProps {
   labelIcon?: IconName;
   /** Shown in the empty field (Unlock uses the label). */
   placeholder?: string;
+  /** A button set left of submit, side by side (Reject on a sign request). */
+  secondary?: ComponentChildren;
 }
 
 /** Password field + submit with the wrong-password error and the throttle countdown. */
@@ -57,6 +60,17 @@ export function PasswordForm(props: PasswordFormProps) {
     setRetryAt(outcome.retryAt);
     setError(outcome.status === 'wrong-password' ? t('lock.wrongPassword') : undefined);
   };
+
+  const submitButton = (
+    <Button
+      type="submit"
+      variant={props.variant ?? 'primary'}
+      size={props.large === true ? 'lg' : 'md'}
+      disabled={blocked || busy || password === '' || props.hold === true}
+    >
+      {busy ? t('lock.unlocking') : props.submitLabel}
+    </Button>
+  );
 
   return (
     <form
@@ -95,14 +109,14 @@ export function PasswordForm(props: PasswordFormProps) {
           </div>
         </>
       )}
-      <Button
-        type="submit"
-        variant={props.variant ?? 'primary'}
-        size={props.large === true ? 'lg' : 'md'}
-        disabled={blocked || busy || password === '' || props.hold === true}
-      >
-        {busy ? t('lock.unlocking') : props.submitLabel}
-      </Button>
+      {props.secondary === undefined ? (
+        submitButton
+      ) : (
+        <div class="bp-bottom-row">
+          {props.secondary}
+          {submitButton}
+        </div>
+      )}
     </form>
   );
 }
