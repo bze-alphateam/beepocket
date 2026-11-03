@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { TokenErrorCodes, type ListedToken } from '../../protocol';
+import { usePaste } from '../../popup/clipboard';
 import { useClient } from '../../popup/client-context';
 import { Button, Field } from '../../ui';
 import { useSettingsEnv } from './env';
@@ -30,8 +31,7 @@ export function TokenCodeField(props: { onFound: (token: ListedToken) => void })
   const [error, setError] = useState<CodeError | null>(null);
   // Only the latest lookup may land: an older, slower answer is dropped.
   const seq = useRef(0);
-  // A clipboard read can finish after the screen is gone: then it must not look anything up.
-  const mounted = useRef(true);
+  const form = useRef<HTMLFormElement>(null);
   const cancelTimer = useRef<() => void>(() => undefined);
   const { onFound } = props;
   const lookup = async (value: string) => {
@@ -51,36 +51,35 @@ export function TokenCodeField(props: { onFound: (token: ListedToken) => void })
     else if (res.error.code === TokenErrorCodes.invalidCode) setError('invalid');
     else setError('failed');
   };
+  // A refused read leaves the field focused for Ctrl+V / ⌘V, which arrives as typing.
+  const { paste, refused, clearRefused } = usePaste(
+    () => env.clipboard.readText(),
+    (text) => {
+      const value = text.trim();
+      setCode(value);
+      void lookup(value);
+    },
+    () => form.current?.querySelector('input'),
+  );
   const typed = (value: string) => {
+    clearRefused();
     setCode(value);
     seq.current++;
     setError(null);
     cancelTimer.current();
     cancelTimer.current = env.scheduler.after(LOOKUP_DELAY_MS, () => void lookup(value));
   };
-  // Drop a pending lookup, and a clipboard read still running, on leaving.
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
+  // Drop a pending lookup on leaving (a clipboard read still running lands nowhere).
+  useEffect(
+    () => () => {
       cancelTimer.current();
       seq.current++;
-    };
-  }, []);
-  const paste = () => {
-    // Read only here, on the user's tap.
-    void env.clipboard.readText().then(
-      (text) => {
-        if (!mounted.current) return;
-        const value = text.trim();
-        setCode(value);
-        void lookup(value);
-      },
-      () => undefined,
-    );
-  };
+    },
+    [],
+  );
   return (
     <form
+      ref={form}
       class="ob-code"
       onSubmit={(e) => {
         e.preventDefault();
@@ -100,6 +99,7 @@ export function TokenCodeField(props: { onFound: (token: ListedToken) => void })
               ? `${t('onboarding.start.noSuchToken')} ${t('onboarding.start.noSuchTokenHint')}`
               : t(CODE_ERRORS[error])
         }
+        hint={refused ? t('app.pasteHint') : undefined}
         onInput={typed}
         trailing={
           <Button variant="ghost" label={t('onboarding.start.pasteLabel')} onClick={paste}>

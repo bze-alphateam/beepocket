@@ -42,7 +42,8 @@ export interface SendRoute {
   fromIndex?: number;
 }
 
-const HOME: RouteBase = { name: 'home.main' };
+/** Every way out of Send goes back to Home on the token being sent, never the first one. */
+const homeOn = (denom: string): RouteBase & { denom: string } => ({ name: 'home.main', denom });
 
 /** The fee is estimated this long after the last change to From, To, Amount or the fee token. */
 const ESTIMATE_DEBOUNCE_MS = 400;
@@ -108,7 +109,7 @@ export function SendFlow({ route }: { route: SendRoute }) {
           <ScreenHeader
             title={t('send.loading')}
             onBack={() => {
-              navigate(HOME);
+              navigate(homeOn(route.denom));
             }}
           />
         }
@@ -343,7 +344,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
   };
 
   const home = () => {
-    navigate(HOME);
+    navigate(homeOn(route.denom));
   };
   const edit = () => {
     setError(null);

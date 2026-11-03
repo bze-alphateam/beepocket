@@ -14,4 +14,5 @@ export const app = {
   'app.progressShort': '{step} of {total}',
   'app.word': 'Word {n}',
   'app.dropdown': '{title}, now {value}',
+  'app.pasteHint': 'Paste with Ctrl+V / ⌘V',
 } as const;

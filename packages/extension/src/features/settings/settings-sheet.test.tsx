@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'preact/test-utils';
 import { useState } from 'preact/hooks';
@@ -14,13 +16,15 @@ import {
 } from '../../protocol';
 import type { Client } from '../../protocol/client';
 import { AppearanceProvider } from '../../popup/appearance';
+import { readPermittedClipboard } from '../../popup/clipboard';
 import { ClientProvider } from '../../popup/client-context';
 import { Router, type RouteTable } from '../../popup/router';
 import { AppearanceState, type Appearance, type SchemeQuery } from '../../theme';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { LockEnvProvider } from '../lock/env';
 import type { StateEvents } from '../lock/events';
-import { SettingsEnvProvider, type SettingsEnv } from './env';
+import { browserOnboardingEnv } from '../onboarding/env';
+import { browserSettingsEnv, SettingsEnvProvider, type SettingsEnv } from './env';
 import { NetworkPill } from './NetworkPill';
 import { settingsRoutes } from './routes';
 import { SettingsSheet } from './SettingsSheet';
@@ -656,13 +660,23 @@ describe('Preferred tokens', () => {
   let scheduler = new FakeScheduler();
   let clipboard = '';
   let readText = () => Promise.resolve(clipboard);
+  // `chrome.permissions`: `clipboardRead` is granted unless a test says otherwise.
+  const permissions = {
+    grant: true,
+    request: vi.fn(() => Promise.resolve(permissions.grant)),
+  };
   const openPick = async (client: FakeClient) => {
     scheduler = new FakeScheduler();
     clipboard = '';
     readText = () => Promise.resolve(clipboard);
+    permissions.grant = true;
+    permissions.request.mockClear();
     const env: SettingsEnv = {
       manifest: { version: () => '1.2.3' },
-      clipboard: { readText: () => readText(), writeText: () => Promise.resolve() },
+      clipboard: {
+        readText: () => readPermittedClipboard(permissions, { readText: () => readText() }),
+        writeText: () => Promise.resolve(),
+      },
       scheduler,
     };
     const table = { ...settingsRoutes, 'home.main': Marker, 'settings.main': Marker };
@@ -829,6 +843,64 @@ describe('Preferred tokens', () => {
       fireEvent(button(host, 'Save'), 'click');
       await flush();
       expect(client.saw('tokens.add')).toEqual([{ denom: PAGE.denom }]);
+    });
+
+    it('Paste asks for clipboardRead in the tap itself, then reads and looks up', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const host = await openPick(client);
+      clipboard = GOLD.denom;
+      fireEvent(button(host, 'Paste token code'), 'click');
+      // Same tick as the click, before any promise has settled: the user gesture still holds.
+      expect(permissions.request).toHaveBeenCalledExactlyOnceWith({
+        permissions: ['clipboardRead'],
+      });
+      expect(client.saw('tokens.lookup')).toEqual([]);
+      await flush();
+      expect(codeField(host).value).toBe(GOLD.denom);
+      expect(client.saw('tokens.lookup')).toEqual([{ code: GOLD.denom }]);
+      expect(row(host, 'GOLD').getAttribute('aria-checked')).toBe('true');
+    });
+
+    it.each([
+      ['the permission is declined', () => (permissions.grant = false)],
+      [
+        'the read fails',
+        () => (readText = () => Promise.reject(new DOMException('no', 'NotAllowedError'))),
+      ],
+    ])('when %s, Paste focuses the field and says to paste by hand', async (_, refuse) => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const host = await openPick(client);
+      clipboard = GOLD.denom;
+      refuse();
+      fireEvent(button(host, 'Paste token code'), 'click');
+      await flush();
+      expect(client.saw('tokens.lookup')).toEqual([]);
+      expect(codeField(host).value).toBe('');
+      expect(document.activeElement).toBe(codeField(host));
+      expect(must(host.querySelector('.ob-code')).textContent).toContain('Paste with Ctrl+V / ⌘V');
+      // Ctrl+V / ⌘V lands as input: it clears the hint and is looked up like typing.
+      typeCode(host, GOLD.denom);
+      scheduler.run();
+      await flush();
+      expect(must(host.querySelector('.ob-code')).textContent).not.toContain('Ctrl+V');
+      expect(client.saw('tokens.lookup')).toEqual([{ code: GOLD.denom }]);
+    });
+
+    it('a pasted IBC code is looked up exactly as the chain spells it', async () => {
+      const IBC = 'ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2';
+      const sherpa = { ...token(IBC, 'SHERPA'), kind: 'ibc', source: 'scan' };
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      client.lookup = (code) =>
+        Promise.resolve(code === IBC ? ok(sherpa) : fail(TokenErrorCodes.noSuchToken, 'none'));
+      const host = await openPick(client);
+      clipboard = `${IBC}\n`;
+      fireEvent(button(host, 'Paste token code'), 'click');
+      await flush();
+      expect(client.saw('tokens.lookup')).toEqual([{ code: IBC }]);
+      expect(row(host, 'SHERPA').getAttribute('aria-checked')).toBe('true');
     });
 
     it('a clipboard read that ends after leaving the screen looks nothing up', async () => {
@@ -1010,5 +1082,45 @@ describe('NetworkPill', () => {
     ).host;
     await flush();
     expect(second.textContent).toBe('Testnet');
+  });
+});
+
+describe('the browser clipboard behind Paste', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  const stub = (grant: boolean) => {
+    const request = vi.fn(() => Promise.resolve(grant));
+    const readText = vi.fn(() => Promise.resolve('factory/bze1x/ugold'));
+    vi.stubGlobal('chrome', { permissions: { request } });
+    vi.stubGlobal('navigator', { clipboard: { readText, writeText: vi.fn() } });
+    return { request, readText };
+  };
+  const readers = [
+    ['Settings', () => browserSettingsEnv.clipboard.readText()],
+    ['onboarding', () => browserOnboardingEnv().clipboard.readText()],
+  ] as const;
+
+  it.each(readers)('%s asks for clipboardRead synchronously, then reads', async (_, read) => {
+    const s = stub(true);
+    const reading = read();
+    // Asked before anything is awaited, so the tap's user gesture is still there.
+    expect(s.request).toHaveBeenCalledExactlyOnceWith({ permissions: ['clipboardRead'] });
+    expect(s.readText).not.toHaveBeenCalled();
+    await expect(reading).resolves.toBe('factory/bze1x/ugold');
+  });
+
+  it.each(readers)('%s never reads when clipboardRead is declined', async (_, read) => {
+    const s = stub(false);
+    await expect(read()).rejects.toThrow();
+    expect(s.readText).not.toHaveBeenCalled();
+  });
+
+  it('the manifest offers clipboardRead as optional only', () => {
+    const manifest = JSON.parse(
+      readFileSync(join(import.meta.dirname, '../../../public/manifest.json'), 'utf8'),
+    ) as { permissions: string[]; optional_permissions?: string[] };
+    expect(manifest.permissions).toEqual(['storage', 'alarms']);
+    expect(manifest.optional_permissions).toEqual(['clipboardRead']);
   });
 });

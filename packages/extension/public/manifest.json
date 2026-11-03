@@ -4,6 +4,7 @@
   "description": "Security-first wallet for the BeeZee (BZE) network.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvHY5diT0x5EE7tevMDgk+3prpLtAd3T8R95MsTq28z8Z3dHUGPOGcTn0bVhoYXbzjIBNyF666O6nCo3/NKyONPSIsqikcQywZeozxUDWDyteSSnY9xP7AcSUhrcSkoheWfHQHQAHessALDVBxg5FoL41XZUS2YLBhXhRaCyh26LwfeX+eFDh0m3MpED2WbZM5rqWwvoe9ItQ/MAbLAfRmiEFFMmGdNWGNqdkPGT4xblyRtDDtn6yXyVgB8PJ09SRflE7HfpGXHvJXCs1BTc3Py9BiFmYX9+3Hmaa3CNJ/sUfedJvKA0fJG0aveTNxWTPJrokTjjEGmLOnYdHdTBLTQIDAQAB",
   "permissions": ["storage", "alarms"],
+  "optional_permissions": ["clipboardRead"],
   "host_permissions": [
     "https://rest.getbze.com/*",
     "https://rpc.getbze.com/*",

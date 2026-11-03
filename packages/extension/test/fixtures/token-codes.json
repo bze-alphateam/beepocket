@@ -1,0 +1,319 @@
+{
+  "source": "BZE mainnet REST and BZE Scan answers, recorded 2026-11-03",
+  "responses": {
+    "https://rest.getbze.com/cosmos/bank/v1beta1/supply/by_denom?denom=ibc%2F02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2": {
+      "status": 200,
+      "body": {
+        "amount": {
+          "denom": "ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2",
+          "amount": "242627544509"
+        }
+      }
+    },
+    "https://rest.getbze.com/bze/tokenfactory/denom_branding?denom=ibc%2F02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2": {
+      "status": 404,
+      "body": {
+        "code": 5,
+        "message": "not found",
+        "details": []
+      }
+    },
+    "https://explorer.getbze.com/api/v1/registry/assets/ibc%2F02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2": {
+      "status": 200,
+      "body": {
+        "denom": "ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2",
+        "kind": "ibc",
+        "name": "Sherpa",
+        "ticker": "SHERPA",
+        "decimals": 6,
+        "logo": "https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/sherpa.png",
+        "description": null,
+        "verified": true,
+        "stable": false,
+        "excluded": false,
+        "halted": false,
+        "deposit_allowed": true,
+        "withdraw_allowed": true,
+        "notice": null,
+        "ibc": {
+          "channel_id": "channel-0",
+          "counterparty": {
+            "chain_name": "osmosis",
+            "chain_id": "osmosis-1",
+            "pretty_name": "Osmosis",
+            "logo": "https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.svg",
+            "bech32_prefix": "osmo",
+            "rest": [
+              "https://lcd.osmosis.zone/",
+              "https://rest.osmosis.goldenratiostaking.net",
+              "https://rest.lavenderfive.com:443/osmosis",
+              "https://rest-osmosis.ecostake.com",
+              "https://osmosis-api.polkachu.com",
+              "https://osmosis.rest.stakin-nodes.com",
+              "https://osmosis-rest.publicnode.com",
+              "https://osmosis-api.stake-town.com",
+              "https://api.osmosis.validatus.com:443",
+              "https://public.stakewolle.com/cosmos/osmosis/rest",
+              "https://rest.cros-nest.com/osmosis",
+              "https://osmosis-api.noders.services",
+              "https://osmosis-api.highstakes.ch",
+              "https://api.osmosis.citizenweb3.com/",
+              "https://osmosis.api.pocket.network",
+              "https://osmosis.rpc.uquad.org:443"
+            ],
+            "rpc": [
+              "https://rpc.osmosis.zone/",
+              "https://rpc.lavenderfive.com:443/osmosis",
+              "https://rpc-osmosis.ecostake.com",
+              "https://osmosis.rpc.stakin-nodes.com",
+              "https://osmosis-rpc.publicnode.com:443",
+              "http://rpc-osmosis.freshstaking.com:31657",
+              "https://osmosis-rpc.stake-town.com",
+              "https://rpc.osmosis.validatus.com",
+              "https://public.stakewolle.com/cosmos/osmosis/rpc",
+              "https://rpc.cros-nest.com/osmosis",
+              "https://rpc.osmosis.goldenratiostaking.net",
+              "https://osmosis-rpc.noders.services",
+              "https://osmosis-rpc.highstakes.ch",
+              "https://rpc.osmosis.citizenweb3.com/",
+              "https://osmosis.api.pocket.network",
+              "https://osmosis.rpc.uquad.org:443",
+              "https://osmosis-rpc.polkachu.com:443"
+            ],
+            "channel_id": "channel-340",
+            "base_denom": "factory/osmo1n6asrjy9754q8y9jsxqf557zmsv3s3xa5m9eg5/usherpa"
+          },
+          "origin": {
+            "chain_name": "osmosis",
+            "base_denom": "factory/osmo1n6asrjy9754q8y9jsxqf557zmsv3s3xa5m9eg5/usherpa",
+            "hops": 1
+          },
+          "channel_confirmed": true
+        },
+        "lp": null,
+        "routes": null,
+        "version": "ce793479daffa21b"
+      }
+    },
+    "https://explorer.getbze.com/api/v1/tokens/ibc%2F02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2": {
+      "status": 200,
+      "body": {
+        "denom": "ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2",
+        "symbol": "SHERPA",
+        "name": "Sherpa",
+        "kind": "ibc",
+        "exponent": 6,
+        "supply": "242627544509",
+        "holders_count": 25,
+        "price_usd": "0.000250928446",
+        "price_change_24h_pct": null,
+        "price_source": "dex",
+        "halted": false,
+        "logo_url": "https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/sherpa.png",
+        "origin_chain": {
+          "chain_id": "osmosis-1",
+          "name": "Osmosis",
+          "logo_url": "https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.png",
+          "status": "live"
+        },
+        "ibc_hops": 1,
+        "via_chain": null,
+        "lp_pair": null,
+        "created_time": null,
+        "ibc_channel": {
+          "channel_id": "channel-0",
+          "state": "open",
+          "client_status": "active"
+        },
+        "stranded": false,
+        "description": "IBC token from transfer/channel-0/factory/osmo1n6asrjy9754q8y9jsxqf557zmsv3s3xa5m9eg5/usherpa",
+        "origin_chain_id": "osmosis-1",
+        "ibc_base_denom": "factory/osmo1n6asrjy9754q8y9jsxqf557zmsv3s3xa5m9eg5/usherpa",
+        "ibc_path": "transfer/channel-0",
+        "creator": null,
+        "creator_label": null,
+        "admin": null,
+        "admin_label": null,
+        "created_height": null,
+        "created_tx_hash": null,
+        "website": null,
+        "markets": ["ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2/ubze"],
+        "price_updated_at": "2026-11-03T23:00:38.553831Z",
+        "metadata": {
+          "base": "ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2",
+          "name": "transfer/channel-0/factory/osmo1n6asrjy9754q8y9jsxqf557zmsv3s3xa5m9eg5/usherpa IBC token",
+          "symbol": "FACTORY/OSMO1N6ASRJY9754Q8Y9JSXQF557ZMSV3S3XA5M9EG5/USHERPA",
+          "display": "transfer/channel-0/factory/osmo1n6asrjy9754q8y9jsxqf557zmsv3s3xa5m9eg5/usherpa",
+          "denom_units": [
+            {
+              "denom": "factory/osmo1n6asrjy9754q8y9jsxqf557zmsv3s3xa5m9eg5/usherpa"
+            }
+          ],
+          "description": "IBC token from transfer/channel-0/factory/osmo1n6asrjy9754q8y9jsxqf557zmsv3s3xa5m9eg5/usherpa"
+        },
+        "updated_at": "2026-11-03T22:35:57.570572Z",
+        "events": [
+          {
+            "height": 15034719,
+            "tx_index": 1,
+            "seq": 0,
+            "tx_hash": "D084F4B092484F1A1D448BBFBDF1D23B10C246D34DF76638E7A3D67D502D1773",
+            "kind": "market_created",
+            "actor": "bze1z3mkcr2jz424w6m49frgjmy9uhlrx69phqwg3l",
+            "actor_label": null,
+            "amount": null,
+            "details": {
+              "base": "ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2",
+              "quote": "ubze",
+              "market_id": "ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2/ubze"
+            },
+            "time": "2024-12-18T15:07:46.089604Z"
+          }
+        ],
+        "events_next_cursor": null,
+        "transfers_24h": {
+          "count": 0,
+          "amount": "0"
+        }
+      }
+    },
+    "https://rest.getbze.com/cosmos/bank/v1beta1/supply/by_denom?denom=ulp%2F072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209": {
+      "status": 200,
+      "body": {
+        "amount": {
+          "denom": "ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209",
+          "amount": "307659286478431137"
+        }
+      }
+    },
+    "https://rest.getbze.com/bze/tokenfactory/denom_branding?denom=ulp%2F072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209": {
+      "status": 404,
+      "body": {
+        "code": 5,
+        "message": "not found",
+        "details": []
+      }
+    },
+    "https://explorer.getbze.com/api/v1/registry/assets/ulp%2F072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209": {
+      "status": 200,
+      "body": {
+        "denom": "ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209",
+        "kind": "lp",
+        "name": "CTL/BZE LP Shares",
+        "ticker": "CTL/BZE LP",
+        "decimals": 12,
+        "logo": null,
+        "description": null,
+        "verified": true,
+        "stable": false,
+        "excluded": false,
+        "halted": false,
+        "deposit_allowed": true,
+        "withdraw_allowed": true,
+        "notice": null,
+        "ibc": null,
+        "lp": {
+          "base": "factory/bze1972aqfzdg29ugjln74edx0xvcg4ehvysjptk77/CTL",
+          "quote": "ubze"
+        },
+        "routes": null,
+        "version": "83aa265b42966c71"
+      }
+    },
+    "https://rest.getbze.com/cosmos/bank/v1beta1/denoms_metadata_by_query_string?denom=ulp%2F072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209": {
+      "status": 200,
+      "body": {
+        "metadata": {
+          "description": "",
+          "denom_units": [
+            {
+              "denom": "ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209",
+              "exponent": 0,
+              "aliases": []
+            },
+            {
+              "denom": "lp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209",
+              "exponent": 6,
+              "aliases": []
+            }
+          ],
+          "base": "ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209",
+          "display": "lp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209",
+          "name": "",
+          "symbol": "",
+          "uri": "",
+          "uri_hash": ""
+        }
+      }
+    },
+    "https://rest.getbze.com/cosmos/bank/v1beta1/supply/by_denom?denom=ulp_ibc%2F82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze": {
+      "status": 200,
+      "body": {
+        "amount": {
+          "denom": "ulp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze",
+          "amount": "137934490888158050"
+        }
+      }
+    },
+    "https://rest.getbze.com/bze/tokenfactory/denom_branding?denom=ulp_ibc%2F82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze": {
+      "status": 404,
+      "body": {
+        "code": 5,
+        "message": "not found",
+        "details": []
+      }
+    },
+    "https://explorer.getbze.com/api/v1/registry/assets/ulp_ibc%2F82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze": {
+      "status": 200,
+      "body": {
+        "denom": "ulp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze",
+        "kind": "lp",
+        "name": "PHOTON/BZE LP Shares",
+        "ticker": "PHOTON/BZE LP",
+        "decimals": 12,
+        "logo": null,
+        "description": null,
+        "verified": true,
+        "stable": false,
+        "excluded": false,
+        "halted": false,
+        "deposit_allowed": true,
+        "withdraw_allowed": true,
+        "notice": null,
+        "ibc": null,
+        "lp": {
+          "base": "ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011",
+          "quote": "ubze"
+        },
+        "routes": null,
+        "version": "a640317b549f9a6c"
+      }
+    },
+    "https://rest.getbze.com/cosmos/bank/v1beta1/denoms_metadata_by_query_string?denom=ulp_ibc%2F82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze": {
+      "status": 200,
+      "body": {
+        "metadata": {
+          "description": "",
+          "denom_units": [
+            {
+              "denom": "ulp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze",
+              "exponent": 0,
+              "aliases": []
+            },
+            {
+              "denom": "lp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze",
+              "exponent": 6,
+              "aliases": []
+            }
+          ],
+          "base": "ulp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze",
+          "display": "lp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze",
+          "name": "",
+          "symbol": "",
+          "uri": "",
+          "uri_hash": ""
+        }
+      }
+    }
+  }
+}

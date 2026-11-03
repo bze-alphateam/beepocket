@@ -1,11 +1,13 @@
 import { createContext, type ComponentChildren } from 'preact';
 import { useContext } from 'preact/hooks';
 import type { Scheduler } from '../home/env';
+import { browserClipboardRead } from '../../popup/clipboard';
 import { chromeManifest, type ManifestSource } from './manifest';
 
 /**
  * What Settings needs from the browser: the version for the footer, the clipboard for Copy and
- * the token code's Paste (read only on that tap), the timer that debounces the code lookup.
+ * the token code's Paste (read only on that tap, asking for `clipboardRead` when it is not held;
+ * a refusal rejects), the timer that debounces the code lookup.
  */
 export interface SettingsEnv {
   manifest: ManifestSource;
@@ -17,7 +19,7 @@ export interface SettingsEnv {
 export const browserSettingsEnv: SettingsEnv = {
   manifest: chromeManifest,
   clipboard: {
-    readText: () => navigator.clipboard.readText(),
+    readText: browserClipboardRead,
     writeText: (text) => navigator.clipboard.writeText(text),
   },
   scheduler: {
