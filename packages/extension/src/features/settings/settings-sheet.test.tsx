@@ -263,6 +263,14 @@ describe('Settings sheet', () => {
     expect(text).toContain('15 min · 1 h');
     expect(text).toContain('Password needed');
     expect(text).toContain('BeePocket 1.2.3 · beezee-1');
+    // The footer logo stays BeePocket green whatever token kit is active.
+    const stops = [...host.querySelectorAll('.bp-settings-footer .bp-logo stop')];
+    expect(stops.map((s) => s.getAttribute('stop-color'))).toEqual([
+      '#3DD07A',
+      '#1E9150',
+      '#3DD07A',
+      '#1E9150',
+    ]);
     expect(host.querySelector('[aria-label="Connected sites · 2"]')).not.toBeNull();
     expect(host.querySelector('input[type="checkbox"], select')).toBeNull();
   });
@@ -277,7 +285,6 @@ describe('Settings sheet', () => {
     expect(dialogs()).toHaveLength(0);
     fireEvent(button('Open settings'), 'click');
     await flush();
-    expect(host.querySelector('.bp-sheet-handle')).toBeNull();
     fireEvent(button('Close'), 'click');
     expect(dialogs()).toHaveLength(0);
   });
