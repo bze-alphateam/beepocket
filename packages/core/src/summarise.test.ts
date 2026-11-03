@@ -336,7 +336,8 @@ describe('liquidity', () => {
         poolId: 'pool-bze-usdc',
         baseAmount: '100000000',
         quoteAmount: '33500000',
-        minLpTokens: '5000000',
+        // LP shares have 12 decimals.
+        minLpTokens: '5000000000000',
       }),
     ]);
     expect(headline(s)).toBe('Add liquidity · 100.00 BZE + 33.50 USDC · to the BZE/USDC pool');
@@ -352,7 +353,7 @@ describe('liquidity', () => {
       pack(MsgRemoveLiquidity, {
         creator: ME,
         poolId: 'pool-bze-usdc',
-        lpTokens: '12500000',
+        lpTokens: '12500000000000',
         minBase: '10000000',
         minQuote: '3350000',
       }),

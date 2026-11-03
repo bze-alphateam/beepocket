@@ -57,6 +57,7 @@ function rig(
   const close = vi.fn();
   const env = {
     scheduler: { every, after },
+    visibility: { hidden: () => false },
     themeTarget: { style: { setProperty: () => undefined }, dataset: {} },
     scheme: { current: () => 'dark', subscribe: () => () => undefined },
     clipboard: { writeText: () => Promise.resolve() },

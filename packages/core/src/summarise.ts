@@ -27,7 +27,7 @@ import {
   MsgRemoveLiquidity,
 } from './proto/bze/tradebin/tx';
 import { sanitiseText } from './text';
-import type { TokenInfo } from './tokens';
+import { LP_DECIMALS, type TokenInfo } from './tokens';
 import type { AnyMsg } from './tx';
 import { shortAddress } from './vault';
 
@@ -115,7 +115,6 @@ interface Parts {
 
 const MAX_TEXT = 128;
 const MAX_UINT_DIGITS = 78;
-const LP_DECIMALS = 6;
 const MAX_ROUTE_HOPS = 32;
 const MAX_MEMO = 200;
 const RISK_ORDER: Record<RiskLevel, number> = { normal: 0, unknown: 1, dangerous: 2 };

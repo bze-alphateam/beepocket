@@ -79,13 +79,44 @@ describe('HttpScanClient.asset', () => {
 
   it('reads the logo, URL-encoding the denom', async () => {
     const t = mainnet().on('GET', path, json(200, { denom: VDL, kind: 'factory', logo }));
-    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toEqual({ denom: VDL, logo });
+    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toEqual({
+      denom: VDL,
+      logo,
+      ticker: null,
+      name: null,
+      decimals: null,
+    });
     expect(t.requests[0]?.url).toContain('%2F');
   });
 
   it('accepts a null logo', async () => {
     const t = mainnet().on('GET', path, json(200, { denom: VDL, logo: null }));
-    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toEqual({ denom: VDL, logo: null });
+    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toMatchObject({
+      denom: VDL,
+      logo: null,
+    });
+  });
+
+  it('reads the ticker, name and decimals when Scan lists them', async () => {
+    const t = mainnet().on(
+      'GET',
+      path,
+      json(200, { denom: VDL, logo: null, ticker: 'VDL', name: 'Vidulum', decimals: 6 }),
+    );
+    expect(await new HttpScanClient(t, MAINNET).asset(VDL)).toEqual({
+      denom: VDL,
+      logo: null,
+      ticker: 'VDL',
+      name: 'Vidulum',
+      decimals: 6,
+    });
+  });
+
+  it('fails on decimals out of range', async () => {
+    const t = mainnet().on('GET', path, json(200, { denom: VDL, logo: null, decimals: 30 }));
+    await expect(new HttpScanClient(t, MAINNET).asset(VDL)).rejects.toMatchObject({
+      path: 'decimals',
+    });
   });
 
   it('is null when Scan answers for another denom', async () => {

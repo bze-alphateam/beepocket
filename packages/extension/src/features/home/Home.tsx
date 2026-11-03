@@ -79,7 +79,7 @@ export function Home() {
   const [scheme, setScheme] = useState(env.scheme.current());
   // `settings.main` is Home with the Settings sheet open (the way back from a settings screen).
   const [settings, setSettings] = useState(route.name === 'settings.main');
-  const { balances, refresh } = useBalances(denom);
+  const { balances, refresh } = useBalances(denom, loaded?.network ?? null);
 
   const load = useCallback(async () => {
     setFailed(false);
