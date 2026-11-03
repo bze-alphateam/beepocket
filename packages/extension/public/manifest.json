@@ -1,7 +1,6 @@
 {
   "manifest_version": 3,
   "name": "BeePocket",
-  "version": "0.0.0",
   "description": "Security-first wallet for the BeeZee (BZE) network.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [

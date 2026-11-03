@@ -24,6 +24,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Check the manifest version
+        run: |
+          pkg="$(node -p "require('./packages/extension/package.json').version")"
+          built="$(node -p "require('./packages/extension/dist/manifest.json').version")"
+          echo "package.json=$pkg manifest.json=$built"
+          test "$pkg" = "$built"
       - name: Pack the connector
         run: |
           pnpm --filter @bze/beepocket-connector pack --pack-destination "$RUNNER_TEMP/connector"
