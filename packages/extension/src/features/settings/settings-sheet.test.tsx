@@ -43,7 +43,8 @@ const token = (denom: string, symbol: string) => ({
 });
 const BZE = token('ubze', 'BZE');
 const PAGE = token('factory/bze1x/upage', 'PAGE');
-const GOLD = token('factory/bze1x/ugold', 'GOLD');
+const GOLD_LOGO = 'https://raw.githubusercontent.com/x/gold.png';
+const GOLD = { ...token('factory/bze1x/ugold', 'GOLD'), logo: GOLD_LOGO };
 const CATALOG = new Map([BZE, PAGE, GOLD].map((x) => [x.denom, x]));
 
 class FakeClient implements Client {
@@ -771,6 +772,7 @@ describe('Preferred tokens', () => {
       await flush();
       expect(client.saw('tokens.lookup')).toEqual([{ code: GOLD.denom }]);
       expect(row(host, 'GOLD').getAttribute('aria-checked')).toBe('true');
+      expect(row(host, 'GOLD').querySelector('img')?.getAttribute('src')).toBe(GOLD_LOGO);
       expect(host.textContent).toContain('2 selected');
       // Finding it again adds no second row.
       fireEvent(must(host.querySelector('.ob-code')), 'submit');
