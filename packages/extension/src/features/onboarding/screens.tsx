@@ -8,6 +8,7 @@ import {
 } from '@beepocket/core';
 import { t } from '../../i18n';
 import { TokenErrorCodes, WalletErrorCodes, type ListedToken } from '../../protocol';
+import { usePaste } from '../../popup/clipboard';
 import { useClient } from '../../popup/client-context';
 import { AppearanceToggle, useScheme } from '../../popup/appearance';
 import { Layout } from '../../popup/Layout';
@@ -306,9 +307,19 @@ export function ImportPhrase(props: {
   const [checksum, setChecksum] = useState(false);
   // A paste that did not fit: its word count, shown instead of writing part of it.
   const [refused, setRefused] = useState<number | null>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  // A refused clipboard read focuses the first cell, where Ctrl+V / ⌘V fills the phrase.
+  const pasted = usePaste(
+    () => env.clipboard.readText(),
+    (text) => {
+      place(text, 0);
+    },
+    () => bar.current?.parentElement?.querySelector<HTMLInputElement>('.bp-words input'),
+  );
   const edit = (next: string[], nextLength: 12 | 24 = length) => {
     setChecksum(false);
     setRefused(null);
+    pasted.clearRefused();
     props.onChange(next, nextLength);
   };
   /**
@@ -340,15 +351,6 @@ export function ImportPhrase(props: {
   );
   const first = bad[0];
   const filled = words.every((w) => w !== '');
-  const paste = () => {
-    // Read only here, on the user's tap: never on mount or on entering the step.
-    void env.clipboard.readText().then(
-      (text) => {
-        place(text, 0);
-      },
-      () => undefined,
-    );
-  };
   const submit = () => {
     const check = validateMnemonic(phraseOf(cells, length));
     if (check.ok) props.onDone();
@@ -356,7 +358,9 @@ export function ImportPhrase(props: {
     else setChecksum(true);
   };
   let note;
-  if (refused !== null) {
+  if (pasted.refused) {
+    note = <InlineNote tone="neutral">{t('app.pasteHint')}</InlineNote>;
+  } else if (refused !== null) {
     note = (
       <InlineNote tone="error">{t('onboarding.import.countBad', { count: refused })}</InlineNote>
     );
@@ -387,7 +391,7 @@ export function ImportPhrase(props: {
         </BottomActions>
       }
     >
-      <div class="ob-import-bar">
+      <div class="ob-import-bar" ref={bar}>
         <Segmented<PhraseLength>
           kind="radio"
           size="sm"
@@ -405,7 +409,7 @@ export function ImportPhrase(props: {
           variant="ghost"
           icon="clipboard"
           label={t('onboarding.import.pasteLabel')}
-          onClick={paste}
+          onClick={pasted.paste}
         >
           {t('onboarding.import.paste')}
         </Button>
@@ -559,6 +563,7 @@ export function Start(props: {
   // Only the latest lookup may land: an older, slower answer is dropped.
   const seq = useRef(0);
   const cancelTimer = useRef<() => void>(() => undefined);
+  const form = useRef<HTMLFormElement>(null);
   // Only a found token on the picked code card shortens the flow.
   const ready = mode === 'code' ? found : null;
   const { onFound } = props;
@@ -579,7 +584,18 @@ export function Start(props: {
     else if (res.error.code === TokenErrorCodes.invalidCode) setError('invalid');
     else setError('failed');
   };
+  // A refused read leaves the field focused for Ctrl+V / ⌘V, which arrives as typing.
+  const { paste, refused, clearRefused } = usePaste(
+    () => env.clipboard.readText(),
+    (text) => {
+      const value = text.trim();
+      setCode(value);
+      void lookup(value);
+    },
+    () => form.current?.querySelector('input'),
+  );
   const typed = (value: string) => {
+    clearRefused();
     setCode(value);
     seq.current++;
     setFound(null);
@@ -595,17 +611,6 @@ export function Start(props: {
       seq.current++;
     };
   }, []);
-  const paste = () => {
-    // Read only here, on the user's tap.
-    void env.clipboard.readText().then(
-      (text) => {
-        const value = text.trim();
-        setCode(value);
-        void lookup(value);
-      },
-      () => undefined,
-    );
-  };
   const open = async () => {
     if (!found) return;
     setBusy(true);
@@ -616,6 +621,7 @@ export function Start(props: {
   const prefilled = props.prefillCode !== undefined && code === props.prefillCode;
   const codeBody = (
     <form
+      ref={form}
       class="ob-code"
       onSubmit={(e) => {
         e.preventDefault();
@@ -635,6 +641,7 @@ export function Start(props: {
               ? `${t('onboarding.start.noSuchToken')} ${t('onboarding.start.noSuchTokenHint')}`
               : t(START_ERRORS[error])
         }
+        hint={refused ? t('app.pasteHint') : undefined}
         onInput={typed}
         trailing={
           <Button variant="ghost" label={t('onboarding.start.pasteLabel')} onClick={paste}>

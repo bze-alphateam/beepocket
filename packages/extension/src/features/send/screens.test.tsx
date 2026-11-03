@@ -11,7 +11,12 @@ import { LockEnvProvider } from '../lock/env';
 import { SendEnvProvider, type SendEnv } from './env';
 import { SendFlow, type SendRoute } from './SendFlow';
 
-type TestRoute = SendRoute | { name: 'home.main' };
+type TestRoute = SendRoute | { name: 'home.main'; denom?: string };
+
+/** Home stands in as the token it was asked to open on. */
+const HomeStub = ({ route }: { route: { denom?: string } }) => (
+  <p>{`HOME ${route.denom ?? '(first token)'}`}</p>
+);
 
 afterEach(cleanup);
 
@@ -125,10 +130,7 @@ function setup(
     <ClientProvider client={{ call } as unknown as Client}>
       <LockEnvProvider clock={clock} events={events}>
         <SendEnvProvider env={env}>
-          <Router<TestRoute>
-            table={{ send: SendFlow, 'home.main': () => <p>HOME</p> }}
-            initial={initial}
-          />
+          <Router<TestRoute> table={{ send: SendFlow, 'home.main': HomeStub }} initial={initial} />
         </SendEnvProvider>
       </LockEnvProvider>
     </ClientProvider>,
@@ -373,7 +375,7 @@ describe('result', () => {
     expect(host.querySelector('a[href="https://scan/txs/x"]')).not.toBeNull();
     expect(call).toHaveBeenCalledWith('tokens.balances', { denom: 'ubze', refresh: true });
     await press(host, 'Done');
-    expect(host.textContent).toBe('HOME');
+    expect(host.textContent).toBe('HOME ubze');
   });
 
   it("shows the node's message on failure and Try again goes back to a fresh review", async () => {
@@ -434,6 +436,83 @@ describe('result', () => {
     await press(host, 'Confirm and send');
     expect(host.textContent).toContain('Still pending');
     expect(host.querySelector('a[href="https://scan/txs/x"]')).not.toBeNull();
+  });
+});
+
+describe('leaving Send', () => {
+  const PAGE = 'factory/x/page';
+  const onPage = (handlers: Partial<Record<Method, Handler>> = {}) =>
+    setup(
+      {
+        'tokens.lookup': () =>
+          ok({
+            denom: PAGE,
+            symbol: 'PAGE',
+            name: 'Page',
+            decimals: 6,
+            kind: 'factory',
+            source: 'chain',
+            branding: null,
+          }),
+        'tokens.balances': () =>
+          ok({
+            denom: PAGE,
+            addresses: [{ index: 0, address: OWN, amount: '5000000' }],
+            total: '5000000',
+            partial: false,
+          }),
+        ...handlers,
+      },
+      false,
+      { name: 'send', denom: PAGE },
+    );
+
+  it('Back while loading returns Home on the token being sent', async () => {
+    const { host } = onPage({ 'tokens.lookup': () => new Promise<never>(() => undefined) });
+    await flush();
+    expect(host.textContent).toContain('Loading');
+    await press(host, 'Back');
+    expect(host.textContent).toBe(`HOME ${PAGE}`);
+  });
+
+  it('Back on the form returns Home on the token being sent', async () => {
+    const { host } = onPage();
+    await flush();
+    await press(host, 'Back');
+    expect(host.textContent).toBe(`HOME ${PAGE}`);
+  });
+
+  it('Back on Review returns to the form, not Home', async () => {
+    const { host } = onPage();
+    await toReview(host);
+    await press(host, 'Back');
+    expect(field(host, 'Amount').value).toBe('1.5');
+  });
+
+  it('Done after a success returns Home on the token sent', async () => {
+    const { host } = onPage();
+    await toReview(host);
+    await press(host, 'Confirm and send');
+    await press(host, 'Done');
+    expect(host.textContent).toBe(`HOME ${PAGE}`);
+  });
+
+  it('Back to wallet after a failure returns Home on the token', async () => {
+    const { host } = onPage({
+      'send.status': () => ok({ status: 'failed', message: 'out of gas', explorerUrl: null }),
+    });
+    await toReview(host);
+    await press(host, 'Confirm and send');
+    await press(host, 'Back to wallet');
+    expect(host.textContent).toBe(`HOME ${PAGE}`);
+  });
+
+  it('Done on a send still pending returns Home on the token', async () => {
+    const { host } = onPage({ 'send.status': () => ok({ status: 'pending', explorerUrl: null }) });
+    await toReview(host);
+    await press(host, 'Confirm and send');
+    await press(host, 'Done');
+    expect(host.textContent).toBe(`HOME ${PAGE}`);
   });
 });
 
