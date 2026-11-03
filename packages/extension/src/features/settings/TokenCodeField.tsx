@@ -15,6 +15,8 @@ const CODE_ERRORS = {
 
 /** How long typing pauses before the code is looked up (as in onboarding). */
 const LOOKUP_DELAY_MS = 400;
+/** No denom is longer: a longer code is invalid without asking the worker. */
+const MAX_CODE_LENGTH = 128;
 
 /**
  * The token code entry of Preferred tokens: finds a token the wallet does not hold, the way
@@ -28,6 +30,8 @@ export function TokenCodeField(props: { onFound: (token: ListedToken) => void })
   const [error, setError] = useState<CodeError | null>(null);
   // Only the latest lookup may land: an older, slower answer is dropped.
   const seq = useRef(0);
+  // A clipboard read can finish after the screen is gone: then it must not look anything up.
+  const mounted = useRef(true);
   const cancelTimer = useRef<() => void>(() => undefined);
   const { onFound } = props;
   const lookup = async (value: string) => {
@@ -36,6 +40,10 @@ export function TokenCodeField(props: { onFound: (token: ListedToken) => void })
     const mine = ++seq.current;
     setError(null);
     if (trimmed === '') return;
+    if (trimmed.length > MAX_CODE_LENGTH) {
+      setError('invalid');
+      return;
+    }
     const res = await client.call('tokens.lookup', { code: trimmed });
     if (mine !== seq.current) return;
     if (res.ok) onFound(res.value);
@@ -50,18 +58,20 @@ export function TokenCodeField(props: { onFound: (token: ListedToken) => void })
     cancelTimer.current();
     cancelTimer.current = env.scheduler.after(LOOKUP_DELAY_MS, () => void lookup(value));
   };
-  // Drop a pending lookup on leaving.
-  useEffect(
-    () => () => {
+  // Drop a pending lookup, and a clipboard read still running, on leaving.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       cancelTimer.current();
       seq.current++;
-    },
-    [],
-  );
+    };
+  }, []);
   const paste = () => {
     // Read only here, on the user's tap.
     void env.clipboard.readText().then(
       (text) => {
+        if (!mounted.current) return;
         const value = text.trim();
         setCode(value);
         void lookup(value);

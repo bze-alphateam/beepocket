@@ -31,8 +31,9 @@ export interface TokenPickerProps {
   /** Right under the search field: another way to find a token (Settings' token code). */
   field?: ComponentChildren;
   /**
-   * Tokens listed whatever the query, ahead of the search answer: the picks the wallet does not
-   * hold, a token found by its code. A denom the answer also has keeps the answer's place.
+   * Tokens the search cannot find, listed ahead of its answer when they match the query: the picks
+   * the wallet does not hold, a token found by its code. A denom the answer also has keeps the
+   * answer's place.
    */
   extra?: readonly ListedToken[];
 }
@@ -61,10 +62,17 @@ export function TokenPicker({ selected, onToggle, notice, field, extra = [] }: T
       live = false;
     };
   }, [client, query]);
+  // The same match `tokens.search` applies to its answer.
+  const needle = query.trim().toLowerCase();
+  const matches = (x: ListedToken) =>
+    needle === '' ||
+    x.symbol.toLowerCase().includes(needle) ||
+    x.name.toLowerCase().includes(needle) ||
+    x.denom.toLowerCase().includes(needle);
   const rows =
     list === null
       ? null
-      : [...extra.filter((x) => !list.some((l) => l.denom === x.denom)), ...list];
+      : [...extra.filter((x) => matches(x) && !list.some((l) => l.denom === x.denom)), ...list];
   return (
     <>
       <SearchField

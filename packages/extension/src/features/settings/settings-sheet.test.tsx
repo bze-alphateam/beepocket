@@ -635,12 +635,14 @@ describe('Show recovery phrase', () => {
 describe('Preferred tokens', () => {
   let scheduler = new FakeScheduler();
   let clipboard = '';
+  let readText = () => Promise.resolve(clipboard);
   const openPick = async (client: FakeClient) => {
     scheduler = new FakeScheduler();
     clipboard = '';
+    readText = () => Promise.resolve(clipboard);
     const env: SettingsEnv = {
       manifest: { version: () => '1.2.3' },
-      clipboard: { readText: () => Promise.resolve(clipboard), writeText: () => Promise.resolve() },
+      clipboard: { readText: () => readText(), writeText: () => Promise.resolve() },
       scheduler,
     };
     const table = { ...settingsRoutes, 'home.main': Marker, 'settings.main': Marker };
@@ -808,6 +810,41 @@ describe('Preferred tokens', () => {
       expect(client.saw('tokens.add')).toEqual([{ denom: PAGE.denom }]);
     });
 
+    it('a clipboard read that ends after leaving the screen looks nothing up', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const host = await openPick(client);
+      let release: (text: string) => void = () => undefined;
+      readText = () =>
+        new Promise((resolve) => {
+          release = resolve;
+        });
+      fireEvent(button(host, 'Paste token code'), 'click');
+      fireEvent(button(host, 'Back'), 'click');
+      expect(host.textContent).toBe('at:settings.main');
+      release(GOLD.denom);
+      await flush();
+      expect(client.saw('tokens.lookup')).toEqual([]);
+    });
+
+    it('a code longer than any denom is invalid without a lookup', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const host = await openPick(client);
+      typeCode(host, `factory/${'a'.repeat(121)}`);
+      scheduler.run();
+      await flush();
+      expect(client.saw('tokens.lookup')).toEqual([]);
+      expect(must(host.querySelector('.ob-code')).textContent).toContain(
+        "That isn't a valid token code.",
+      );
+      // 128 characters is still a code.
+      typeCode(host, `factory/${'a'.repeat(120)}`);
+      scheduler.run();
+      await flush();
+      expect(client.saw('tokens.lookup')).toEqual([{ code: `factory/${'a'.repeat(120)}` }]);
+    });
+
     it('drops an older answer that lands after the latest one', async () => {
       const client = new FakeClient();
       client.preferred.mainnet = ['ubze'];
@@ -858,6 +895,25 @@ describe('Preferred tokens', () => {
     fireEvent(button(host, 'Save'), 'click');
     await flush();
     expect(client.saw('tokens.remove')).toEqual([{ denom: GOLD.denom }]);
+  });
+
+  it('the search query filters the unheld picks too, down to the empty state', async () => {
+    const client = new FakeClient();
+    client.preferred.mainnet = ['ubze', GOLD.denom];
+    client.search = ok({ tokens: [BZE], partial: false });
+    const host = await openPick(client);
+    const search = host.querySelector('.bp-search input');
+    if (!(search instanceof HTMLInputElement)) throw new Error('no search field');
+    client.search = ok({ tokens: [], partial: false });
+    search.value = 'zzz';
+    fireEvent(search, 'input');
+    await flush();
+    expect(symbols(host)).toEqual([]);
+    expect(host.textContent).toContain('No tokens match');
+    search.value = 'gOl';
+    fireEvent(search, 'input');
+    await flush();
+    expect(symbols(host)).toEqual(['GOLD']);
   });
 
   it('shows the error banner when an address could not be read, and still lists the rest', async () => {
