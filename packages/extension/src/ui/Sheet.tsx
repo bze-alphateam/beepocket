@@ -18,13 +18,17 @@ export interface SheetProps {
   height?: 'auto' | 'tall' | undefined;
 }
 
+// The open sheets. One opened inside another (a DropdownSheet in a sheet) takes the keyboard.
+const openSheets = new Set<HTMLElement>();
+
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Bottom sheet over the popup: backdrop, handle, title row, scrolling body, sticky actions.
  * While open it owns the keyboard: focus moves into the dialog, Tab stays inside it, Escape
- * closes it, and focus returns to what had it before.
+ * closes it, and focus returns to what had it before. A sheet opened inside another one takes
+ * the keyboard until it closes. The backdrop and the handle close it too.
  */
 export function Sheet(props: SheetProps) {
   const { open, title, onClose, children } = props;
@@ -33,11 +37,14 @@ export function Sheet(props: SheetProps) {
   close.current = onClose;
 
   useEffect(() => {
-    if (!open) return;
+    const self = dialog.current;
+    if (!open || !self) return;
     const before = document.activeElement;
-    dialog.current?.focus();
+    openSheets.add(self);
+    self.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if ([...openSheets].some((o) => o !== self && self.contains(o))) return;
       if (e.key === 'Escape') {
         close.current();
         return;
@@ -64,6 +71,7 @@ export function Sheet(props: SheetProps) {
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
+      openSheets.delete(self);
       if (before instanceof HTMLElement) before.focus();
     };
   }, [open]);
@@ -80,7 +88,7 @@ export function Sheet(props: SheetProps) {
         aria-label={title}
         tabIndex={-1}
       >
-        <span class="bp-sheet-handle" aria-hidden="true" />
+        <span class="bp-sheet-handle" aria-hidden="true" onClick={onClose} />
         <div class="bp-sheet-head">
           <h2>{title}</h2>
           {props.count !== undefined && <span class="bp-sheet-count">{props.count}</span>}

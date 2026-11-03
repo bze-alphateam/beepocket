@@ -1,4 +1,4 @@
 export { NetworkPill } from './NetworkPill';
 export { settingsRoutes, type SettingsRoute } from './routes';
-export { SettingsScreen } from './SettingsScreen';
+export { SettingsSheet, type SettingsSheetProps } from './SettingsSheet';
 export type { ManifestSource } from './manifest';

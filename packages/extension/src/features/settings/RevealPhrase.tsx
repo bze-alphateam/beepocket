@@ -2,22 +2,26 @@ import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import type { PasswordOutcome, Result } from '../../protocol';
-import { Banner, Button, Sheet } from '../../ui';
+import { Banner, Button, PhraseReveal, Sheet, WordGrid } from '../../ui';
 import { useLockEnv } from '../lock/env';
 import { PasswordForm } from '../lock/PasswordForm';
+import { useSettingsEnv } from './env';
 
 /** A shown phrase hides on its own after this idle time. */
 export const REVEAL_IDLE_MS = 60_000;
 
 /**
- * Password prompt, then the 24 words. Asks every time, even when unlocked. The phrase lives in
- * this component's state only: it is dropped when the sheet closes, when the screen unmounts
- * and as soon as the worker pushes any state but "unlocked" (weak lock included).
+ * Password prompt, then the 24 words behind the onboarding veil (`Ob-Phrase` without the step
+ * header). Asks every time, even when unlocked. The phrase lives in this component's state only:
+ * it is dropped when the sheet closes, when the screen unmounts and as soon as the worker pushes
+ * any state but "unlocked" (weak lock included).
  */
 export function RevealPhrase({ onClose }: { onClose: () => void }) {
   const client = useClient();
+  const env = useSettingsEnv();
   const { events } = useLockEnv();
   const [phrase, setPhrase] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -40,44 +44,57 @@ export function RevealPhrase({ onClose }: { onClose: () => void }) {
     return r;
   };
 
-  const copy = async () => {
+  const copy = () => {
     if (phrase === null) return;
-    try {
-      await navigator.clipboard.writeText(phrase);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
+    // A failed copy changes nothing on screen.
+    void env.clipboard.writeText(phrase).then(
+      () => {
+        setCopied(true);
+      },
+      () => undefined,
+    );
   };
 
-  return (
-    <Sheet open title={t('settings.reveal.title')} onClose={onClose}>
-      {phrase === null ? (
+  if (phrase === null) {
+    return (
+      <Sheet open title={t('settings.reveal.title')} onClose={onClose}>
         <PasswordForm
           label={t('settings.reveal.password')}
           submitLabel={t('settings.reveal.submit')}
           check={check}
           onSuccess={() => undefined}
         />
-      ) : (
-        <div>
-          <Banner tone="amber">{t('settings.reveal.warning')}</Banner>
-          <ol class="bp-phrase">
-            {phrase.split(' ').map((word, i) => (
-              <li key={i}>{word}</li>
-            ))}
-          </ol>
-          <Button
-            variant="quiet"
-            onClick={() => {
-              void copy();
-            }}
-          >
+      </Sheet>
+    );
+  }
+  const words = phrase.split(' ');
+  return (
+    <Sheet
+      open
+      title={t('settings.reveal.title')}
+      onClose={onClose}
+      height="tall"
+      actions={<Button onClick={onClose}>{t('settings.reveal.hide')}</Button>}
+    >
+      <div class="bp-settings-reveal">
+        <Banner tone="amber">{t('settings.reveal.warning')}</Banner>
+        <PhraseReveal
+          count={words.length}
+          revealed={revealed}
+          onReveal={() => {
+            setRevealed(true);
+          }}
+          revealLabel={t('settings.reveal.veil')}
+          privacyLabel={t('settings.reveal.privacy')}
+        >
+          <WordGrid words={words} />
+        </PhraseReveal>
+        {revealed && (
+          <Button variant="chip" icon={copied ? 'check' : 'copy'} class="ob-copy" onClick={copy}>
             {copied ? t('settings.reveal.copied') : t('settings.reveal.copy')}
           </Button>
-          <Button onClick={onClose}>{t('settings.reveal.hide')}</Button>
-        </div>
-      )}
+        )}
+      </div>
     </Sheet>
   );
 }

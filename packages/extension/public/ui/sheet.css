@@ -165,3 +165,8 @@
   color: var(--bp-muted);
   font-size: 12px;
 }
+
+/* A sheet opened inside a sheet (a DropdownSheet) covers the frame, not just the outer sheet. */
+.bp-sheet:has(.bp-sheet-root) {
+  position: static;
+}

@@ -1,6 +1,14 @@
-import { ErrorCodes, fail, ok, type Result, type WalletSettings } from '../../protocol';
+import {
+  ErrorCodes,
+  fail,
+  ok,
+  WalletErrorCodes,
+  type Result,
+  type WalletSettings,
+} from '../../protocol';
 import type { HandlerRegistry } from '../../background/registry';
 import { isAppearance } from '../../theme/appearance';
+import { isLockChoice } from './lock-options';
 import { isNetworkId, type SettingsService } from './service';
 
 type Payload = Record<string, unknown>;
@@ -14,7 +22,7 @@ function asObject(payload: unknown): Payload | null {
 
 const noArgs = (): Result<Record<string, never>> => ok({});
 
-/** Only known fields of the right type pass; range rules belong to the wallet service. */
+/** Only known fields of the right type pass; range rules belong to the handler and the wallet. */
 function validatePatch(payload: unknown): Result<Partial<WalletSettings>> {
   const p = asObject(payload);
   if (!p) return bad('settings.set got a malformed request.');
@@ -40,7 +48,13 @@ export function registerSettingsHandlers(
   registry.register('settings.get', { validate: noArgs, handle: () => service.get() });
   registry.register('settings.set', {
     validate: validatePatch,
-    handle: (patch) => service.set(patch),
+    // A lock time must be one Settings offers; the wallet then checks full lock ≥ weak lock.
+    handle: async (patch) =>
+      [patch.weakLockMinutes, patch.fullLockMinutes].every(
+        (m) => m === undefined || isLockChoice(m),
+      )
+        ? service.set(patch)
+        : fail(WalletErrorCodes.invalidSettings, 'A lock time must be one of the offered ones.'),
   });
   registry.register('network.get', {
     validate: noArgs,

@@ -11,7 +11,6 @@ import { TokenErrorCodes, WalletErrorCodes, type ListedToken } from '../../proto
 import { useClient } from '../../popup/client-context';
 import { AppearanceToggle, useScheme } from '../../popup/appearance';
 import { Layout } from '../../popup/Layout';
-import { BZE_DENOM, resolveKit, type Scheme } from '../../theme';
 import {
   Avatar,
   Banner,
@@ -29,14 +28,13 @@ import {
   PasswordField,
   PhraseReveal,
   RadioCardGroup,
-  SearchField,
   Segmented,
   Spinner,
   StrengthMeter,
   TokenRow,
   WordGrid,
 } from '../../ui';
-import { tokenColor } from '../home/format';
+import { tokenLook, TokenPicker } from '../tokens/TokenPicker';
 import { useOnboardingEnv } from './env';
 import { useRandom } from './random';
 import { makeQuiz, type QuizQuestion } from './quiz';
@@ -526,20 +524,6 @@ export function PasswordStep(props: {
   );
 }
 
-/** A token's avatar colour, and its kit's swatches in the scheme shown now when it has a kit. */
-function tokenLook(token: ListedToken, scheme: Scheme) {
-  const hasKit = token.branding !== null || token.denom === BZE_DENOM;
-  const kit = resolveKit(
-    { denom: token.denom, branding: token.branding, brandThemes: true },
-    scheme,
-  );
-  return {
-    hasKit,
-    color: tokenColor(token),
-    swatches: hasKit ? [kit.bg, kit.primary, kit.secondary] : undefined,
-  };
-}
-
 type StartError = 'noSuchToken' | 'invalid' | 'failed';
 
 const START_ERRORS = {
@@ -725,27 +709,9 @@ export function Tokens(props: {
   frame: StepFrame;
   onFinish: (denoms: string[]) => Promise<boolean>;
 }) {
-  const client = useClient();
-  const scheme = useScheme();
-  const [query, setQuery] = useState('');
-  const [list, setList] = useState<ListedToken[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [failed, setFailed] = useState(false);
   const [finishFailed, setFinishFailed] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void client.call('tokens.search', { query }).then((res) => {
-      if (!live) return;
-      if (res.ok) {
-        setList(res.value);
-        setFailed(false);
-      } else setFailed(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [client, query]);
   const toggle = (denom: string) => {
     setSelected((s) => (s.includes(denom) ? s.filter((d) => d !== denom) : [...s, denom]));
   };
@@ -778,39 +744,11 @@ export function Tokens(props: {
         </BottomBar>
       }
     >
-      <SearchField
-        label={t('onboarding.tokens.search')}
-        placeholder={t('onboarding.tokens.searchPlaceholder')}
-        value={query}
-        onInput={setQuery}
+      <TokenPicker
+        selected={selected}
+        onToggle={toggle}
+        notice={finishFailed && <Banner tone="red">{t('app.error.generic')}</Banner>}
       />
-      {(failed || finishFailed) && <Banner tone="red">{t('app.error.generic')}</Banner>}
-      <div class="ob-tokens">
-        {list?.map((tok) => {
-          const look = tokenLook(tok, scheme);
-          return (
-            <TokenRow
-              key={tok.denom}
-              symbol={tok.symbol}
-              name={tok.name}
-              color={look.color}
-              swatches={tok.unresolved ? undefined : look.swatches}
-              caption={
-                tok.unresolved
-                  ? t('onboarding.tokens.unresolved')
-                  : look.hasKit
-                    ? t('onboarding.tokens.kit')
-                    : t('onboarding.tokens.noKit')
-              }
-              checked={selected.includes(tok.denom)}
-              onToggle={() => {
-                toggle(tok.denom);
-              }}
-            />
-          );
-        })}
-      </div>
-      {list?.length === 0 && <p class="ob-wait">{t('onboarding.tokens.empty')}</p>}
     </Step>
   );
 }

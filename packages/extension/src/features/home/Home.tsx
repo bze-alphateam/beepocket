@@ -20,6 +20,7 @@ import {
   TokenPill,
   TokenTitle,
 } from '../../ui';
+import { SettingsSheet } from '../settings/SettingsSheet';
 import { AddAddressSheet } from './AddAddressSheet';
 import { AddressesTab } from './AddressesTab';
 import { useBalances } from './data';
@@ -76,6 +77,8 @@ export function Home() {
   const [adding, setAdding] = useState(false);
   const [copied, setCopied] = useState<{ index: number; at: number } | null>(null);
   const [scheme, setScheme] = useState(env.scheme.current());
+  // `settings.main` is Home with the Settings sheet open (the way back from a settings screen).
+  const [settings, setSettings] = useState(route.name === 'settings.main');
   const { balances, refresh } = useBalances(denom);
 
   const load = useCallback(async () => {
@@ -258,7 +261,7 @@ export function Home() {
           <AppearanceToggle />
           <SettingsButton
             onClick={() => {
-              navigate({ name: 'settings.main' });
+              setSettings(true);
             }}
           />
         </>
@@ -311,6 +314,16 @@ export function Home() {
           }}
         />
       )}
+      <SettingsSheet
+        open={settings}
+        onClose={() => {
+          setSettings(false);
+        }}
+        onChanged={() => {
+          void load();
+          void refresh();
+        }}
+      />
     </>
   );
 

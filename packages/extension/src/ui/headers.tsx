@@ -6,7 +6,8 @@ import { Icon } from './icons';
 
 export interface ScreenHeaderProps {
   title: string;
-  onBack: () => void;
+  /** ← goes here; without it the header has no way back (a screen that must be finished). */
+  onBack?: (() => void) | undefined;
   /** Accessible name of ←; "Back" by default ("Back to settings" on Connected sites). */
   backLabel?: string | undefined;
   /** Right slot: a count, a token avatar, an icon button. */
@@ -16,13 +17,15 @@ export interface ScreenHeaderProps {
 /** The 56 px header of a flow screen: ← (44 × 44), the title, an optional right slot. */
 export function ScreenHeader({ title, onBack, backLabel, right }: ScreenHeaderProps) {
   return (
-    <header class="bp-screen-header">
-      <Button
-        variant="icon"
-        icon="arrow-left"
-        label={backLabel ?? t('app.back')}
-        onClick={onBack}
-      />
+    <header class={onBack ? 'bp-screen-header' : 'bp-screen-header bp-screen-header-plain'}>
+      {onBack && (
+        <Button
+          variant="icon"
+          icon="arrow-left"
+          label={backLabel ?? t('app.back')}
+          onClick={onBack}
+        />
+      )}
       <h1 class="bp-screen-title">{title}</h1>
       {right}
     </header>

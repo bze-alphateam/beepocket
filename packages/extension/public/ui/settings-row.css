@@ -1,0 +1,65 @@
+/* SettingsRow: a plain row on a sheet surface (W-Settings). */
+.bp-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.bp-settings-row {
+  cursor: pointer;
+}
+
+.bp-settings-row:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: 2px;
+}
+
+.bp-settings-row-control {
+  min-height: 56px;
+}
+
+.bp-settings-row > .bp-icon {
+  flex: none;
+  color: var(--bp-muted);
+}
+
+.bp-settings-row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bp-settings-row-value {
+  flex: none;
+  color: var(--bp-muted);
+  font-size: 13px;
+}
+
+.bp-settings-row-note {
+  flex: none;
+  color: var(--bp-faint);
+  font-size: 12px;
+}
+
+.bp-settings-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bp-settings-row-sub {
+  color: var(--bp-muted);
+  font-size: 12px;
+}
