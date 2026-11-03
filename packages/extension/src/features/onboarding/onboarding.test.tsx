@@ -476,17 +476,19 @@ describe('import flow', () => {
     expect(env.readText).toHaveBeenCalledTimes(2);
   });
 
-  it('Paste without clipboardRead asks for it once, then fills the phrase', async () => {
+  it('Paste asks for clipboardRead in the tap itself, then fills the phrase', async () => {
     const permissions = {
-      contains: vi.fn(() => Promise.resolve(false)),
       request: vi.fn(() => Promise.resolve(true)),
     };
     const env = mockEnv(PHRASE_12, permissions);
     const { host } = await toImport(mockClient(baseHandlers), env);
-    await click(host, en['onboarding.import.paste']);
+    fireEvent(button(host, en['onboarding.import.paste']), 'click');
+    // Same tick as the click, before any promise has settled: the user gesture still holds.
     expect(permissions.request).toHaveBeenCalledExactlyOnceWith({
       permissions: ['clipboardRead'],
     });
+    expect(env.readText).not.toHaveBeenCalled();
+    await flush();
     expect(
       cells(host)
         .map((c) => c.value)
@@ -496,7 +498,6 @@ describe('import flow', () => {
 
   it('a declined Paste focuses the first word and says to paste by hand', async () => {
     const permissions = {
-      contains: vi.fn(() => Promise.resolve(false)),
       request: vi.fn(() => Promise.resolve(false)),
     };
     const env = mockEnv(PHRASE_12, permissions);
@@ -724,7 +725,6 @@ describe('start with a token code', () => {
 
   it('a declined token-code Paste focuses the field, hints, and looks nothing up', async () => {
     const permissions = {
-      contains: vi.fn(() => Promise.resolve(false)),
       request: vi.fn(() => Promise.resolve(false)),
     };
     const client = mockClient(baseHandlers);
@@ -748,17 +748,18 @@ describe('start with a token code', () => {
     expect(button(host, 'Open wallet with GOLD')).toBeDefined();
   });
 
-  it('a granted token-code Paste asks for clipboardRead once, then looks it up', async () => {
+  it('a granted token-code Paste asks for clipboardRead in the tap, then looks it up', async () => {
     const permissions = {
-      contains: vi.fn(() => Promise.resolve(false)),
       request: vi.fn(() => Promise.resolve(true)),
     };
     const env = mockEnv(GOLD.denom, permissions);
     const { host } = await createdWallet(mockClient(baseHandlers), undefined, env);
     await click(host, en['onboarding.start.haveCode']);
-    await click(host, en['onboarding.start.paste']);
-    await flush();
+    fireEvent(button(host, en['onboarding.start.paste']), 'click');
     expect(permissions.request).toHaveBeenCalledOnce();
+    expect(env.readText).not.toHaveBeenCalled();
+    await flush();
+    await flush();
     expect(button(host, 'Open wallet with GOLD')).toBeDefined();
   });
 

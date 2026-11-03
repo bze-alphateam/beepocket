@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 /** The slice of `chrome.permissions` a Paste button needs. */
 export interface ClipboardPermissions {
-  contains(permissions: { permissions: 'clipboardRead'[] }): Promise<boolean>;
   request(permissions: { permissions: 'clipboardRead'[] }): Promise<boolean>;
 }
 
@@ -23,21 +22,30 @@ const CLIPBOARD_READ: { permissions: 'clipboardRead'[] } = { permissions: ['clip
 
 /**
  * Reads the clipboard on a Paste tap. Extension pages may only read it with `clipboardRead`,
- * which the manifest lists as optional: it is asked for on the first tap, from inside that tap's
- * user gesture, so installing the wallet shows no clipboard warning. Rejects with
- * `ClipboardRefusedError` when the permission is declined or the read fails anyway.
+ * which the manifest lists as optional, so installing the wallet shows no clipboard warning.
+ * `permissions.request` is called synchronously, before anything is awaited: it needs the tap's
+ * user gesture, which an earlier await could lose. When the permission is already held it
+ * resolves true without a prompt. Rejects with `ClipboardRefusedError` when the permission is
+ * declined or the read fails anyway.
  */
-export async function readPermittedClipboard(
+export function readPermittedClipboard(
   permissions: ClipboardPermissions,
   clipboard: ClipboardSource,
 ): Promise<string> {
+  let asked: Promise<boolean>;
   try {
-    const held = await permissions.contains(CLIPBOARD_READ);
-    if (!held && !(await permissions.request(CLIPBOARD_READ))) throw new ClipboardRefusedError();
-    return await clipboard.readText();
+    asked = permissions.request(CLIPBOARD_READ);
   } catch {
-    throw new ClipboardRefusedError();
+    return Promise.reject(new ClipboardRefusedError());
   }
+  return asked
+    .then((granted) => {
+      if (!granted) throw new ClipboardRefusedError();
+      return clipboard.readText();
+    })
+    .catch(() => {
+      throw new ClipboardRefusedError();
+    });
 }
 
 /** The browser's: `chrome.permissions` and `navigator.clipboard`, only touched on a tap. */
