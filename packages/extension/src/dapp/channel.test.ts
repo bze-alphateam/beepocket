@@ -1,6 +1,9 @@
 import {
   Argon2idKdf,
+  buildAuthInfo,
+  buildBody,
   deriveAccount,
+  encodeMsgSend,
   NETWORKS,
   Vault,
   WebCryptoCipher,
@@ -15,7 +18,7 @@ import { FakeArea } from '../platform/test-support';
 import { WalletService } from '../features/wallet/service';
 import { createDappService } from '.';
 import type { DappSender } from './types';
-import { bytesFromWire } from './wire';
+import { bytesFromWire, bytesToWire } from './wire';
 
 const PHRASE = `${'abandon '.repeat(23)}art`;
 const PASSWORD = 'correct horse';
@@ -62,7 +65,25 @@ async function rig() {
       } as unknown as ChainClient),
   });
   let network: NetworkId = 'mainnet';
-  const services = { activeNetwork: () => Promise.resolve(NETWORKS[network]) } as Services;
+  // The node behind sign requests: BZE pays the fee, Scan is never reached.
+  const chain = {
+    account: () => Promise.resolve({ accountNumber: 7n, sequence: 3n, pubKey: null }),
+    balances: () => Promise.resolve(new Map([['ubze', 100_000_000n]])),
+    simulate: () => Promise.resolve({ gasUsed: 100_000n }),
+    feeParams: () => Promise.resolve({ minGasPrice: { denom: 'ubze', amount: '0.01' } }),
+    tradebinParams: () =>
+      Promise.resolve({ nativeDenom: 'ubze', minNativeLiquidityForModuleSwap: 1_000n }),
+    liquidityPools: () => Promise.resolve([]),
+    haltedDenoms: () => Promise.resolve([]),
+    markets: () => Promise.resolve([]),
+    marketOrder: () => Promise.resolve(null),
+    denomMetadata: () => Promise.resolve(null),
+    denomBranding: () => Promise.resolve(null),
+  } as unknown as ChainClient;
+  const services = {
+    activeNetwork: () => Promise.resolve(NETWORKS[network]),
+    clients: () => Promise.resolve({ network: NETWORKS[network], chain, scan: {} }),
+  } as unknown as Services;
   const unreachable = new Set<string>();
   const delivered: { tabId: number; documentId: string | undefined; message: unknown }[] = [];
   const created: { url: string; type: string; width: number; height: number }[] = [];
@@ -801,5 +822,46 @@ describe('request queue', () => {
     await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
     await t.dapp.openWindow();
     expect(t.focused).toEqual([1]);
+  });
+});
+
+describe('signDirect through the composition root', () => {
+  it("shows BZE's fee with the wallet's own BZE logo", async () => {
+    const t = await rig();
+    const c = await t.ask('connect', chainId());
+    await t.dapp.current();
+    await t.dapp.answer(c.id, { approve: true, index: 0 });
+    const main = deriveAccount(PHRASE, 0);
+    const bodyBytes = buildBody({
+      messages: [
+        encodeMsgSend({
+          fromAddress: main.address,
+          toAddress: deriveAccount(PHRASE, 1).address,
+          amount: [{ denom: 'ubze', amount: '1000000' }],
+        }),
+      ],
+    });
+    const authInfoBytes = buildAuthInfo({
+      pubKey: main.pubKey,
+      sequence: 3n,
+      fee: { amount: [{ denom: 'ubze', amount: '1' }], gasLimit: 1n },
+    });
+    await t.ask('signDirect', {
+      ...chainId(),
+      signer: main.address,
+      signDoc: {
+        bodyBytes: bytesToWire(bodyBytes),
+        authInfoBytes: bytesToWire(authInfoBytes),
+        ...chainId(),
+        accountNumber: '7',
+      },
+    });
+    const view = await t.dapp.current();
+    expect(view).toMatchObject({
+      status: 'sign',
+      fee: { denom: 'ubze', symbol: 'BZE', logo: '/tokens/bze.png' },
+    });
+    if (view.status !== 'sign') throw new Error('unreachable');
+    expect(view.options.find((o) => o.denom === 'ubze')?.logo).toBe('/tokens/bze.png');
   });
 });

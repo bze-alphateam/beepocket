@@ -2,7 +2,7 @@ import {
   InvalidDenomError,
   LP_DECIMALS,
   NATIVE_DENOM,
-  TokenResolver,
+  type TokenResolver,
   type Cache,
   type ChainClient,
   type Clock,
@@ -21,6 +21,7 @@ import {
 } from '../../protocol/tokens';
 import { fail, ok, type Result } from '../../protocol';
 import type { PreferredTokensStore, WalletAddresses } from './ports';
+import { BZE_LOGO, createTokenResolver } from './resolver';
 
 /**
  * How long a balance read is reused: under Home's 4 s poll, so every poll asks the node while a
@@ -29,8 +30,6 @@ import type { PreferredTokensStore, WalletAddresses } from './ports';
 export const BALANCE_FRESH_MS = 3_000;
 const MAX_SEARCH_RESULTS = 100;
 const MAX_QUERY_LENGTH = 128;
-/** BZE's logo, shipped with the extension: the round "BZ" mark the dapps use. */
-const BZE_LOGO = '/tokens/bze.png';
 
 export interface TokenServiceDeps {
   network: NetworkId;
@@ -66,12 +65,7 @@ export class TokenService {
   private readonly resolver: TokenResolver;
 
   constructor(private readonly deps: TokenServiceDeps) {
-    // Keys carry the network id so a network switch never reads the other network's data.
-    this.resolver = new TokenResolver(deps.chain, deps.scan, {
-      cache: deps.cache,
-      cacheKeyPrefix: `${deps.network}:`,
-      nativeLogo: BZE_LOGO,
-    });
+    this.resolver = createTokenResolver(deps, deps.network);
   }
 
   async lookup(code: string): Promise<Result<TokenInfo>> {

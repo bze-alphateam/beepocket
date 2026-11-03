@@ -280,7 +280,6 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
       </main>
       <FeeSheet
         open={feeOpen}
-        label={view.signer.label}
         options={view.options}
         selected={fee.denom}
         onPick={(denom) => {

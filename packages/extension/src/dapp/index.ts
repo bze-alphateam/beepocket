@@ -1,7 +1,8 @@
-import { FeeEstimator, TokenResolver } from '@beepocket/core';
+import { FeeEstimator } from '@beepocket/core';
 import type { Platform } from '../platform';
 import type { Alarms } from '../features/wallet/alarms';
 import type { Services } from '../background/services';
+import { createTokenResolver } from '../features/tokens/resolver';
 import type { WalletService } from '../features/wallet';
 import { AccountChanges } from './account-changes';
 import { DocumentLog } from './documents';
@@ -31,11 +32,10 @@ export function createDappService(
   // Built per request over the active network's clients, like the send flow's service.
   const env = async (): Promise<ChainEnv> => {
     const { network, chain, scan } = await services.clients();
-    const cacheKeyPrefix = `${network.id}:`;
-    const tokens = new TokenResolver(chain, scan, { cache: platform.cache, cacheKeyPrefix });
+    const tokens = createTokenResolver({ chain, scan, cache: platform.cache }, network.id);
     const fees = new FeeEstimator(chain, platform.clock, {
       cache: platform.cache,
-      cacheKeyPrefix,
+      cacheKeyPrefix: `${network.id}:`,
       tokens,
     });
     return { network, chain, fees, tokens };
