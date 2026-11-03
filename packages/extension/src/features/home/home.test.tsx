@@ -172,8 +172,14 @@ function setup(
     };
   };
   const releases = held.map(hold);
+  const rejecting = new Set<string>();
+  const rejectOnce = (method: Method) => {
+    rejecting.add(method);
+  };
   const client: Client = {
     call: vi.fn(async <M extends Method>(method: M, req: RequestOf<M>) => {
+      // A call that rejects instead of answering (the worker's port went away).
+      if (rejecting.delete(method)) throw new Error('port closed');
       calls.push({ method, req });
       await gates.get(method);
       const h = handlers[method] as ((r: RequestOf<M>) => Result<unknown>) | undefined;
@@ -262,7 +268,7 @@ function setup(
   const releaseAll = () => {
     for (const release of releases) release();
   };
-  return { host, hold, releaseAll, w, calls, style, written, timers, tick, fire, seen };
+  return { host, hold, releaseAll, rejectOnce, w, calls, style, written, timers, tick, fire, seen };
 }
 
 const byLabel = (host: HTMLElement, label: string) =>
@@ -697,6 +703,41 @@ describe('refresh', () => {
 });
 
 describe('balances while reading', () => {
+  it("never shows one network's numbers on the other, even while the new read runs", async () => {
+    const s = setup();
+    await s.tick();
+    expect(text(s.host)).toContain('1,234.56789');
+    const release = s.hold('tokens.balances');
+    click(byLabel(s.host, 'Settings'));
+    await s.tick();
+    click(
+      [...s.host.querySelectorAll('[role="switch"]')].find((x) =>
+        x.textContent.includes('Testnet'),
+      ) ?? null,
+    );
+    await s.tick();
+    expect(s.host.querySelector('.bp-home-header .bp-pill')?.textContent).toBe('Testnet');
+    expect(text(s.host)).not.toContain('1,234.56789');
+    s.w.amounts = { ubze: ['42000000', '0'] };
+    release();
+    await s.tick();
+    expect(text(s.host)).toContain('42');
+    expect(text(s.host)).not.toContain('1,234.56789');
+  });
+
+  it('keeps the numbers and polls on when a read call rejects', async () => {
+    const s = setup();
+    await s.tick();
+    s.rejectOnce('tokens.balances');
+    s.fire(4_000);
+    await s.tick();
+    expect(text(s.host)).toContain('1,234.56789');
+    s.fire(4_000);
+    await s.tick();
+    expect(balanceCalls(s.calls)).toBe(2);
+    expect(text(s.host)).toContain('1,234.56789');
+  });
+
   const switchTo = async (s: ReturnType<typeof setup>, from: string, to: string) => {
     click(byLabel(s.host, `Switch token, current ${from}`));
     await s.tick();

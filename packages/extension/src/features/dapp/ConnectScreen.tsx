@@ -34,7 +34,7 @@ export interface ConnectScreenProps {
 export function ConnectScreen({ view, done, queue }: ConnectScreenProps) {
   const client = useClient();
   const token = useFirstToken();
-  const { balances } = useBalances(token?.denom ?? null);
+  const { balances } = useBalances(token?.denom ?? null, view.network);
   const [index, setIndex] = useState(view.addresses[0]?.index ?? 0);
   const [busy, setBusy] = useState(false);
   const [needsPassword, setNeedsPassword] = useState(false);

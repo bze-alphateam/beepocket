@@ -283,6 +283,16 @@ describe('TokenResolver LP shares', () => {
     expect(cache.store.has(`token:${LP_IBC}`)).toBe(false);
   });
 
+  it('falls back to the denom for an empty ticker, keeping the 12 decimals', async () => {
+    const { resolver } = setup(() => Promise.resolve({ ...registry, ticker: '', name: '' }));
+    expect(await resolver.resolve(LP)).toMatchObject({
+      symbol: 'ulp/072C05…',
+      name: 'ulp/072C05…',
+      decimals: 12,
+      source: 'scan',
+    });
+  });
+
   it('does not reuse a stored entry from before LP shares had their own kind', async () => {
     const { cache, resolver } = setup(() => Promise.resolve(registry));
     cache.store.set(`token:${LP}`, {

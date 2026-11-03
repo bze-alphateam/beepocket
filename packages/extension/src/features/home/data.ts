@@ -15,52 +15,58 @@ export interface Balances {
 }
 
 /**
- * One token's balances: read when the denom changes, every 4 s while mounted and visible, and on
- * `refresh()` (the send story calls it after a broadcast). Numbers never blank while a read runs:
- * the last ones stay, and a new token first shows what the worker last read for it. The interval
- * dies with the screen.
+ * One token's balances on one network: read when either changes, every 4 s while mounted and
+ * visible, and on `refresh()` (the send story calls it after a broadcast). Numbers never blank
+ * while a read runs: the last ones stay, and a new token first shows what the worker last read
+ * for it. Nothing reads before the network is known. The interval dies with the screen.
  */
-export function useBalances(denom: string | null): Balances {
+export function useBalances(denom: string | null, network: string | null): Balances {
   const client = useClient();
   const { scheduler, visibility } = useHomeEnv();
-  const [known, setKnown] = useState<TokenBalances | null>(null);
+  const [known, setKnown] = useState<{ network: string; balances: TokenBalances } | null>(null);
   const [failed, setFailed] = useState(false);
   // Answers apply in call order: a late answer never replaces a newer one, and nothing called
-  // before a token switch (or unmount) applies after it.
+  // before a token or network switch (or unmount) applies after it.
   const issued = useRef(0);
   const applied = useRef(0);
   const inFlight = useRef(0);
 
   const read = useCallback(
     async (force: boolean) => {
-      if (denom === null) return;
+      if (denom === null || network === null) return;
       const id = ++issued.current;
       inFlight.current++;
       const res = await client
         .call('tokens.balances', force ? { denom, refresh: true } : { denom })
+        // A failed call is a failed read: the last numbers stay.
+        .catch(() => null)
         .finally(() => {
           inFlight.current--;
         });
       if (id <= applied.current) return;
       applied.current = id;
-      if (res.ok) {
-        setKnown(res.value);
+      if (res?.ok) {
+        setKnown({ network, balances: res.value });
         setFailed(false);
       } else setFailed(true);
     },
-    [client, denom],
+    [client, denom, network],
   );
 
   useEffect(() => {
     applied.current = issued.current;
     setFailed(false);
-    if (denom === null) return;
+    if (denom === null || network === null) return;
     const id = ++issued.current;
-    void client.call('tokens.lastBalances', { denom }).then((res) => {
-      if (id <= applied.current || !res.ok || res.value === null) return;
-      applied.current = id;
-      setKnown(res.value);
-    });
+    client.call('tokens.lastBalances', { denom }).then(
+      (res) => {
+        if (id <= applied.current || !res.ok || res.value === null) return;
+        applied.current = id;
+        setKnown({ network, balances: res.value });
+      },
+      // Nothing stored to show: the read below still runs.
+      () => undefined,
+    );
     void read(false);
     const stop = scheduler.every(REFRESH_MS, () => {
       if (inFlight.current === 0 && !visibility.hidden()) void read(false);
@@ -69,11 +75,13 @@ export function useBalances(denom: string | null): Balances {
       applied.current = issued.current;
       stop();
     };
-  }, [client, denom, read, scheduler, visibility]);
+  }, [client, denom, network, read, scheduler, visibility]);
 
   const refresh = useCallback(() => read(true), [read]);
-  // Another token's numbers are never shown under this one, not even for a frame.
-  return { balances: known?.denom === denom ? known : null, failed, refresh };
+  // Another token's or network's numbers are never shown under this one, not even for a frame.
+  const shown =
+    known?.network === network && known.balances.denom === denom ? known.balances : null;
+  return { balances: shown, failed, refresh };
 }
 
 export async function loadBalancesFor(client: Client, tokens: ListedToken[]) {

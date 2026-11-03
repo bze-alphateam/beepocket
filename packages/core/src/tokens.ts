@@ -257,8 +257,9 @@ export class TokenResolver {
       found =
         entry && entry.decimals !== null
           ? {
-              symbol: entry.ticker && cleanText(entry.ticker, MAX_SYMBOL_LENGTH),
-              name: entry.name && cleanText(entry.name, MAX_NAME_LENGTH),
+              // Empty text is no text: the symbol falls back to the denom.
+              symbol: cleanText(entry.ticker ?? '', MAX_SYMBOL_LENGTH),
+              name: cleanText(entry.name ?? '', MAX_NAME_LENGTH),
               decimals: entry.decimals,
             }
           : null;
