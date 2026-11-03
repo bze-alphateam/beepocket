@@ -3,6 +3,9 @@ import { resolve } from 'node:path';
 import {
   BroadcastError,
   HttpStatusError,
+  buildAuthInfo,
+  buildBody,
+  encodeMsgSend,
   TransportError,
   txHash,
   NETWORKS,
@@ -72,7 +75,7 @@ function setup(opts: Options = {}) {
   const sent: Uint8Array[] = [];
   const waits: { txHash: string; options: unknown }[] = [];
   const control = {
-    gasUsed: opts.gasUsed ?? 153_846n,
+    gasUsed: opts.gasUsed ?? 133_333n,
     balances: opts.balances ?? { ubze: 100_000_000n },
     broadcastError: null as Error | null,
     simulateError: null as Error | null,
@@ -208,7 +211,8 @@ describe('golden transactions', () => {
   const cases = [
     { name: 'send-ubze', denom: 'ubze', amount: '1', feeDenom: 'ubze' },
     { name: 'send-factory-denom', denom: FACTORY, amount: '0.25', feeDenom: 'ubze' },
-    { name: 'fee-non-native', denom: 'ubze', amount: '1', feeDenom: FACTORY },
+    // fee-non-native is left out: its fixture pays a foreign fee with the native gas limit,
+    // which no longer covers the fee swap (see 'pays for the fee swap' below).
   ];
   for (const c of cases) {
     it(`${c.name}: the reviewed quote is what the signer gets, byte for byte`, async () => {
@@ -245,6 +249,60 @@ describe('send.prepare', () => {
     expect(BigInt(quote.amount) + BigInt(quote.fee.amount)).toBe(5_000_000n);
     // The amount that is signed was the one simulated (the fee settled on it).
     expect(s.calls.simulate).toBeGreaterThanOrEqual(2);
+  });
+
+  it('pays for the fee swap when the fee is in another token, and signs exactly that', async () => {
+    const s = setup({ balances: { ubze: 100_000_000n, [FACTORY]: 100_000_000n } });
+    const quote = await quoteOf(s, { feeDenom: FACTORY });
+    // 133,333 simulated -> 200,000 native -> 300,000 with the swap; 3,000 ubze is
+    // 7,142.86 uvdl at 21:50, plus 10% slippage -> 7,858.
+    expect(quote.options).toMatchObject([
+      { denom: 'ubze', amount: '2000', gasLimit: '200000' },
+      { denom: FACTORY, amount: '7858', gasLimit: '300000' },
+    ]);
+    expect(quote.fee).toMatchObject({ denom: FACTORY, amount: '7858', gasLimit: '300000' });
+    expect(quote.gasLimit).toBe('300000');
+
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+    const bodyBytes = buildBody({
+      messages: [
+        encodeMsgSend({
+          fromAddress: SIGNER,
+          toAddress: RECIPIENT,
+          amount: [{ denom: 'ubze', amount: '1000000' }],
+        }),
+      ],
+    });
+    const authInfoBytes = buildAuthInfo({
+      pubKey: PUBKEY,
+      sequence: 3n,
+      fee: { amount: [{ denom: FACTORY, amount: '7858' }], gasLimit: 300_000n },
+    });
+    expect(s.signed).toEqual([
+      signDocBytes({ bodyBytes, authInfoBytes, chainId: NETWORK.chainId, accountNumber: 7n }),
+    ]);
+  });
+
+  it('sends max of a token that pays its own fee, leaving the larger foreign fee', async () => {
+    const s = setup({ balances: { [FACTORY]: 1_000_000n } });
+    const quote = await quoteOf(s, { denom: FACTORY, amount: '', max: true });
+    expect(quote.fee).toMatchObject({ denom: FACTORY, amount: '7858', gasLimit: '300000' });
+    expect(BigInt(quote.amount) + BigInt(quote.fee.amount)).toBe(1_000_000n);
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+
+    // One unit above the fee leaves exactly one to send; the fee itself leaves nothing.
+    const edge = await quoteOf(setup({ balances: { [FACTORY]: 7_859n } }), {
+      denom: FACTORY,
+      amount: '',
+      max: true,
+    });
+    expect(edge.amount).toBe('1');
+    expect(
+      await setup({ balances: { [FACTORY]: 7_858n } }).call(
+        'send.prepare',
+        prepareReq({ denom: FACTORY, amount: '', max: true }),
+      ),
+    ).toMatchObject({ ok: false });
   });
 
   it('sends the whole balance when the fee is paid in another token', async () => {

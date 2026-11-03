@@ -47,7 +47,7 @@ function chainWith(
     }),
     liquidityPools: vi.fn().mockResolvedValue(pools),
     haltedDenoms: vi.fn().mockResolvedValue(options.halted ?? []),
-    simulate: vi.fn().mockResolvedValue({ gasUsed: options.gasUsed ?? 153_846n }),
+    simulate: vi.fn().mockResolvedValue({ gasUsed: options.gasUsed ?? 200_000n }),
   });
 }
 
@@ -72,12 +72,12 @@ describe('FeeEstimator.feeTokenRates', () => {
     expect(rates.get(NATIVE)).toEqual({ num: 10_000_000_000_000_000n, den: 10n ** 18n });
   });
 
-  it('prices a token from its pool with 5% headroom', async () => {
+  it('prices a token from its pool at the spot ratio, with no margin', async () => {
     const rates = await estimator(chainWith([deepPool])).feeTokenRates();
-    // 0.01 BZE/gas ÷ 2 BZE per X × 1.05 = 0.00525 X/gas
+    // 0.01 BZE/gas ÷ 2 BZE per X = 0.005 X/gas
     const rate = rates.get(X);
     expect(rate).toBeDefined();
-    expect(rate && (rate.num * 100_000_000n) / rate.den).toBe(525_000n);
+    expect(rate && (rate.num * 100_000_000n) / rate.den).toBe(500_000n);
   });
 
   it('is eligible at exactly the liquidity threshold and not one below', async () => {
@@ -164,30 +164,43 @@ describe('FeeEstimator.feeTokenRates', () => {
 });
 
 describe('FeeEstimator.estimate', () => {
-  it('prices BZE: gas 153,846 gives limit 200,000 and a fee of 2,000 ubze', async () => {
+  it('prices BZE: gas 200,000 gives limit 300,000 and a fee of 3,000 ubze', async () => {
     const chain = chainWith([]);
     const result = await estimate(estimator(chain), [[NATIVE, 5_000n]]);
     expect(result).toEqual({
-      gasLimit: 200_000n,
-      options: [{ denom: NATIVE, amount: 2_000n }],
+      options: [{ denom: NATIVE, amount: 3_000n, gasLimit: 300_000n }],
       default: NATIVE,
     });
     expect(chain.simulate).toHaveBeenCalledWith(simulationTxBytes(body, pubKey, 7n));
   });
 
-  it('prices token X: 1,050 uX at gas limit 200,000', async () => {
+  it('gives a fee in another token the gas of the swap: limit 450,000 and 2,475 uX', async () => {
+    // 200,000 simulated -> 300,000 native -> 450,000 with the swap; 4,500 ubze at 0.01,
+    // 2,250 uX at 2 BZE per X, plus 10% slippage.
     const result = await estimate(estimator(chainWith([deepPool])), [[X, 10_000n]]);
-    expect(result.options).toEqual([{ denom: X, amount: 1_050n }]);
+    expect(result.options).toEqual([{ denom: X, amount: 2_475n, gasLimit: 450_000n }]);
     expect(result.default).toBe(X);
   });
 
+  it('gives each option its own gas limit', async () => {
+    const result = await estimate(estimator(chainWith([deepPool], { gasUsed: 76_403n })), [
+      [NATIVE, 10n ** 9n],
+      [X, 10n ** 9n],
+    ]);
+    const [native, token] = result.options;
+    expect(native?.gasLimit).toBe(114_605n);
+    // At least 2.25x what the simulation measured, so the swap fits.
+    expect(token?.gasLimit).toBe(171_908n);
+    expect((token?.gasLimit ?? 0n) * 100n).toBeGreaterThanOrEqual(76_403n * 225n);
+  });
+
   it('offers nothing when the payer holds one unit less than the fee', async () => {
-    const result = await estimate(estimator(chainWith([deepPool])), [[X, 1_049n]]);
-    expect(result).toEqual({ gasLimit: 200_000n, options: [], default: null });
+    const result = await estimate(estimator(chainWith([deepPool])), [[X, 2_474n]]);
+    expect(result).toEqual({ options: [], default: null });
   });
 
   it('offers a token that is held exactly', async () => {
-    const result = await estimate(estimator(chainWith([deepPool])), [[X, 1_050n]]);
+    const result = await estimate(estimator(chainWith([deepPool])), [[X, 2_475n]]);
     expect(result.default).toBe(X);
   });
 
@@ -202,15 +215,20 @@ describe('FeeEstimator.estimate', () => {
   });
 
   it('rounds the gas limit and every fee up', async () => {
-    // 1 gas used -> limit ceil(1.3) = 2; 0.01 × 2 = 0.02 -> 1 ubze
+    // 1 gas used -> limit ceil(1.5) = 2; 0.01 × 2 = 0.02 -> 1 ubze
     const small = await estimate(estimator(chainWith([], { gasUsed: 1n })), [[NATIVE, 5n]]);
-    expect(small).toMatchObject({ gasLimit: 2n, options: [{ denom: NATIVE, amount: 1n }] });
-    // exact multiple does not round up: 10 gas -> 13
+    expect(small.options).toEqual([{ denom: NATIVE, amount: 1n, gasLimit: 2n }]);
+    // exact multiple does not round up: 10 gas -> 15
     const exact = await estimate(estimator(chainWith([], { gasUsed: 10n })), [[NATIVE, 5n]]);
-    expect(exact.gasLimit).toBe(13n);
-    // a price that does not divide evenly: 0.01 × 1.05 / 2 ... gas 1 -> limit 2, X fee < 1 -> 1
+    expect(exact.options[0]?.gasLimit).toBe(15n);
+    // gas 1 -> 2 -> ceil(3) = 3; 0.03 ubze -> 1; ÷ 2 × 1.1 = 0.55 uX -> 1
     const token = await estimate(estimator(chainWith([deepPool], { gasUsed: 1n })), [[X, 5n]]);
-    expect(token.options).toEqual([{ denom: X, amount: 1n }]);
+    expect(token.options).toEqual([{ denom: X, amount: 1n, gasLimit: 3n }]);
+    // the native fee is rounded up before the conversion: gas 3 -> 5 -> 8 -> 0.08 -> 1 ubze,
+    // which at 1 BZE per uY is 1.1 -> 2 uY (one rounding at the end would give 0.088 -> 1)
+    const even = pool(NATIVE, Y, MIN_LIQUIDITY, MIN_LIQUIDITY);
+    const stepwise = await estimate(estimator(chainWith([even], { gasUsed: 3n })), [[Y, 5n]]);
+    expect(stepwise.options).toEqual([{ denom: Y, amount: 2n, gasLimit: 8n }]);
   });
 
   it('puts BZE first and makes it the default when the payer holds it', async () => {
@@ -295,9 +313,14 @@ describe('FeeEstimator.estimate', () => {
       estimator(chainWith([pool(NATIVE, X, huge * 2n, huge)], { gasUsed: 10n ** 24n })),
       [[X, huge]],
     );
-    // limit = 1.3e24, fee = 1.3e24 × 0.01 × 1/2 × 1.05 = 6.825e21
-    expect(result.gasLimit).toBe(1_300_000_000_000_000_000_000_000n);
-    expect(result.options).toEqual([{ denom: X, amount: 6_825_000_000_000_000_000_000n }]);
+    // limit = 1.5e24 × 1.5 = 2.25e24, fee = 2.25e24 × 0.01 × 1/2 × 1.1 = 1.2375e22
+    expect(result.options).toEqual([
+      {
+        denom: X,
+        amount: 12_375_000_000_000_000_000_000n,
+        gasLimit: 2_250_000_000_000_000_000_000_000n,
+      },
+    ]);
   });
 
   it('passes simulation errors through', async () => {
@@ -316,7 +339,7 @@ describe('FeeEstimator cache', () => {
     const cache = new MemoryCache();
     const fees = estimator(chain, { cache });
     const first = await fees.feeTokenRates();
-    expect(cache.ttls.get('fees:rates')).toBe(FEE_TTL_MS);
+    expect(cache.ttls.get('fees:rates:v2')).toBe(FEE_TTL_MS);
     expect(await fees.feeTokenRates()).toEqual(first);
     expect(chain.liquidityPools).toHaveBeenCalledTimes(1);
   });
@@ -359,7 +382,7 @@ describe('FeeEstimator cache', () => {
   ])('ignores a cache entry that is %s', async (_, entry) => {
     const chain = chainWith([]);
     const cache = new MemoryCache();
-    cache.store.set('fees:rates', entry);
+    cache.store.set('fees:rates:v2', entry);
     const rates = await estimator(chain, { cache }).feeTokenRates();
     expect(rates.has(NATIVE)).toBe(true);
     expect(chain.feeParams).toHaveBeenCalledTimes(1);

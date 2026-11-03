@@ -299,7 +299,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       amount: quote.amount,
       feeDenom: quote.fee.denom,
       feeAmount: quote.fee.amount,
-      gasLimit: quote.gasLimit,
+      gasLimit: quote.fee.gasLimit,
     });
     setBusy(false);
     if (!sent.ok) {

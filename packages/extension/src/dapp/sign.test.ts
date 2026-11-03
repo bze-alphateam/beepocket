@@ -75,10 +75,10 @@ interface Node {
 }
 
 const FEES: FeeEstimate = {
-  gasLimit: 200_000n,
   options: [
-    { denom: 'ubze', amount: 2000n },
-    { denom: 'uother', amount: 500n },
+    { denom: 'ubze', amount: 2000n, gasLimit: 200_000n },
+    // A fee in another token pays for its swap: a larger gas limit.
+    { denom: 'uother', amount: 500n, gasLimit: 300_000n },
   ],
   default: 'ubze',
 };
@@ -332,7 +332,7 @@ describe('signDirect refuses before any window opens', () => {
   it('when no token can pay the fee', async () => {
     const t = await rig();
     await t.connect();
-    t.node.estimate = () => Promise.resolve({ gasLimit: 1n, options: [], default: null });
+    t.node.estimate = () => Promise.resolve({ options: [], default: null });
     const a = await t.ask('signDirect', request().params);
     expect(t.answerOf(a.id)).toMatchObject({ error: { code: 'invalid-request' } });
   });
@@ -401,13 +401,21 @@ describe('signDirect review and approval', () => {
     const r = await review(t);
     const other = r.view.options.find((o) => o.denom === 'uother');
     expect(other).toBeDefined();
+    expect(other?.gasLimit).toBe('300000');
+    // The native fee's gas limit does not pay for the swap: signing it is refused.
+    expect(
+      await t.dapp.answer(r.id, {
+        approve: true,
+        fee: { denom: 'uother', amount: '500', gasLimit: r.view.gasLimit },
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'review-changed' } });
     await t.dapp.answer(r.id, {
       approve: true,
-      fee: { denom: 'uother', amount: '500', gasLimit: r.view.gasLimit },
+      fee: { denom: 'uother', amount: '500', gasLimit: '300000' },
     });
     const { signed } = t.signedOf(r.id);
     expect(decodeAuthInfo(bytesFromWire(signed.authInfoBytes))).toMatchObject({
-      fee: { amount: [{ denom: 'uother', amount: '500' }] },
+      fee: { amount: [{ denom: 'uother', amount: '500' }], gasLimit: '300000' },
     });
   });
 

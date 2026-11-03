@@ -214,10 +214,10 @@ const SIGN: Extract<RequestView, { status: 'sign' }> = {
   rawJson: '[{"typeUrl":"/cosmos.bank.v1beta1.MsgSend"}]',
   messageJson: ['{"typeUrl":"/cosmos.bank.v1beta1.MsgSend"}'],
   locked: false,
-  fee: { denom: 'ubze', amount: '2000', symbol: 'BZE', decimals: 6 },
+  fee: { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
   options: [
-    { denom: 'ubze', amount: '2000', symbol: 'BZE', decimals: 6 },
-    { denom: 'uother', amount: '500', symbol: 'OTH', decimals: 6 },
+    { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
+    { denom: 'uother', amount: '500', gasLimit: '300000', symbol: 'OTH', decimals: 6 },
   ],
   gasLimit: '200000',
 };
@@ -279,7 +279,8 @@ describe('the sign screen', () => {
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
       approve: true,
-      fee: { denom: 'uother', amount: '500', gasLimit: '200000' },
+      // The picked token's own gas limit, not the default fee's.
+      fee: { denom: 'uother', amount: '500', gasLimit: '300000' },
     });
   });
 

@@ -166,7 +166,7 @@ export class SendService {
         },
         amount: amount.toString(),
         balance: balance.toString(),
-        gasLimit: estimate.value.gasLimit.toString(),
+        gasLimit: fee.gasLimit,
         fee,
         options,
       });
@@ -233,7 +233,7 @@ export class SendService {
     if (!current)
       return fail(SendErrorCodes.cannotPayFee, "This address can't pay the network fee.");
     // What was reviewed is what gets signed: any other fee goes back to the review screen.
-    if (current.amount !== reviewedFee || estimate.value.gasLimit !== BigInt(req.gasLimit)) {
+    if (current.amount !== reviewedFee || current.gasLimit !== BigInt(req.gasLimit)) {
       return fail(SendErrorCodes.reviewChanged, 'The network fee changed. Review it again.');
     }
 
@@ -242,7 +242,7 @@ export class SendService {
       sequence: ctx.sequence,
       fee: {
         amount: [{ denom: req.feeDenom, amount: reviewedFee.toString() }],
-        gasLimit: estimate.value.gasLimit,
+        gasLimit: current.gasLimit,
       },
     });
     const signature = await this.deps.wallet.signDirect(
@@ -392,6 +392,7 @@ export class SendService {
         options.push({
           denom: o.denom,
           amount: o.amount.toString(),
+          gasLimit: o.gasLimit.toString(),
           symbol: info.value.symbol,
           decimals: info.value.decimals,
           logo: info.value.logo,
