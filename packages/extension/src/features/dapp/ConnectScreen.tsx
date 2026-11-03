@@ -99,7 +99,22 @@ export function ConnectScreen({ view, done, queue }: ConnectScreenProps) {
           badge={requestBadge(queue)}
         />
       }
-      footer={needsPassword ? undefined : <BottomActions row>{actions}</BottomActions>}
+      footer={
+        needsPassword ? (
+          <div class="bp-bottom">
+            <PasswordGate
+              submitLabel={t('dapp.connect.unlock')}
+              labelIcon="lock"
+              onUnlocked={() => {
+                setNeedsPassword(false);
+                void answer(true);
+              }}
+            />
+          </div>
+        ) : (
+          <BottomActions row>{actions}</BottomActions>
+        )
+      }
     >
       <main class="bp-dapp">
         <SiteCard origin={view.origin} size="lg" />
@@ -122,19 +137,7 @@ export function ConnectScreen({ view, done, queue }: ConnectScreenProps) {
         />
         <CheckList items={[t('dapp.connect.sees'), t('dapp.connect.asks')]} />
         {failed && <Banner tone="red">{t('dapp.connect.failed')}</Banner>}
-        {needsPassword && (
-          <>
-            <p class="bp-dapp-sub">{t('dapp.connect.unlockHint')}</p>
-            <PasswordGate
-              submitLabel={t('dapp.connect.unlock')}
-              labelIcon="lock"
-              onUnlocked={() => {
-                setNeedsPassword(false);
-                void answer(true);
-              }}
-            />
-          </>
-        )}
+        {needsPassword && <p class="bp-dapp-sub">{t('dapp.connect.unlockHint')}</p>}
       </main>
     </Layout>
   );

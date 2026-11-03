@@ -1,5 +1,6 @@
 import type { AddTokenSource, AddTokenView } from '../../protocol';
 import type { SessionStorage } from '../../platform';
+import { openWalletWindow, type WalletWindowsLike } from '../../platform/wallet-window';
 import { hostOf, httpsOrigin, isKnownSite, LINK_PATTERN, validCode } from './link';
 import type { LinkSender } from './sender';
 
@@ -11,16 +12,9 @@ export const LINK_WINDOW_URL = 'popup.html?window=add-token';
 export const INSTALL_WINDOW_URL = 'popup.html?window=onboarding';
 
 /** The slice of `chrome.windows` the link needs; `create` also reports the window's first tab. */
-export interface LinkWindowsLike {
-  create(info: {
-    url: string;
-    type: 'popup';
-    width: number;
-    height: number;
-    focused: boolean;
-  }): Promise<
-    { id?: number | undefined; tabs?: { id?: number | undefined }[] | undefined } | undefined
-  >;
+export interface LinkWindowsLike extends WalletWindowsLike<
+  { id?: number | undefined; tabs?: { id?: number | undefined }[] | undefined } | undefined
+> {
   get(windowId: number): Promise<unknown>;
   update(windowId: number, info: { focused: boolean }): Promise<unknown>;
 }
@@ -138,13 +132,7 @@ export class AddTokenService {
         // closed since: open a new one
       }
     }
-    const created = await this.deps.windows.create({
-      url,
-      type: 'popup',
-      width: 360,
-      height: 600,
-      focused: true,
-    });
+    const created = await openWalletWindow(this.deps.windows, url);
     if (created?.id !== undefined) {
       const tabId = created.tabs?.[0]?.id;
       await this.deps.session.set(WINDOW_KEY, {

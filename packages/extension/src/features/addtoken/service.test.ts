@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionStorage } from '../../platform';
+import type { WindowBounds } from '../../platform/wallet-window';
 import { AddTokenService, type LinkTabsLike, type LinkWindowsLike } from './service';
 
 class MemorySession implements SessionStorage {
@@ -26,10 +27,13 @@ interface Tab {
   lastAccessed?: number;
 }
 
-function rig(tabs: Tab[] = [], opts: { failCreate?: boolean; noTabs?: boolean } = {}) {
+function rig(
+  tabs: Tab[] = [],
+  opts: { failCreate?: boolean; noTabs?: boolean; browser?: WindowBounds } = {},
+) {
   const session = new MemorySession();
   const open = new Set<number>();
-  const created: { url: string; width: number; height: number }[] = [];
+  const created: { url: string; width: number; height: number; left?: number; top?: number }[] = [];
   const focused: number[] = [];
   const reloaded: { tabId: number; url: string }[] = [];
   let next = 10;
@@ -38,10 +42,18 @@ function rig(tabs: Tab[] = [], opts: { failCreate?: boolean; noTabs?: boolean } 
       if (opts.failCreate) return Promise.reject(new Error('no window'));
       const id = next++;
       open.add(id);
-      created.push({ url: info.url, width: info.width, height: info.height });
+      created.push({
+        url: info.url,
+        width: info.width,
+        height: info.height,
+        ...(info.left === undefined ? {} : { left: info.left }),
+        ...(info.top === undefined ? {} : { top: info.top }),
+      });
       return Promise.resolve(opts.noTabs ? { id } : { id, tabs: [{ id: id * 100 }] });
     },
     get: (id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('no window'))),
+    getLastFocused: () =>
+      opts.browser ? Promise.resolve(opts.browser) : Promise.reject(new Error('no window')),
     update: (id) => {
       focused.push(id);
       return Promise.resolve({});
@@ -76,6 +88,14 @@ describe('a link from the add page', () => {
       host: 'dex.getbze.com',
       known: true,
     });
+  });
+
+  it('places the window at the top right of the last focused browser window', async () => {
+    const t = rig([], { browser: { left: 100, top: 50, width: 1200, height: 800 } });
+    await t.service.receive({ documentId: 'd1' }, { code: GOLD, referrer: '' });
+    expect(t.created).toEqual([
+      { url: 'popup.html?window=add-token', width: 360, height: 600, left: 924, top: 130 },
+    ]);
   });
 
   it.each([

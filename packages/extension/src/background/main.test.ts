@@ -65,6 +65,7 @@ function start(session: FakeArea = new FakeArea()) {
       windows: {
         create: () => Promise.resolve({ id: 1 }),
         get: () => Promise.resolve({}),
+        getLastFocused: () => Promise.resolve({}),
         update: () => Promise.resolve({}),
         onRemoved: { addListener: () => undefined },
       },

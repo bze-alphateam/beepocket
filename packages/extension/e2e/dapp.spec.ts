@@ -94,6 +94,29 @@ test('Cancel answers rejected', async ({ context, extensionId }) => {
   }
 });
 
+test('the actions stay on screen when the title bar takes part of the window', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const { dapp, stop } = await openDapp(context);
+  try {
+    const request = await connect(context, dapp);
+    // 600 px outer minus a 28 px macOS title bar.
+    await request.setViewportSize({ width: 360, height: 572 });
+    await expect(request.getByRole('heading', { name: 'Connection request' })).toBeVisible();
+    await expect(request.getByRole('button', { name: 'Cancel' })).toBeInViewport({ ratio: 1 });
+    await expect(request.getByRole('button', { name: 'Connect', exact: true })).toBeInViewport({
+      ratio: 1,
+    });
+    await request.getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(dapp.getByRole('status')).toHaveText(/name Main$/);
+  } finally {
+    stop();
+  }
+});
+
 test('a fully locked wallet shows unlock first, then the connect screen', async ({
   context,
   extensionId,
