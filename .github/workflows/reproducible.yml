@@ -73,22 +73,43 @@ jobs:
           fi
           echo "tag $TAG matches version $version"
 
+  # Tag pushes only: a draft release with the zip the reproducible job
+  # checked, its SHA256SUMS and a provenance attestation. A maintainer
+  # reviews the draft and publishes it by hand.
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [reproducible, tag-version]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: zip-a
-      - name: Create release
+          path: release
+      - name: Name the zip and write SHA256SUMS
+        env:
+          TAG: ${{ github.ref_name }}
+        working-directory: release
+        run: |
+          mv beepocket.zip "beepocket-$TAG.zip"
+          sha256sum "beepocket-$TAG.zip" > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: release/beepocket-${{ github.ref_name }}.zip
+      - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          cp beepocket.zip "beepocket-$TAG.zip"
-          sha256sum "beepocket-$TAG.zip" > "beepocket-$TAG.zip.sha256"
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes "beepocket-$TAG.zip" "beepocket-$TAG.zip.sha256"
+          sed "s/{{VERSION}}/$TAG/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "BeePocket $TAG" --notes-file "$RUNNER_TEMP/notes.md" \
+            "release/beepocket-$TAG.zip" release/SHA256SUMS
