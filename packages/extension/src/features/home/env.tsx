@@ -13,6 +13,8 @@ export interface Scheduler {
 /** Everything the home screen needs from the browser, handed in at the composition root. */
 export interface HomeEnv {
   scheduler: Scheduler;
+  /** Polling pauses while the document is hidden. */
+  visibility: { hidden(): boolean };
   themeTarget: ThemeTarget;
   scheme: { current(): Scheme; subscribe(listener: () => void): () => void };
   clipboard: { writeText(text: string): Promise<void> };
@@ -35,6 +37,7 @@ export function browserHomeEnv(scheme: SchemeSource): HomeEnv {
         };
       },
     },
+    visibility: { hidden: () => document.hidden },
     themeTarget: document.documentElement,
     scheme,
     clipboard: { writeText: (text) => navigator.clipboard.writeText(text) },

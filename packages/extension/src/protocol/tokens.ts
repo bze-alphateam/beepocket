@@ -50,8 +50,10 @@ export interface TokensProtocol {
   'tokens.remove': { req: { denom: string }; res: ListedToken[] };
   /** Over ubze and every denom held on any address; the only method that may return unpicked tokens. */
   'tokens.search': { req: { query: string }; res: TokenSearch };
-  /** Read-through with a 10 s freshness; `refresh` skips it. */
+  /** Read-through with a 3 s freshness; `refresh` skips it. */
   'tokens.balances': { req: { denom: string; refresh?: boolean }; res: TokenBalances };
+  /** The last read balances however old, never asking the node; `null` until every address was read once. */
+  'tokens.lastBalances': { req: { denom: string }; res: TokenBalances | null };
   /** On-chain brand kit for the theme engine; `null` for none and for ubze (its own rule). */
   'tokens.theme': { req: { denom: string }; res: DenomBranding | null };
 }

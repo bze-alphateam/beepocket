@@ -111,6 +111,7 @@ describe('App', () => {
       'tokens.preferred': [bze],
       'wallet.addresses': { addresses: [] },
       'tokens.balances': { denom: 'ubze', addresses: [], total: '0', partial: false },
+      'tokens.lastBalances': null,
       'tokens.theme': null,
     };
     const client: Client = {

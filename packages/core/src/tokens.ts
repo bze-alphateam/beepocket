@@ -6,12 +6,14 @@ import {
   type ChainClient,
   type Clock,
   type DenomBranding,
+  type ScanAsset,
   type ScanClient,
 } from './net';
 
 export type Branding = DenomBranding;
 
-export type TokenKind = 'native' | 'factory' | 'ibc' | 'other';
+/** `lp`: tradebin pool shares (`ulp/…`, `ulp_…`). */
+export type TokenKind = 'native' | 'factory' | 'ibc' | 'lp' | 'other';
 
 /** Where the display data came from; `fallback` means it is a guess from the denom. */
 export type TokenSource = 'builtin' | 'chain' | 'scan' | 'fallback';
@@ -37,6 +39,8 @@ export class InvalidDenomError extends Error {
 }
 
 export const NATIVE_DENOM = 'ubze';
+/** Decimals of every LP share token. The chain's bank metadata says 6, which is wrong. */
+export const LP_DECIMALS = 12;
 
 const MAX_DENOM_LENGTH = 128;
 const DENOM_PATTERN = /^[A-Za-z][A-Za-z0-9/:._-]*$/;
@@ -58,6 +62,7 @@ function kindOf(denom: string): TokenKind {
   if (denom === NATIVE_DENOM) return 'native';
   if (denom.startsWith('factory/')) return 'factory';
   if (denom.startsWith('ibc/')) return 'ibc';
+  if (denom.startsWith('ulp/') || denom.startsWith('ulp_')) return 'lp';
   return 'other';
 }
 
@@ -69,6 +74,7 @@ function cleanText(raw: string, max: number): string | null {
 
 function fallbackSymbol(denom: string, kind: TokenKind): string {
   if (kind === 'ibc') return `${denom.slice(0, 'ibc/'.length + 6)}…`;
+  if (kind === 'lp') return `${denom.slice(0, denom.indexOf('/') + 1 + 6)}…`;
   const last = denom.split('/').pop() ?? '';
   return (cleanText(last, MAX_SYMBOL_LENGTH) ?? denom.slice(0, MAX_SYMBOL_LENGTH)).toUpperCase();
 }
@@ -161,19 +167,27 @@ export class TokenResolver {
   async resolve(denom: string): Promise<TokenInfo> {
     assertDenom(denom);
     const kind = kindOf(denom);
-    const logo = this.logo(denom, kind);
-    const [info, url] = await Promise.all([this.info(denom, kind), logo]);
+    // The logo and an LP token's display data come from the same Scan answer: ask once.
+    let asked: Promise<ScanAsset | null> | undefined;
+    // Async, so even a client that throws on the spot is a rejected promise.
+    const asset = () => (asked ??= (async () => this.scan.asset(denom))());
+    const logo = this.logo(denom, kind, asset);
+    const [info, url] = await Promise.all([this.info(denom, kind, asset), logo]);
     return { ...info, logo: url };
   }
 
   /** Everything but the logo, cached on its own. */
-  private async info(denom: string, kind: TokenKind): Promise<Omit<TokenInfo, 'logo'>> {
+  private async info(
+    denom: string,
+    kind: TokenKind,
+    asset: () => Promise<ScanAsset | null>,
+  ): Promise<Omit<TokenInfo, 'logo'>> {
     const key = `${this.prefix}token:${denom}`;
     const cached = await this.cache?.get(key);
     if (isTokenInfo(cached, denom)) return cached;
 
     const [display, branding] = await Promise.all([
-      this.displayData(denom, kind),
+      this.displayData(denom, kind, asset),
       this.chain.denomBranding(denom),
     ]);
     const info = { denom, kind, ...display, branding };
@@ -192,7 +206,11 @@ export class TokenResolver {
    * ubze never asks Scan. Scan's answer is kept for the token TTL; a failure or a timeout means
    * no logo, and Scan is not asked again for `LOGO_RETRY_MS`.
    */
-  private async logo(denom: string, kind: TokenKind): Promise<string | null> {
+  private async logo(
+    denom: string,
+    kind: TokenKind,
+    asset: () => Promise<ScanAsset | null>,
+  ): Promise<string | null> {
     if (kind === 'native') return this.nativeLogo;
     const key = `${this.prefix}logo:${denom}`;
     const stored = await this.cache?.get(key);
@@ -203,11 +221,7 @@ export class TokenResolver {
     }
 
     const timedOut = this.clock.sleep(LOGO_TIMEOUT_MS).then((): typeof TIMED_OUT => TIMED_OUT);
-    const answer = await Promise.race([
-      // Async, so even a client that throws on the spot only means no logo.
-      (async () => this.scan.asset(denom))(),
-      timedOut,
-    ]).catch((): typeof TIMED_OUT => TIMED_OUT);
+    const answer = await Promise.race([asset(), timedOut]).catch((): typeof TIMED_OUT => TIMED_OUT);
     if (answer === TIMED_OUT) {
       await this.cache?.set(key, { failedAt: this.clock.now() }, LOGO_RETRY_MS);
       return null;
@@ -220,6 +234,7 @@ export class TokenResolver {
   private async displayData(
     denom: string,
     kind: TokenKind,
+    asset: () => Promise<ScanAsset | null>,
   ): Promise<Pick<TokenInfo, 'symbol' | 'name' | 'decimals' | 'source'>> {
     if (kind === 'native') return { symbol: 'BZE', name: 'BeeZee', decimals: 6, source: 'builtin' };
 
@@ -236,6 +251,19 @@ export class TokenResolver {
         decimals: token.exponent,
       };
       source = 'scan';
+    } else if (kind === 'lp') {
+      // The chain's metadata has 6 decimals and no text for LP shares; Scan's registry has both right.
+      const entry = await asset().catch(() => null);
+      found =
+        entry && entry.decimals !== null
+          ? {
+              // Empty text is no text: the symbol falls back to the denom.
+              symbol: cleanText(entry.ticker ?? '', MAX_SYMBOL_LENGTH),
+              name: cleanText(entry.name ?? '', MAX_NAME_LENGTH),
+              decimals: entry.decimals,
+            }
+          : null;
+      source = 'scan';
     } else {
       const meta = await this.chain.denomMetadata(denom);
       found = meta && {
@@ -251,7 +279,7 @@ export class TokenResolver {
     }
 
     const symbol = fallbackSymbol(denom, kind);
-    return { symbol, name: symbol, decimals: 0, source: 'fallback' };
+    return { symbol, name: symbol, decimals: kind === 'lp' ? LP_DECIMALS : 0, source: 'fallback' };
   }
 }
 

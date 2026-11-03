@@ -71,6 +71,9 @@ interface World {
   lookup: Result<ListedToken>;
   /** Indexes of addresses whose balance read fails. */
   failed: number[];
+  /** What `tokens.lastBalances` answers per denom (the worker's stored reads); none by default. */
+  last: Record<string, string[]>;
+  hidden: boolean;
 }
 
 function setup(
@@ -89,6 +92,8 @@ function setup(
     held: [BZE],
     lookup: fail(TokenErrorCodes.noSuchToken, 'none'),
     failed: [],
+    last: {},
+    hidden: false,
     ...over,
   };
   const calls: { method: string; req: unknown }[] = [];
@@ -103,6 +108,10 @@ function setup(
       );
       const total = addrs.reduce((n, a) => n + BigInt(a.amount), 0n).toString();
       return ok({ ...b, addresses: addrs, total, partial: w.failed.length > 0 });
+    },
+    'tokens.lastBalances': (r) => {
+      const stored = w.last[r.denom];
+      return ok(stored ? balancesOf(r.denom, stored) : null);
     },
     'tokens.theme': (r) => ok(r.denom === PAGE.denom ? BRAND : null),
     'tokens.search': (r) => ok({ tokens: r.query === '' ? w.held : w.search, partial: false }),
@@ -163,8 +172,14 @@ function setup(
     };
   };
   const releases = held.map(hold);
+  const rejecting = new Set<string>();
+  const rejectOnce = (method: Method) => {
+    rejecting.add(method);
+  };
   const client: Client = {
     call: vi.fn(async <M extends Method>(method: M, req: RequestOf<M>) => {
+      // A call that rejects instead of answering (the worker's port went away).
+      if (rejecting.delete(method)) throw new Error('port closed');
       calls.push({ method, req });
       await gates.get(method);
       const h = handlers[method] as ((r: RequestOf<M>) => Result<unknown>) | undefined;
@@ -193,6 +208,7 @@ function setup(
         };
       },
     },
+    visibility: { hidden: () => w.hidden },
     themeTarget: {
       style: {
         setProperty: (n, v) => {
@@ -252,7 +268,7 @@ function setup(
   const releaseAll = () => {
     for (const release of releases) release();
   };
-  return { host, hold, releaseAll, w, calls, style, written, timers, tick, fire, seen };
+  return { host, hold, releaseAll, rejectOnce, w, calls, style, written, timers, tick, fire, seen };
 }
 
 const byLabel = (host: HTMLElement, label: string) =>
@@ -658,15 +674,102 @@ describe('theme', () => {
 });
 
 describe('refresh', () => {
-  it('reads on open, every 15 s, and stops when the screen goes away', async () => {
+  it('reads on open, every 4 s, and stops when the screen goes away', async () => {
     const s = setup();
     await s.tick();
     expect(balanceCalls(s.calls)).toBe(1);
-    s.fire(15_000);
+    s.fire(4_000);
     await s.tick();
     expect(balanceCalls(s.calls)).toBe(2);
+    s.fire(4_000);
+    await s.tick();
+    expect(balanceCalls(s.calls)).toBe(3);
     cleanup();
-    expect(s.timers.filter((x) => x.ms === 15_000 && x.live)).toHaveLength(0);
+    expect(s.timers.filter((x) => x.ms === 4_000 && x.live)).toHaveLength(0);
+  });
+
+  it('skips the 4 s read while the popup is hidden', async () => {
+    const s = setup();
+    await s.tick();
+    s.w.hidden = true;
+    s.fire(4_000);
+    await s.tick();
+    expect(balanceCalls(s.calls)).toBe(1);
+    s.w.hidden = false;
+    s.fire(4_000);
+    await s.tick();
+    expect(balanceCalls(s.calls)).toBe(2);
+  });
+});
+
+describe('balances while reading', () => {
+  it("never shows one network's numbers on the other, even while the new read runs", async () => {
+    const s = setup();
+    await s.tick();
+    expect(text(s.host)).toContain('1,234.56789');
+    const release = s.hold('tokens.balances');
+    click(byLabel(s.host, 'Settings'));
+    await s.tick();
+    click(
+      [...s.host.querySelectorAll('[role="switch"]')].find((x) =>
+        x.textContent.includes('Testnet'),
+      ) ?? null,
+    );
+    await s.tick();
+    expect(s.host.querySelector('.bp-home-header .bp-pill')?.textContent).toBe('Testnet');
+    expect(text(s.host)).not.toContain('1,234.56789');
+    s.w.amounts = { ubze: ['42000000', '0'] };
+    release();
+    await s.tick();
+    expect(text(s.host)).toContain('42');
+    expect(text(s.host)).not.toContain('1,234.56789');
+  });
+
+  it('keeps the numbers and polls on when a read call rejects', async () => {
+    const s = setup();
+    await s.tick();
+    s.rejectOnce('tokens.balances');
+    s.fire(4_000);
+    await s.tick();
+    expect(text(s.host)).toContain('1,234.56789');
+    s.fire(4_000);
+    await s.tick();
+    expect(balanceCalls(s.calls)).toBe(2);
+    expect(text(s.host)).toContain('1,234.56789');
+  });
+
+  const switchTo = async (s: ReturnType<typeof setup>, from: string, to: string) => {
+    click(byLabel(s.host, `Switch token, current ${from}`));
+    await s.tick();
+    click(s.host.querySelector(`[role="dialog"] [aria-label="${to}"]`));
+    await s.tick();
+  };
+
+  it('shows the stored balances of a token at once on a switch, then the fresh read', async () => {
+    // The worker last read PAGE at 1.00; the node now says 12.00.
+    const s = setup({ last: { [PAGE.denom]: ['100', '0'] } });
+    await s.tick();
+    const release = s.hold('tokens.balances');
+    await switchTo(s, 'BZE', 'PAGE');
+    expect(text(s.host)).toContain('1.00');
+    expect(text(s.host)).not.toContain('12.00');
+    release();
+    await s.tick();
+    expect(text(s.host)).toContain('12.00');
+  });
+
+  it('keeps the numbers on screen through a slow read after switching back', async () => {
+    const s = setup({ last: { ubze: ['1234567890', '0'], [PAGE.denom]: ['500', '700'] } });
+    await s.tick();
+    await switchTo(s, 'BZE', 'PAGE');
+    const release = s.hold('tokens.balances');
+    await switchTo(s, 'PAGE', 'BZE');
+    s.fire(4_000);
+    await s.tick();
+    expect(text(s.host)).toContain('1,234.56789');
+    expect(text(s.host)).toContain('in 1 of 2 addresses');
+    release();
+    await s.tick();
   });
 });
 
@@ -757,8 +860,8 @@ describe('races and guards', () => {
     const s = setup();
     await s.tick();
     const release = s.hold('tokens.balances');
-    s.fire(15_000);
-    s.fire(15_000);
+    s.fire(4_000);
+    s.fire(4_000);
     await s.tick();
     expect(balanceCalls(s.calls)).toBe(2);
     release();

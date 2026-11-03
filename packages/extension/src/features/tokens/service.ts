@@ -1,5 +1,6 @@
 import {
   InvalidDenomError,
+  LP_DECIMALS,
   NATIVE_DENOM,
   type TokenResolver,
   type Cache,
@@ -22,8 +23,11 @@ import { fail, ok, type Result } from '../../protocol';
 import type { PreferredTokensStore, WalletAddresses } from './ports';
 import { BZE_LOGO, createTokenResolver } from './resolver';
 
-/** How long a balance read is reused; the UI forces a refresh when it needs a fresh one. */
-export const BALANCE_FRESH_MS = 10_000;
+/**
+ * How long a balance read is reused: under Home's 4 s poll, so every poll asks the node while a
+ * token switch or the switcher right after a poll reuses it. The UI forces a refresh when it needs one.
+ */
+export const BALANCE_FRESH_MS = 3_000;
 const MAX_SEARCH_RESULTS = 100;
 const MAX_QUERY_LENGTH = 128;
 
@@ -138,21 +142,23 @@ export class TokenService {
   /** An address that cannot be read is reported as `failed` and makes the total `partial`. */
   async balances(denom: string, refresh: boolean): Promise<Result<TokenBalances>> {
     const addresses = await this.deps.addresses.list(this.deps.network);
-    const stored = await this.storedBalances(refresh, addresses);
-    let total = 0n;
-    let partial = false;
-    const rows = addresses.map((a, i): AddressBalance => {
-      const entry = stored[i];
-      if (!entry) {
-        partial = true;
-        return { index: a.index, address: a.address, amount: '0', failed: true };
-      }
-      const held = Object.hasOwn(entry.balances, denom) ? entry.balances[denom] : undefined;
-      const amount = BigInt(held ?? '0');
-      total += amount;
-      return { index: a.index, address: a.address, amount: amount.toString() };
-    });
-    return ok({ denom, addresses: rows, total: total.toString(), partial });
+    return ok(balancesOf(denom, addresses, await this.storedBalances(refresh, addresses)));
+  }
+
+  /**
+   * The last read of every address, however old, without asking the node: what Home shows at
+   * once while it reads again. `null` when some address has never been read.
+   */
+  async lastBalances(denom: string): Promise<Result<TokenBalances | null>> {
+    const addresses = await this.deps.addresses.list(this.deps.network);
+    const stored = await Promise.all(
+      addresses.map(async ({ address }) => {
+        const raw = await this.deps.session.get(this.balancesKey(address));
+        return isStoredBalances(raw) ? raw : null;
+      }),
+    );
+    if (stored.some((entry) => entry === null)) return ok(null);
+    return ok(balancesOf(denom, addresses, stored));
   }
 
   async theme(denom: string): Promise<Result<DenomBranding | null>> {
@@ -169,7 +175,11 @@ export class TokenService {
     );
   }
 
-  /** One entry per address, in order (`null` when it could not be read); read-through with a 10 s freshness. */
+  private balancesKey(address: string): string {
+    return `balances:${this.deps.network}:${address}`;
+  }
+
+  /** One entry per address, in order (`null` when it could not be read); read-through with `BALANCE_FRESH_MS`. */
   private async storedBalances(
     refresh: boolean,
     addresses?: Awaited<ReturnType<WalletAddresses['list']>>,
@@ -177,7 +187,7 @@ export class TokenService {
     const list = addresses ?? (await this.deps.addresses.list(this.deps.network));
     const settled = await Promise.allSettled(
       list.map(async ({ address }) => {
-        const key = `balances:${this.deps.network}:${address}`;
+        const key = this.balancesKey(address);
         const now = this.deps.clock.now();
         if (!refresh) {
           const raw = await this.deps.session.get(key);
@@ -198,21 +208,44 @@ export class TokenService {
   }
 }
 
+function balancesOf(
+  denom: string,
+  addresses: Awaited<ReturnType<WalletAddresses['list']>>,
+  stored: (StoredBalances | null)[],
+): TokenBalances {
+  let total = 0n;
+  let partial = false;
+  const rows = addresses.map((a, i): AddressBalance => {
+    const entry = stored[i];
+    if (!entry) {
+      partial = true;
+      return { index: a.index, address: a.address, amount: '0', failed: true };
+    }
+    const held = Object.hasOwn(entry.balances, denom) ? entry.balances[denom] : undefined;
+    const amount = BigInt(held ?? '0');
+    total += amount;
+    return { index: a.index, address: a.address, amount: amount.toString() };
+  });
+  return { denom, addresses: rows, total: total.toString(), partial };
+}
+
 function kindOf(denom: string): TokenInfo['kind'] {
   if (denom === NATIVE_DENOM) return 'native';
   if (denom.startsWith('factory/')) return 'factory';
   if (denom.startsWith('ibc/')) return 'ibc';
+  if (denom.startsWith('ulp/') || denom.startsWith('ulp_')) return 'lp';
   return 'other';
 }
 
 function unresolved(denom: string): ListedToken {
   const symbol = (denom.split('/').pop() ?? denom).slice(0, 32).toUpperCase();
+  const kind = kindOf(denom);
   return {
     denom,
     symbol,
     name: symbol,
-    decimals: 0,
-    kind: kindOf(denom),
+    decimals: kind === 'lp' ? LP_DECIMALS : 0,
+    kind,
     source: 'fallback',
     branding: null,
     logo: denom === NATIVE_DENOM ? BZE_LOGO : null,
