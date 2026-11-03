@@ -3,8 +3,8 @@ import { Logo } from './Logo';
 export interface DappHeaderProps {
   /** "Connection request", "Approve transaction", "Add a token". */
   title: string;
-  /** The chain id of the active network, shown in the pill on the right ("beezee-1"). */
-  chainId: string;
+  /** The chain id of the active network, shown in the pill on the right ("beezee-1"); no pill while unknown. */
+  chainId?: string | undefined;
   /** A small badge after the title: the queue's "1 of 2". */
   badge?: { text: string; label: string } | undefined;
 }
@@ -22,10 +22,12 @@ export function DappHeader({ title, chainId, badge }: DappHeaderProps) {
           </span>
         )}
       </span>
-      <span class="bp-chain-pill">
-        <span class="bp-chain-dot" aria-hidden="true" />
-        {chainId}
-      </span>
+      {chainId !== undefined && (
+        <span class="bp-chain-pill">
+          <span class="bp-chain-dot" aria-hidden="true" />
+          {chainId}
+        </span>
+      )}
     </div>
   );
 }

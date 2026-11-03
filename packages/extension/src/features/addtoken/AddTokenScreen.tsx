@@ -127,7 +127,6 @@ type Lookup =
       lookalike: boolean;
       branding: DenomBranding | null;
       brandThemes: boolean;
-      network: NetworkId;
     };
 
 /** The same symbol as the native token or a token already held, under a different code. */
@@ -146,6 +145,7 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
   const [failed, setFailed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [network, setNetwork] = useState<NetworkId | null>(null);
 
   useEffect(() => {
     const run = { live: true };
@@ -157,6 +157,8 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
         client.call('home.context', {}),
       ]);
       if (!run.live) return;
+      // The header's chain pill follows the wallet's network, whatever the lookup says.
+      if (context.ok) setNetwork(context.value.network);
       if (!found.ok) {
         const code = found.error.code;
         const unknown =
@@ -177,7 +179,6 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
         lookalike: looksLikeAnother(found.value, preferred.value),
         branding,
         brandThemes,
-        network: context.value.network,
       });
     })();
     return () => {
@@ -220,7 +221,7 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
   const header = (
     <DappHeader
       title={t('addtoken.title')}
-      chainId={NETWORKS[found?.network ?? 'mainnet'].chainId}
+      chainId={network === null ? undefined : NETWORKS[network].chainId}
     />
   );
   const footer =

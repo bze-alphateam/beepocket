@@ -6,6 +6,7 @@ import { Router } from '../../popup/router';
 import {
   fail,
   ok,
+  TokenErrorCodes,
   type AddTokenView,
   type Method,
   type RequestOf,
@@ -160,6 +161,16 @@ describe('the Add a token screen', () => {
     expect(t.applied['--bp-primary']).toBe('#FFB000');
     expect(t.host.textContent).not.toContain(en['addtoken.unknown']);
     expect(button(t.host, 'Add GOLD')).toBeDefined();
+  });
+
+  it('shows the wallet network in the header pill, also when the lookup fails', async () => {
+    const t = await mounted(link(), {
+      'home.context': () => ok({ network: 'testnet', brandThemes: true }),
+      'tokens.lookup': () => fail(TokenErrorCodes.noSuchToken, 'none'),
+    });
+    expect(t.host.textContent).toContain(en['addtoken.noSuchToken']);
+    expect(t.host.querySelector('.bp-chain-pill')?.textContent).toBe('bzetestnet-3');
+    expect(t.host.textContent).not.toContain('beezee-1');
   });
 
   it('keeps the BeePocket look when brand themes are off', async () => {

@@ -4,8 +4,8 @@ import { Icon } from './icons';
 export function CheckList(props: { items: readonly string[] }) {
   return (
     <ul class="bp-check-list">
-      {props.items.map((item) => (
-        <li key={item}>
+      {props.items.map((item, i) => (
+        <li key={i}>
           <Icon name="check" size={14} strokeWidth={2.6} />
           <span>{item}</span>
         </li>

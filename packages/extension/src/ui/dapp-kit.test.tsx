@@ -42,6 +42,11 @@ describe('DappHeader', () => {
     expect(badge?.getAttribute('aria-label')).toBe('Request 1 of 3');
     expect(host.querySelector('.bp-chain-pill')?.textContent).toBe('bzetestnet-3');
   });
+
+  it('shows no chain pill while the network is unknown', () => {
+    const { host } = render(<DappHeader title="Add a token" />);
+    expect(host.querySelector('.bp-chain-pill')).toBeNull();
+  });
 });
 
 describe('SiteCard', () => {
@@ -86,6 +91,11 @@ describe('CheckList', () => {
       'Asks before signing',
     ]);
     expect(items[0]?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('keeps two identical lines', () => {
+    const { host } = render(<CheckList items={['Same', 'Same']} />);
+    expect(host.querySelectorAll('.bp-check-list li')).toHaveLength(2);
   });
 });
 

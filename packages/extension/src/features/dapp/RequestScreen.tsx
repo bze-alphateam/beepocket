@@ -222,10 +222,22 @@ export function RequestScreen({ close }: RequestScreenProps) {
       );
     case 'connect':
       return (
-        <ConnectScreen view={view} queue={count} done={(a) => void answeredThen(view.id, a)} />
+        <ConnectScreen
+          key={view.id}
+          view={view}
+          queue={count}
+          done={(a) => void answeredThen(view.id, a)}
+        />
       );
     case 'sign':
-      return <SignScreen view={view} queue={count} done={(a) => void answeredThen(view.id, a)} />;
+      return (
+        <SignScreen
+          key={view.id}
+          view={view}
+          queue={count}
+          done={(a) => void answeredThen(view.id, a)}
+        />
+      );
     case 'none':
       return null;
   }

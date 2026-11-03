@@ -414,6 +414,46 @@ describe('the sign screen: risk levels', () => {
     expect(disabled(t.host, 'Approve')).toBe(true);
   });
 
+  it('drops the tick when another dangerous request replaces the one on screen', async () => {
+    const a = await signView([grant()]);
+    const b = { ...(await signView([grant()])), id: 's2' };
+    const views: RequestView[] = [a, b];
+    const polls: (() => void)[] = [];
+    const t = rig(
+      {
+        ...base,
+        'dapp.current': () => ok(views.length > 1 ? (views.shift() ?? b) : b),
+        // Nothing waits behind it, so the poll asks the worker for the head again.
+        'dapp.queue': () => ok({ head: null, count: 0, origins: [] }),
+        'dapp.answer': () => ok({}),
+      },
+      undefined,
+      (_ms, fn) => {
+        polls.push(fn);
+        return () => undefined;
+      },
+    );
+    await settle();
+    await settle();
+    setTick(t.host);
+    await settle();
+    expect(disabled(t.host, 'Approve')).toBe(false);
+
+    await act(() => {
+      for (const poll of polls) poll();
+    });
+    await settle();
+    await settle();
+    expect(ticked(t.host)).toBe(false);
+    expect(disabled(t.host, 'Approve')).toBe(true);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).not.toHaveBeenCalledWith(
+      'dapp.answer',
+      expect.objectContaining({ trusted: true }),
+    );
+  });
+
   it('numbers a normal and an unknown message and says both happen', async () => {
     const t = signRig(await signView([sendMsg(), nothingMsg()]));
     await settle();
