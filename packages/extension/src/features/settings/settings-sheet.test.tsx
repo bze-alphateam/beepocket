@@ -304,6 +304,26 @@ describe('Settings sheet', () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 
+  it('puts Theme follows token back when the save is refused', async () => {
+    const client = new FakeClient();
+    client.call = ((orig) => (method: Method, request: unknown) =>
+      method === 'settings.set'
+        ? Promise.resolve(fail(WalletErrorCodes.needsPassword, 'locked'))
+        : orig(method, request))(client.call.bind(client));
+    const { host, changed } = await opened(client);
+    const sw = () =>
+      must(
+        [...host.querySelectorAll('[role="switch"]')].find((s) =>
+          s.textContent.includes('Theme follows token'),
+        ),
+      );
+    fireEvent(sw(), 'click');
+    await flush();
+    expect(sw().getAttribute('aria-checked')).toBe('true');
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Unlock the wallet');
+    expect(changed).not.toHaveBeenCalled();
+  });
+
   it('Lock wallet locks at once and shows the unlock screen', async () => {
     const { client, button, host } = await opened();
     fireEvent(button('Lock wallet'), 'click');

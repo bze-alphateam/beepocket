@@ -149,7 +149,11 @@ export function SettingsSheet({ open, onClose, onChanged }: SettingsSheetProps) 
     if (r.ok) {
       setData((d) => d && { ...d, settings: r.value });
       if (patch.brandThemes !== undefined) onChanged();
-    } else if (r.error.code === WalletErrorCodes.invalidSettings) setError(t('settings.invalid'));
+      return;
+    }
+    // Shows what is stored again (a switch flipped before the save goes back).
+    void load();
+    if (r.error.code === WalletErrorCodes.invalidSettings) setError(t('settings.invalid'));
     else if (r.error.code === WalletErrorCodes.needsPassword) setError(t('settings.needsUnlock'));
     else setError(t('settings.saveFailed'));
   };
