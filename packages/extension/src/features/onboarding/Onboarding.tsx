@@ -49,12 +49,19 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const [codeFound, setCodeFound] = useState(false);
 
   // The token behind a link, for the Welcome card; the card falls back to the host alone.
-  const [linkToken, setLinkToken] = useState<{ symbol: string; color: string } | null>(null);
+  const [linkToken, setLinkToken] = useState<{
+    symbol: string;
+    color: string;
+    logo: string | null;
+  } | null>(null);
   useEffect(() => {
     if (route.prefillCode === undefined || route.link === undefined) return;
     let live = true;
     void client.call('tokens.lookup', { code: route.prefillCode }).then((res) => {
-      if (live && res.ok) setLinkToken({ symbol: res.value.symbol, color: tokenColor(res.value) });
+      if (live && res.ok) {
+        const { symbol, logo } = res.value;
+        setLinkToken({ symbol, color: tokenColor(res.value), logo });
+      }
     });
     return () => {
       live = false;
@@ -66,6 +73,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
       : {
           symbol: linkToken?.symbol ?? null,
           color: linkToken?.color,
+          logo: linkToken?.logo,
           host: route.link.host,
         };
 

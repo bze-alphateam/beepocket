@@ -35,6 +35,7 @@ const PAGE: ListedToken = {
   kind: 'factory',
   source: 'chain',
   branding: null,
+  logo: null,
 };
 const addr = (index: number, label: string): WalletAddress => ({
   index,

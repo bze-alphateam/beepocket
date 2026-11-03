@@ -7,6 +7,8 @@ export interface TokenRowProps {
   name: string;
   /** Avatar colour (`#RRGGBB`). */
   color?: string | undefined;
+  /** The token's logo URL; the letter shows without one. */
+  logo?: string | null | undefined;
   /** The kit's colours for the swatches; none for a token without a brand kit. */
   swatches?: readonly string[] | undefined;
   /** The small line: "Brand kit", "No brand kit · default look". */
@@ -26,7 +28,7 @@ export function TokenRow({ variant = 'option', ...props }: TokenRowProps) {
   const option = variant === 'option';
   const body = (
     <>
-      <Avatar label={props.symbol} color={props.color} size={option ? 30 : 32} />
+      <Avatar label={props.symbol} color={props.color} src={props.logo} size={option ? 30 : 32} />
       <span class="bp-token-row-text">
         <span class="bp-token-row-title">
           {props.symbol} <span class="bp-token-row-name">· {props.name}</span>

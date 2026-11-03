@@ -141,7 +141,7 @@ export function Switcher(props: SwitcherProps) {
       <ListRow
         key={tok.denom}
         size="option"
-        leading={<Avatar label={tok.symbol} color={tokenColor(tok)} size={30} />}
+        leading={<Avatar label={tok.symbol} color={tokenColor(tok)} src={tok.logo} size={30} />}
         title={tok.symbol}
         subtitle={tok.name}
         plainSubtitle

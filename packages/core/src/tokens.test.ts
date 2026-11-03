@@ -9,6 +9,7 @@ import {
   TransportError,
   type DenomBranding,
   type DenomMetadata,
+  type ScanClient,
   type ScanToken,
 } from './index';
 
@@ -46,6 +47,7 @@ describe('TokenResolver.resolve', () => {
       kind: 'native',
       source: 'builtin',
       branding: null,
+      logo: null,
     });
     expect(chain.denomMetadata).not.toHaveBeenCalled();
     expect(scan.token).not.toHaveBeenCalled();
@@ -288,6 +290,94 @@ describe('TokenResolver cache', () => {
     const { chain, cache, resolver } = setup();
     cache.store.set(`token:${VDL}`, entry);
     expect((await resolver.resolve(VDL)).symbol).toBe('VDL');
+    expect(chain.denomMetadata).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('TokenResolver logos', () => {
+  const LOGO =
+    'https://raw.githubusercontent.com/cosmos/chain-registry/master/beezee/images/vdl.png';
+
+  function setup(asset: ScanClient['asset']) {
+    const chain = stubChain({
+      denomMetadata: vi.fn().mockResolvedValue(vdlMeta),
+      denomBranding: vi.fn().mockResolvedValue(null),
+    });
+    const scan = stubScan({ asset });
+    const cache = new MemoryCache();
+    const resolver = new TokenResolver(chain, scan, { cache, nativeLogo: '/tokens/bze.png' });
+    return { chain, scan, cache, resolver };
+  }
+
+  it("takes the logo from Scan's asset list", async () => {
+    const { scan, resolver } = setup(vi.fn().mockResolvedValue({ denom: VDL, logo: LOGO }));
+    expect(await resolver.resolve(VDL)).toMatchObject({ symbol: 'VDL', logo: LOGO });
+    expect(scan.asset).toHaveBeenCalledWith(VDL);
+  });
+
+  it('has no logo when Scan does not list the denom or lists no logo', async () => {
+    expect((await setup(vi.fn().mockResolvedValue(null)).resolver.resolve(VDL)).logo).toBeNull();
+    const none = setup(vi.fn().mockResolvedValue({ denom: VDL, logo: null }));
+    expect((await none.resolver.resolve(VDL)).logo).toBeNull();
+  });
+
+  it.each([
+    ['plain http', 'http://raw.githubusercontent.com/a/b.png'],
+    ['another host', 'https://example.com/b.png'],
+    ['a look-alike host', 'https://raw.githubusercontent.com.evil.io/b.png'],
+    ['a subdomain of the host', 'https://x.raw.githubusercontent.com/b.png'],
+    ['userinfo', 'https://user:pw@raw.githubusercontent.com/b.png'],
+    ['a port', 'https://raw.githubusercontent.com:8443/b.png'],
+    ['the default port written out', 'https://raw.githubusercontent.com:443/b.png'],
+    ['a protocol-relative URL', '//raw.githubusercontent.com/b.png'],
+    ['a javascript: URL', 'javascript:alert(1)'],
+    ['a data: URL', 'data:image/png;base64,AAAA'],
+    ['garbage', 'not a url'],
+    ['an empty string', ''],
+  ])('drops a logo with %s', async (_, logo) => {
+    const { resolver } = setup(vi.fn().mockResolvedValue({ denom: VDL, logo }));
+    const info = await resolver.resolve(VDL);
+    expect(info.symbol).toBe('VDL');
+    expect(info.logo).toBeNull();
+  });
+
+  it('still resolves when Scan is down, and picks the logo up once Scan is back', async () => {
+    const asset = vi
+      .fn()
+      .mockRejectedValueOnce(new TransportError('offline'))
+      .mockResolvedValue({ denom: VDL, logo: LOGO });
+    const { cache, resolver } = setup(asset);
+    expect(await resolver.resolve(VDL)).toMatchObject({ symbol: 'VDL', logo: null });
+    expect(cache.store.size).toBe(0);
+    expect((await resolver.resolve(VDL)).logo).toBe(LOGO);
+    expect(cache.store.size).toBe(1);
+  });
+
+  it('gives ubze the local logo and never asks Scan, also from the cache', async () => {
+    const evil = 'https://raw.githubusercontent.com/evil/bze.png';
+    const { scan, resolver } = setup(vi.fn().mockResolvedValue({ denom: 'ubze', logo: evil }));
+    expect((await resolver.resolve('ubze')).logo).toBe('/tokens/bze.png');
+    expect((await resolver.resolve('ubze')).logo).toBe('/tokens/bze.png');
+    expect(scan.asset).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['from before logos existed', undefined],
+    ['holding a logo from another host', 'https://example.com/b.png'],
+  ])('reads a cached entry %s again', async (_, logo) => {
+    const { chain, cache, resolver } = setup(vi.fn().mockResolvedValue({ denom: VDL, logo: LOGO }));
+    const entry: Record<string, unknown> = {
+      denom: VDL,
+      symbol: 'VDL',
+      name: 'Vidulum',
+      decimals: 6,
+      kind: 'factory',
+      source: 'chain',
+      branding: null,
+    };
+    if (logo !== undefined) entry.logo = logo;
+    cache.store.set(`token:${VDL}`, entry);
+    expect((await resolver.resolve(VDL)).logo).toBe(LOGO);
     expect(chain.denomMetadata).toHaveBeenCalledTimes(1);
   });
 });

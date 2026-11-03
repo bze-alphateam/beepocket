@@ -18,6 +18,11 @@ export interface TokenInfo {
   kind: TokenKind;
   source: TokenSource;
   branding: Branding | null;
+  /**
+   * Logo image URL: for ubze the wallet's own copy, otherwise an `https://raw.githubusercontent.com/`
+   * URL from Scan's asset list. Null shows the letter avatar.
+   */
+  logo: string | null;
 }
 
 /** The denom is not something a chain could hold (too long, odd characters). */
@@ -31,6 +36,9 @@ const MAX_DENOM_LENGTH = 128;
 const DENOM_PATTERN = /^[A-Za-z][A-Za-z0-9/:._-]*$/;
 const MAX_SYMBOL_LENGTH = 32;
 const MAX_NAME_LENGTH = 64;
+/** The only host token logos are loaded from (the chain registry's files). */
+const LOGO_HOST = 'raw.githubusercontent.com';
+const MAX_LOGO_LENGTH = 2048;
 
 function kindOf(denom: string): TokenKind {
   if (denom === NATIVE_DENOM) return 'native';
@@ -51,6 +59,29 @@ function fallbackSymbol(denom: string, kind: TokenKind): string {
   return (cleanText(last, MAX_SYMBOL_LENGTH) ?? denom.slice(0, MAX_SYMBOL_LENGTH)).toUpperCase();
 }
 
+/**
+ * A logo URL from Scan, kept only when it is plain `https://raw.githubusercontent.com/…`: no
+ * other host or look-alike, no userinfo, no port. Anything else means no logo.
+ */
+function safeLogo(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length > MAX_LOGO_LENGTH) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  const plain =
+    url.protocol === 'https:' &&
+    url.hostname === LOGO_HOST &&
+    url.port === '' &&
+    url.username === '' &&
+    url.password === '' &&
+    // `https://raw.githubusercontent.com:443/` parses with an empty port: keep the URL as written.
+    raw.startsWith(`https://${LOGO_HOST}/`);
+  return plain ? url.href : null;
+}
+
 function isTokenInfo(value: unknown, denom: string): value is TokenInfo {
   if (typeof value !== 'object' || value === null) return false;
   const t = value as Record<string, unknown>;
@@ -65,7 +96,10 @@ function isTokenInfo(value: unknown, denom: string): value is TokenInfo {
     t.decimals <= 18 &&
     t.kind === kindOf(denom) &&
     (t.source === 'builtin' || t.source === 'chain' || t.source === 'scan') &&
-    (branding === null || typeof branding === 'object')
+    (branding === null || typeof branding === 'object') &&
+    // Entries cached before logos existed lack the field: read those again.
+    (t.logo === null ||
+      (typeof t.logo === 'string' && (denom === NATIVE_DENOM || safeLogo(t.logo) === t.logo)))
   );
 }
 
@@ -73,12 +107,15 @@ export interface TokenResolverOptions {
   cache?: Cache;
   /** Prefix of every cache key, so one store can serve several networks. */
   cacheKeyPrefix?: string;
+  /** The logo of ubze, a URL of the wallet's own (Scan is never asked); none by default. */
+  nativeLogo?: string;
 }
 
 /** Name, symbol, decimals and brand kit of any denom. */
 export class TokenResolver {
   private readonly cache: Cache | undefined;
   private readonly prefix: string;
+  private readonly nativeLogo: string | null;
 
   constructor(
     private readonly chain: ChainClient,
@@ -87,23 +124,34 @@ export class TokenResolver {
   ) {
     this.cache = options.cache;
     this.prefix = options.cacheKeyPrefix ?? '';
+    this.nativeLogo = options.nativeLogo ?? null;
   }
 
-  /** Chain errors propagate; a missing or unreachable Scan only degrades to the fallback. */
+  /**
+   * Chain errors propagate; a missing or unreachable Scan only degrades to the fallback and to
+   * no logo.
+   */
   async resolve(denom: string): Promise<TokenInfo> {
     assertDenom(denom);
+    const kind = kindOf(denom);
     const key = `${this.prefix}token:${denom}`;
     const cached = await this.cache?.get(key);
-    if (isTokenInfo(cached, denom)) return cached;
+    if (isTokenInfo(cached, denom)) {
+      // ubze's logo is the wallet's own file, never a stored value.
+      return kind === 'native' ? { ...cached, logo: this.nativeLogo } : cached;
+    }
 
-    const kind = kindOf(denom);
-    const [display, branding] = await Promise.all([
+    const [display, branding, logo] = await Promise.all([
       this.displayData(denom, kind),
       this.chain.denomBranding(denom),
+      this.logo(denom, kind),
     ]);
-    const info: TokenInfo = { denom, kind, ...display, branding };
-    // A fallback is a guess (and often a symptom of Scan being down): never keep it.
-    if (info.source !== 'fallback') await this.cache?.set(key, info, TOKEN_TTL_MS);
+    const info: TokenInfo = { denom, kind, ...display, branding, logo: logo.url };
+    // A fallback is a guess (and often a symptom of Scan being down), and so is "no logo" when
+    // Scan did not answer: never keep either.
+    if (info.source !== 'fallback' && logo.answered) {
+      await this.cache?.set(key, info, TOKEN_TTL_MS);
+    }
     return info;
   }
 
@@ -111,6 +159,20 @@ export class TokenResolver {
   async tokenCodeExists(denom: string): Promise<boolean> {
     assertDenom(denom);
     return (await this.chain.supply(denom)) > 0n;
+  }
+
+  /** `answered` is false when Scan could not be asked; ubze never asks it. */
+  private async logo(
+    denom: string,
+    kind: TokenKind,
+  ): Promise<{ url: string | null; answered: boolean }> {
+    if (kind === 'native') return { url: this.nativeLogo, answered: true };
+    try {
+      const asset = await this.scan.asset(denom);
+      return { url: safeLogo(asset?.logo), answered: true };
+    } catch {
+      return { url: null, answered: false };
+    }
   }
 
   private async displayData(

@@ -242,6 +242,7 @@ export function Home() {
           <TokenPill
             symbol={token.symbol}
             color={color}
+            logo={token.logo}
             label={t('home.token.switch', { symbol: token.symbol })}
             onClick={() => {
               setSwitcher(true);
@@ -251,6 +252,7 @@ export function Home() {
           <TokenTitle
             symbol={token.symbol}
             color={color}
+            logo={token.logo}
             caption={t('home.token.wallet', { name: token.name })}
           />
         )

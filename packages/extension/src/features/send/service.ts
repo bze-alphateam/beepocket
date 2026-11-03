@@ -394,6 +394,7 @@ export class SendService {
           amount: o.amount.toString(),
           symbol: info.value.symbol,
           decimals: info.value.decimals,
+          logo: info.value.logo,
           balance: (ctx.balances.get(o.denom) ?? 0n).toString(),
         });
       }

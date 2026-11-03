@@ -24,6 +24,8 @@ import type { PreferredTokensStore, WalletAddresses } from './ports';
 export const BALANCE_FRESH_MS = 10_000;
 const MAX_SEARCH_RESULTS = 100;
 const MAX_QUERY_LENGTH = 128;
+/** BZE's logo, shipped with the extension: the round "BZ" mark the dapps use. */
+const BZE_LOGO = '/tokens/bze.png';
 
 export interface TokenServiceDeps {
   network: NetworkId;
@@ -63,6 +65,7 @@ export class TokenService {
     this.resolver = new TokenResolver(deps.chain, deps.scan, {
       cache: deps.cache,
       cacheKeyPrefix: `${deps.network}:`,
+      nativeLogo: BZE_LOGO,
     });
   }
 
@@ -209,6 +212,7 @@ function unresolved(denom: string): ListedToken {
     kind: kindOf(denom),
     source: 'fallback',
     branding: null,
+    logo: denom === NATIVE_DENOM ? BZE_LOGO : null,
     unresolved: true,
   };
 }

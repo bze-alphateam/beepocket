@@ -72,6 +72,7 @@ export function TokenPicker({ selected, onToggle, notice }: TokenPickerProps) {
               symbol={tok.symbol}
               name={tok.name}
               color={look.color}
+              logo={tok.logo}
               swatches={tok.unresolved ? undefined : look.swatches}
               caption={
                 tok.unresolved

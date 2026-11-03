@@ -255,7 +255,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
               tone="quiet"
               label={t('dapp.sign.fee.change', { fee: feeText(fee) })}
               caption={t('dapp.sign.fee')}
-              valueIcon={<Avatar label={fee.symbol} size={18} />}
+              valueIcon={<Avatar label={fee.symbol} src={fee.logo} size={18} />}
               value={`≈ ${feeText(fee)}`}
               onClick={() => {
                 setFeeOpen(true);

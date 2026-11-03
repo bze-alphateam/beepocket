@@ -215,6 +215,7 @@ export async function prepareSign(
         amount: '0',
         symbol: info.symbol,
         decimals: info.decimals,
+        logo: info.logo,
       });
     }
   }

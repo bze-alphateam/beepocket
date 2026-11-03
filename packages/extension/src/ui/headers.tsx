@@ -85,16 +85,18 @@ export interface TokenPillProps {
   symbol: string;
   /** Token dot colour (`#RRGGBB`); invalid values fall back to the kit primary. */
   color?: string | undefined;
+  /** The token's logo URL; the letter shows without one. */
+  logo?: string | null | undefined;
   /** Accessible name, e.g. "Switch token, current BZE". */
   label: string;
   onClick: () => void;
 }
 
 /** The token switcher trigger: avatar, symbol, chevron, in a pill. */
-export function TokenPill({ symbol, color, label, onClick }: TokenPillProps) {
+export function TokenPill({ symbol, color, logo, label, onClick }: TokenPillProps) {
   return (
     <button type="button" class="bp-token-pill" aria-label={label} onClick={onClick}>
-      <Avatar label={symbol} color={color} />
+      <Avatar label={symbol} color={color} src={logo} />
       <span class="bp-token-pill-sym">{symbol}</span>
       <Icon name="chevron-down" size={16} />
     </button>
@@ -102,10 +104,15 @@ export function TokenPill({ symbol, color, label, onClick }: TokenPillProps) {
 }
 
 /** A single-token wallet's header title: avatar, symbol and "<name> wallet". */
-export function TokenTitle(props: { symbol: string; caption: string; color?: string | undefined }) {
+export function TokenTitle(props: {
+  symbol: string;
+  caption: string;
+  color?: string | undefined;
+  logo?: string | null | undefined;
+}) {
   return (
     <div class="bp-token-title">
-      <Avatar label={props.symbol} color={props.color} />
+      <Avatar label={props.symbol} color={props.color} src={props.logo} />
       <span>
         <span class="bp-token-title-sym">{props.symbol}</span>
         <span class="bp-token-title-cap">{props.caption}</span>

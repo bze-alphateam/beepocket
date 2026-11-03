@@ -40,6 +40,7 @@ const BZE = {
   kind: 'native',
   source: 'builtin',
   branding: null,
+  logo: null,
 };
 
 type Handler = (req: unknown) => Result<unknown>;

@@ -280,7 +280,12 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
         {found !== null && (
           <>
             <section class="bp-add-token" data-denom={found.token.denom}>
-              <Avatar label={found.token.symbol} color={tokenColor(found.token)} size={56} />
+              <Avatar
+                label={found.token.symbol}
+                color={tokenColor(found.token)}
+                src={found.token.logo}
+                size={56}
+              />
               <strong class="bp-add-symbol">{found.token.symbol}</strong>
               <span class="bp-add-name">{found.token.name}</span>
               <span class="bp-add-code">

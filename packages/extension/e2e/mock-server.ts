@@ -43,6 +43,10 @@ export function mockReply(pathAndQuery: string): MockReply {
   const url = new URL(pathAndQuery, 'http://mock.invalid');
   const denom = url.searchParams.get('denom');
   if (/^\/api\/v1\/accounts\/[^/]+\/activity$/.test(url.pathname)) return activityReply(url);
+  // No logos in the e2e runs: the registry lists no asset, so nothing is fetched from GitHub.
+  if (url.pathname.startsWith('/api/v1/registry/assets/')) {
+    return { status: 404, body: { error: { code: 'not_found', message: 'not listed' } } };
+  }
   switch (url.pathname) {
     case '/health':
       return { status: 200, body: { status: 'ok' } };
