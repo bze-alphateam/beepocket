@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { fitWalletWindow, type CurrentWindowLike, type WindowView } from './fit-window';
 
-function rig(id: number | undefined = 7) {
+function rig(id: number | null = 7) {
   const updates: { id: number; width: number; height: number }[] = [];
   const windows: CurrentWindowLike = {
-    getCurrent: () => Promise.resolve(id === undefined ? {} : { id }),
+    getCurrent: () => Promise.resolve(id === null ? {} : { id }),
     update: (windowId, info) => {
       updates.push({ id: windowId, ...info });
       return Promise.resolve({});
@@ -43,7 +43,7 @@ describe('fitWalletWindow', () => {
     const early = rig();
     await fitWalletWindow(view([0, 0], [360, 600]), early.windows);
     expect(early.updates).toEqual([]);
-    const unknown = rig(undefined);
+    const unknown = rig(null);
     await fitWalletWindow(view([360, 572], [360, 600]), unknown.windows);
     expect(unknown.updates).toEqual([]);
   });
