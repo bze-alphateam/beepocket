@@ -8,11 +8,7 @@
 
 ## Releases
 
-The extension version lives in `packages/extension/package.json` and nowhere else; the build writes it into `manifest.json`. It must be a Chrome version: 1 to 4 dot-separated integers (0-65535, no leading zeros, no `-rc` style suffix).
-
-1. In the release pull request into `main`, bump `version` in `packages/extension/package.json`.
-2. After it merges, tag the merge commit `v` + that version (for example `v1.2.3`) and push the tag.
-3. The `reproducible` workflow fails the release if the tag does not match the package version.
+See [RELEASING.md](RELEASING.md).
 
 ## Before you open a pull request
 

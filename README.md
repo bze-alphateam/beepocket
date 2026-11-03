@@ -32,9 +32,20 @@ pnpm e2e     # build and run the Playwright test against the built extension
 
 The extension is built into `packages/extension/dist` and zipped to `packages/extension/beepocket.zip`. To try it, open `chrome://extensions`, enable developer mode and load the `dist` folder as an unpacked extension.
 
+## Install a release
+
+Download `beepocket-vX.Y.Z.zip` from the [GitHub releases](https://github.com/bze-alphateam/beepocket/releases) (only from there), unzip it into a folder you keep, open `chrome://extensions`, enable developer mode and load that folder with **Load unpacked**. The extension ID is always `ijohiojehlnmpoelmpnnbcfhkpgaclfc`. To update, unzip the new release over the same folder and click reload on the extension card; never remove the extension, or its wallet data is lost. Each release's notes have the full steps.
+
 ## Verify a release
 
-Releases are built by CI from a `v*` tag, and the zip and its SHA-256 are attached to the GitHub release. To check one yourself:
+Releases are built by CI from a `v*` tag. The zip, a `SHA256SUMS` file and a build provenance attestation are attached to the GitHub release. Check a download with:
+
+```sh
+sha256sum -c SHA256SUMS
+gh attestation verify beepocket-vX.Y.Z.zip --repo bze-alphateam/beepocket
+```
+
+Or rebuild it yourself:
 
 ```sh
 git checkout vX.Y.Z
@@ -44,7 +55,7 @@ SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" pnpm build
 sha256sum packages/extension/beepocket.zip
 ```
 
-The sum must match the one published with the release.
+The sum must match the one in the release's `SHA256SUMS`. Maintainers: see [RELEASING.md](RELEASING.md).
 
 ## License
 
