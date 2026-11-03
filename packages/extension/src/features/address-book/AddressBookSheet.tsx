@@ -27,7 +27,7 @@ import { useBook } from './useBook';
  */
 export interface AddressBookSheetProps {
   open: boolean;
-  /** Backdrop, Escape, and Cancel on a form the sheet was opened on. */
+  /** The ×, backdrop, Escape, and Cancel on a form the sheet was opened on. */
   onClose: () => void;
   mode: 'pick' | 'manage';
   /**

@@ -267,7 +267,7 @@ describe('Settings sheet', () => {
     expect(host.querySelector('input[type="checkbox"], select')).toBeNull();
   });
 
-  it('closes on Escape, on the backdrop and on the handle', async () => {
+  it('closes on Escape, on the backdrop and on the ×', async () => {
     const { host, button, dialogs, key } = await opened();
     key('Escape');
     expect(dialogs()).toHaveLength(0);
@@ -277,7 +277,8 @@ describe('Settings sheet', () => {
     expect(dialogs()).toHaveLength(0);
     fireEvent(button('Open settings'), 'click');
     await flush();
-    fireEvent(host.querySelector('.bp-sheet-handle'), 'click');
+    expect(host.querySelector('.bp-sheet-handle')).toBeNull();
+    fireEvent(button('Close'), 'click');
     expect(dialogs()).toHaveLength(0);
   });
 
@@ -361,6 +362,17 @@ describe('Settings sheet', () => {
     expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Address book']);
     expect(host.textContent).toContain('Alex');
     key('Escape');
+    await flush();
+    expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
+  });
+
+  it('the address book closes from its ×, back to Settings', async () => {
+    const { button, dialogs } = await opened();
+    fireEvent(button(/^Address book/), 'click');
+    await flush();
+    const close = dialogs()[0]?.querySelectorAll('button[aria-label="Close"]');
+    expect(close).toHaveLength(1);
+    fireEvent(close?.[0], 'click');
     await flush();
     expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
   });
