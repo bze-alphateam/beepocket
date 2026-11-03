@@ -81,6 +81,7 @@ function rig(
   const copied: string[] = [];
   const env = {
     scheduler: { every: () => () => undefined, after: () => () => undefined },
+    visibility: { hidden: () => false },
     themeTarget: {
       style: {
         setProperty: (name: string, value: string) => {
