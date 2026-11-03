@@ -48,10 +48,11 @@ describe('openWalletWindow', () => {
     expect(t.created).toEqual([{ ...PLAIN, left: 40, top: 90 }]);
   });
 
-  it('moves up so the bottom stays inside a short browser window', async () => {
-    const t = rig({ left: 0, top: 100, width: 1000, height: 640 });
+  it('moves up so the bottom, title bar included, stays inside a short browser window', async () => {
+    const t = rig({ left: 0, top: 100, width: 1000, height: 660 });
     await openWalletWindow(t.windows, REQUEST);
-    expect(t.created).toEqual([{ ...PLAIN, left: 624, top: 140 }]);
+    // 600 px plus a 40 px allowance for the title bar the window grows by once open.
+    expect(t.created).toEqual([{ ...PLAIN, left: 624, top: 120 }]);
   });
 
   it('never goes above the top of a browser window shorter than the wallet', async () => {

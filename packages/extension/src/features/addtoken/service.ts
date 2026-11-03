@@ -1,5 +1,6 @@
 import type { AddTokenSource, AddTokenView } from '../../protocol';
 import type { SessionStorage } from '../../platform';
+import { showInPopup, type ToolbarPopup } from '../../platform/toolbar-popup';
 import { openWalletWindow, type WalletWindowsLike } from '../../platform/wallet-window';
 import { hostOf, httpsOrigin, isKnownSite, LINK_PATTERN, validCode } from './link';
 import type { LinkSender } from './sender';
@@ -67,6 +68,8 @@ export class AddTokenService {
       session: SessionStorage;
       windows: LinkWindowsLike;
       tabs: LinkTabsLike;
+      /** Shows a link from a page first; a link found at install always gets the window. */
+      popup?: ToolbarPopup;
     },
   ) {}
 
@@ -132,6 +135,7 @@ export class AddTokenService {
         // closed since: open a new one
       }
     }
+    if (url === LINK_WINDOW_URL && (await showInPopup(this.deps.popup))) return;
     const created = await openWalletWindow(this.deps.windows, url);
     if (created?.id !== undefined) {
       const tabId = created.tabs?.[0]?.id;

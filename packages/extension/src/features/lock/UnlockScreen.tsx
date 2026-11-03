@@ -7,7 +7,8 @@ import { Banner, Button, Logo, Spinner } from '../../ui';
 import { AppearanceToggle } from '../../popup/appearance';
 import { PasswordForm } from './PasswordForm';
 import { WaitingRequests } from './WaitingRequests';
-import { homeTarget, importTarget } from './targets';
+import { hasRequests } from './StateSupervisor';
+import { homeTarget, importTarget, requestTarget } from './targets';
 
 type Load =
   { status: 'loading' } | { status: 'failed' } | { status: 'ready'; retryAt: number | null };
@@ -86,8 +87,8 @@ export function UnlockPanel(props: UnlockPanelProps) {
 }
 
 /**
- * The unlock route of the popup. With requests waiting, a full lock has no other screen to
- * keep: unlocking opens the request window and closes the popup.
+ * The unlock route of the popup. With requests waiting, unlocking continues to the request
+ * right here, in the popup.
  */
 export function UnlockScreen() {
   const client = useClient();
@@ -96,12 +97,8 @@ export function UnlockScreen() {
     <UnlockPanel
       waiting
       onUnlocked={() => {
-        void client.call('dapp.queue', {}).then(async (queue) => {
-          if (queue.ok && queue.value.count > 0 && (await client.call('dapp.open', {})).ok) {
-            window.close();
-            return;
-          }
-          navigate(homeTarget);
+        void hasRequests(client).then((waiting) => {
+          navigate(waiting ? requestTarget : homeTarget);
         });
       }}
     />

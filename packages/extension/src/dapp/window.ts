@@ -1,4 +1,5 @@
 import type { SessionStorage } from '../platform';
+import { showInPopup, type ToolbarPopup } from '../platform/toolbar-popup';
 import { openWalletWindow, type WalletWindowsLike } from '../platform/wallet-window';
 import { WINDOW_KEY } from './requests';
 
@@ -9,11 +10,16 @@ export interface WindowsLike extends WalletWindowsLike<{ id?: number | undefined
 
 export const REQUEST_URL = 'popup.html?window=request';
 
-/** The one request window: opened when a request needs the user, focused when already open. */
+/**
+ * Where a request is shown: the toolbar popup when the browser can open it, else the one request
+ * window, opened when a request needs the user and focused when already open. A popup dismissed
+ * by a click elsewhere leaves the queue as it is; closing the window rejects it.
+ */
 export class RequestWindow {
   constructor(
     private readonly windows: WindowsLike,
     private readonly session: SessionStorage,
+    private readonly popup?: ToolbarPopup,
   ) {}
 
   private tail: Promise<unknown> = Promise.resolve();
@@ -39,6 +45,7 @@ export class RequestWindow {
         // closed since: open a new one
       }
     }
+    if (await showInPopup(this.popup)) return;
     const created = await openWalletWindow(this.windows, REQUEST_URL);
     if (created?.id !== undefined) await this.session.set(WINDOW_KEY, created.id);
   }

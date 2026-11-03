@@ -5,6 +5,8 @@ export const WALLET_WINDOW = { width: 360, height: 600 } as const;
 const RIGHT_GAP = 16;
 /** Drop below the browser's tab strip and toolbar, where the extension icon sits. */
 const TOP_OFFSET = 80;
+/** Room for the title bar the window grows by once open (`fitWalletWindow`), so it still fits. */
+const FRAME_ALLOWANCE = 40;
 
 /** What `chrome.windows.create` takes for a wallet window. */
 export interface WalletWindowCreate {
@@ -53,7 +55,8 @@ async function placement(
   }
   if (state === 'minimized') return null;
   const x = Math.max(left, left + width - WALLET_WINDOW.width - RIGHT_GAP);
-  const y = Math.max(top, Math.min(top + TOP_OFFSET, top + height - WALLET_WINDOW.height));
+  const bottom = top + height - WALLET_WINDOW.height - FRAME_ALLOWANCE;
+  const y = Math.max(top, Math.min(top + TOP_OFFSET, bottom));
   return { left: Math.round(x), top: Math.round(y) };
 }
 

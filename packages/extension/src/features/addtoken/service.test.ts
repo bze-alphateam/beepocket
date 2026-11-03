@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionStorage } from '../../platform';
+import type { ToolbarPopup } from '../../platform/toolbar-popup';
 import type { WindowBounds } from '../../platform/wallet-window';
 import { AddTokenService, type LinkTabsLike, type LinkWindowsLike } from './service';
 
@@ -29,7 +30,12 @@ interface Tab {
 
 function rig(
   tabs: Tab[] = [],
-  opts: { failCreate?: boolean; noTabs?: boolean; browser?: WindowBounds } = {},
+  opts: {
+    failCreate?: boolean;
+    noTabs?: boolean;
+    browser?: WindowBounds;
+    popup?: ToolbarPopup;
+  } = {},
 ) {
   const session = new MemorySession();
   const open = new Set<number>();
@@ -66,7 +72,12 @@ function rig(
       return Promise.resolve({});
     },
   };
-  const service = new AddTokenService({ session, windows, tabs: link });
+  const service = new AddTokenService({
+    session,
+    windows,
+    tabs: link,
+    ...(opts.popup === undefined ? {} : { popup: opts.popup }),
+  });
   return { service, session, open, created, focused, reloaded };
 }
 
@@ -95,6 +106,29 @@ describe('a link from the add page', () => {
     await t.service.receive({ documentId: 'd1' }, { code: GOLD, referrer: '' });
     expect(t.created).toEqual([
       { url: 'popup.html?window=add-token', width: 360, height: 600, left: 924, top: 130 },
+    ]);
+  });
+
+  it('shows a link in the toolbar popup first, and opens the window when it cannot', async () => {
+    let opens = 0;
+    const popup = (fail: boolean): ToolbarPopup => ({
+      isOpen: () => Promise.resolve(false),
+      open: () => {
+        opens++;
+        return fail ? Promise.reject(new Error('no window')) : Promise.resolve();
+      },
+    });
+    const shown = rig([], { popup: popup(false) });
+    await shown.service.receive({ documentId: 'd1' }, { code: GOLD, referrer: '' });
+    expect(opens).toBe(1);
+    expect(shown.created).toEqual([]);
+    expect(await shown.service.current()).toMatchObject({ status: 'link', code: GOLD });
+
+    const refused = rig([], { popup: popup(true) });
+    await refused.service.receive({ documentId: 'd1' }, { code: GOLD, referrer: '' });
+    expect(opens).toBe(2);
+    expect(refused.created).toEqual([
+      { url: 'popup.html?window=add-token', width: 360, height: 600 },
     ]);
   });
 
@@ -196,6 +230,21 @@ describe('first install', () => {
     await t.service.installed('install');
     expect(t.created).toEqual([{ url: 'popup.html?window=onboarding', width: 360, height: 600 }]);
     expect(await t.service.current()).toMatchObject({ source: 'install', code: GOLD });
+  });
+
+  it('always opens the onboarding window, never the toolbar popup', async () => {
+    let opens = 0;
+    const popup: ToolbarPopup = {
+      isOpen: () => Promise.resolve(false),
+      open: () => {
+        opens++;
+        return Promise.resolve();
+      },
+    };
+    const t = rig([tab(GOLD, 1)], { popup });
+    await t.service.installed('install');
+    expect(opens).toBe(0);
+    expect(t.created).toEqual([{ url: 'popup.html?window=onboarding', width: 360, height: 600 }]);
   });
 
   it('ignores an update, a browser update and a missing tab', async () => {

@@ -8,3 +8,6 @@ export const homeTarget: RouteBase = { name: 'home.main' };
 export const onboardingTarget: RouteBase = { name: 'onboarding.welcome' };
 export const importTarget: RouteBase = { name: 'onboarding.import' };
 export const unlockTarget: RouteBase = { name: 'lock.unlock' };
+/** The queue head, shown in the toolbar popup too; it follows the lock state itself. */
+export const requestTarget: RouteBase = { name: 'dapp.request' };
+export const addTokenTarget: RouteBase = { name: 'addtoken.main' };

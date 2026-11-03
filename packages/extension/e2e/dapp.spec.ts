@@ -117,6 +117,30 @@ test('the actions stay on screen when the title bar takes part of the window', a
   }
 });
 
+test('the toolbar popup shows the waiting request with its actions in view', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const { dapp, stop } = await openDapp(context);
+  try {
+    await connect(context, dapp);
+    // The popup page itself, at the toolbar popup's 360 × 600.
+    const popup = await context.newPage();
+    await popup.setViewportSize({ width: 360, height: 600 });
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(popup.getByRole('heading', { name: 'Connection request' })).toBeVisible();
+    await expect(popup.getByRole('button', { name: 'Cancel' })).toBeInViewport({ ratio: 1 });
+    const approve = popup.getByRole('button', { name: 'Connect', exact: true });
+    await expect(approve).toBeInViewport({ ratio: 1 });
+    await approve.click();
+    await expect(dapp.getByRole('status')).toHaveText(/name Main$/);
+  } finally {
+    stop();
+  }
+});
+
 test('a fully locked wallet shows unlock first, then the connect screen', async ({
   context,
   extensionId,
@@ -209,6 +233,8 @@ test('a fully locked wallet shows the waiting card in the popup; unlocking there
     await expect(lockPage.getByText('It stays connected.')).toBeVisible();
     await lockPage.getByLabel('Password').fill(PASSWORD);
     await lockPage.getByRole('button', { name: 'Unlock' }).click();
+    // The popup continues to the request in place.
+    await expect(lockPage.getByRole('heading', { name: 'Connection request' })).toBeVisible();
     await expect(request.getByRole('heading', { name: 'Connection request' })).toBeVisible();
   } finally {
     stop();
