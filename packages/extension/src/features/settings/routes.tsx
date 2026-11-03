@@ -1,15 +1,11 @@
 import type { RouteTable } from '../../popup/router';
-import { chromeManifest } from './manifest';
 import { PickTokensScreen } from './PickTokensScreen';
-import { SettingsScreen } from './SettingsScreen';
 
-export type SettingsRoute = { name: 'settings.main' } | { name: 'settings.pickTokens' };
-
-function SettingsMain() {
-  return <SettingsScreen manifest={chromeManifest} />;
+/** `settings.main` is Home with the Settings sheet open: the home feature registers it. */
+export interface SettingsRoute {
+  name: 'settings.pickTokens';
 }
 
 export const settingsRoutes: RouteTable<SettingsRoute> = {
-  'settings.main': SettingsMain,
   'settings.pickTokens': PickTokensScreen,
 };

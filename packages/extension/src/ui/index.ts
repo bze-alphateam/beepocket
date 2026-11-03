@@ -73,3 +73,4 @@ export { StrengthMeter, type StrengthMeterProps } from './StrengthMeter';
 export { Swatches, type SwatchesProps } from './Swatches';
 export { TokenRow, type TokenRowProps } from './TokenRow';
 export { InlineNote, type InlineNoteProps } from './InlineNote';
+export { SettingsRow, type SettingsRowProps } from './SettingsRow';

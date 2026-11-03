@@ -1,4 +1,4 @@
-/* Screen layout of the shell, settings, address book and lock. The kit lives in ui.css. */
+/* Screen layout of the shell, settings and lock. The kit lives in ui.css. */
 
 .bp-splash {
   display: flex;
@@ -17,49 +17,52 @@
   color: var(--bp-accent-text, #3dd07a);
 }
 
-/* settings */
-.bp-settings {
+/* Settings sheet (W-Settings): plain rows, then the footer. */
+.bp-settings-list {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+}
+
+.bp-settings-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 8px;
+  color: var(--bp-faint);
+  font-size: 12px;
+}
+
+.bp-settings-footer-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
 }
 
-.bp-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--bp-soft-line);
-  border-radius: 12px;
-  background: var(--bp-soft);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+.bp-settings-footer-line > .bp-logo {
+  flex: none;
 }
 
-.bp-row-text {
+.bp-settings-reveal {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 12px;
 }
 
-.bp-row-text small {
-  opacity: 0.7;
+/* Settings › Preferred tokens: the onboarding picker under a screen header. */
+.bp-settings-tokens {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 16px 16px;
 }
 
-.bp-about {
-  cursor: default;
-}
-
-.bp-phrase {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  margin: 12px 0;
-  padding-left: 20px;
-  font-size: 12px;
+.bp-settings-landing {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .bp-lock {

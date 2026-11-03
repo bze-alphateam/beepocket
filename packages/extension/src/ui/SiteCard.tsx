@@ -5,11 +5,16 @@ import { Icon } from './icons';
 export interface SiteCardProps {
   /** The site's origin as the browser reported it, shown in full after the lock. */
   origin: string;
-  /** `lg`: the 44 px avatar of a connect request. `sm`: the 32 px one of sign and add-a-token. */
-  size?: 'lg' | 'sm' | undefined;
+  /**
+   * `lg`: the 44 px avatar of a connect request. `sm`: the 32 px one of sign and add-a-token.
+   * `md`: the 40 px one of a Connected sites card, borderless inside that card.
+   */
+  size?: 'lg' | 'md' | 'sm' | undefined;
   /** Right column: "Signs with **Main**" or "sent you here". */
   aside?: ComponentChildren;
 }
+
+const AVATAR = { lg: 44, md: 40, sm: 32 } as const;
 
 /** The host of an origin, or the origin itself when it does not parse. */
 function hostOf(origin: string): string {
@@ -28,7 +33,7 @@ export function SiteCard({ origin, size = 'sm', aside }: SiteCardProps) {
   const host = hostOf(origin);
   return (
     <div class={`bp-site-card bp-site-card-${size}`}>
-      <Avatar label={host} kind="site" size={size === 'lg' ? 44 : 32} />
+      <Avatar label={host} kind="site" size={AVATAR[size]} />
       <span class="bp-site-card-text">
         <span class="bp-site-card-name">{host}</span>
         <span class="bp-site-card-origin">

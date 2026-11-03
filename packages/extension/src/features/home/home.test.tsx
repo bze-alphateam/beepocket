@@ -17,6 +17,7 @@ import { ClientProvider } from '../../popup/client-context';
 import { Router, type RouteTable } from '../../popup/router';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { Home, type HomeRoute, type SendTarget, type SettingsTarget } from './Home';
+import { SettingsEnvProvider } from '../settings/env';
 import { HomeEnvProvider, type HomeEnv } from './env';
 import { registerHomeTab } from './tabs';
 
@@ -136,6 +137,15 @@ function setup(
       return ok({ address: renamed });
     },
     'wallet.lock': () => ok({}),
+    'settings.get': () =>
+      ok({ brandThemes: w.brandThemes, weakLockMinutes: 15, fullLockMinutes: 60 }),
+    'network.get': () => ok({ id: w.network }),
+    'network.set': (r) => {
+      w.network = r.id;
+      return ok({ id: r.id });
+    },
+    'book.list': () => ok({ contacts: [], own: [] }),
+    'sites.list': () => ok({ network: w.network, sites: [], addresses: [] }),
   };
   const gates = new Map<string, Promise<void>>();
   const hold = (method: string) => {
@@ -198,6 +208,10 @@ function setup(
       },
     },
   };
+  const settingsEnv = {
+    manifest: { version: () => '1.0.0' },
+    clipboard: { writeText: () => Promise.resolve() },
+  };
   const seen: { name: string }[] = [];
   const Marker = (props: { route: SendTarget | SettingsTarget }) => {
     seen.push(props.route);
@@ -211,7 +225,9 @@ function setup(
   const { host } = render(
     <ClientProvider client={client}>
       <HomeEnvProvider env={env}>
-        <Router<HomeRoute | SendTarget | SettingsTarget> table={table} initial={route} />
+        <SettingsEnvProvider env={settingsEnv}>
+          <Router<HomeRoute | SendTarget | SettingsTarget> table={table} initial={route} />
+        </SettingsEnvProvider>
       </HomeEnvProvider>
     </ClientProvider>,
   );
@@ -470,7 +486,27 @@ describe('header', () => {
     expect(byLabel(s.host, 'Switch to light mode')).not.toBeNull();
     expect(byLabel(s.host, 'Lock wallet')).toBeNull();
     click(byLabel(s.host, 'Settings'));
-    expect(s.seen).toEqual([{ name: 'settings.main' }]);
+    await s.tick();
+    // Settings is a sheet over Home, not another screen.
+    expect(s.seen).toEqual([]);
+    expect(s.host.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Settings');
+    expect(text(s.host)).toContain('1,234.56789');
+  });
+
+  it('reads its data again after Testnet is switched on in the Settings sheet', async () => {
+    const s = setup();
+    await s.tick();
+    expect(s.host.querySelector('.bp-pill')).toBeNull();
+    click(byLabel(s.host, 'Settings'));
+    await s.tick();
+    const testnet = [...s.host.querySelectorAll('[role="switch"]')].find((x) =>
+      x.textContent.includes('Testnet'),
+    );
+    click(testnet ?? null);
+    await s.tick();
+    expect(s.w.network).toBe('testnet');
+    expect(s.host.querySelector('.bp-home-header .bp-pill')?.textContent).toBe('Testnet');
+    expect(s.host.querySelector('[role="dialog"]')).not.toBeNull();
   });
 });
 

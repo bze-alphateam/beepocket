@@ -10,9 +10,21 @@ import {
   type ConnectedSiteView,
   type ResponseOf,
 } from '../../protocol';
-import { Banner, Button, Sheet, Spinner } from '../../ui';
+import {
+  Banner,
+  BottomActions,
+  Button,
+  EmptyState,
+  Icon,
+  RadioList,
+  ScreenHeader,
+  Sheet,
+  SiteCard,
+  Spinner,
+} from '../../ui';
 
 type Listing = ResponseOf<'sites.list'>;
+type Outcome = { ok: true } | { ok: false; error: { code: string } };
 
 /** The hostname, plus the port when it is not the default one; the scheme when it is not https. */
 export function siteName(origin: string): string {
@@ -24,46 +36,25 @@ export function siteName(origin: string): string {
   }
 }
 
-function networkName(id: Listing['network']): string {
-  return id === 'mainnet' ? t('settings.network.mainnet') : t('settings.network.testnet');
-}
-
+/** `W-Sites-Change`: the address a site sees, one Save. */
 function ChangeSheet(props: {
   site: ConnectedSiteView;
   addresses: Listing['addresses'];
   busy: boolean;
+  /** A failed save, shown in the sheet: the screen's banner would sit behind it. */
+  error: string | null;
   onSave: (index: number) => void;
   onClose: () => void;
 }) {
   const current = props.addresses.find((a) => a.address === props.site.address);
   const [index, setIndex] = useState(current?.index ?? props.addresses[0]?.index ?? 0);
+  const name = siteName(props.site.origin);
   return (
     <Sheet
       open
-      title={t('sites.change.title', { site: siteName(props.site.origin) })}
+      title={t('sites.change.title', { site: name })}
       onClose={props.onClose}
-    >
-      <fieldset class="bp-dapp-picker">
-        {props.addresses.map((a) => (
-          <label key={a.index} class="bp-dapp-option">
-            <input
-              type="radio"
-              name="site-address"
-              checked={a.index === index}
-              disabled={props.busy}
-              onChange={() => {
-                setIndex(a.index);
-              }}
-            />
-            <span class="bp-dapp-label">{a.label}</span>
-            <span class="bp-dapp-short">{shortAddress(a.address)}</span>
-          </label>
-        ))}
-      </fieldset>
-      <div class="bp-dapp-actions">
-        <Button variant="quiet" disabled={props.busy} onClick={props.onClose}>
-          {t('sites.change.cancel')}
-        </Button>
+      actions={
         <Button
           disabled={props.busy}
           onClick={() => {
@@ -72,8 +63,77 @@ function ChangeSheet(props: {
         >
           {t('sites.change.save')}
         </Button>
-      </div>
+      }
+    >
+      {props.error !== null && (
+        <div class="bp-sites-error">
+          <Banner tone="red">{props.error}</Banner>
+        </div>
+      )}
+      <RadioList
+        label={t('sites.change.pick', { site: name })}
+        value={index}
+        disabled={props.busy}
+        onChange={setIndex}
+        options={props.addresses.map((a) => ({
+          value: a.index,
+          title: a.label,
+          subtitle: shortAddress(a.address),
+        }))}
+      />
+      <p class="bp-sites-note">{t('sites.change.note', { site: name })}</p>
     </Sheet>
+  );
+}
+
+/** One connected site (`W-Sites`): who it is, Disconnect, the address it sees and since when. */
+function SiteItem(props: {
+  site: ConnectedSiteView;
+  busy: boolean;
+  onChange: () => void;
+  onDisconnect: () => void;
+}) {
+  const { site } = props;
+  const name = siteName(site.origin);
+  const since = new Date(site.connectedAt).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+  });
+  return (
+    <li class="bp-sites-item">
+      <SiteCard
+        origin={site.origin}
+        size="md"
+        aside={
+          <button
+            type="button"
+            class="bp-sites-disconnect"
+            aria-label={t('sites.disconnect.label', { site: name })}
+            disabled={props.busy}
+            onClick={props.onDisconnect}
+          >
+            {t('sites.disconnect')}
+          </button>
+        }
+      />
+      <button
+        type="button"
+        class="bp-sites-sees"
+        aria-haspopup="dialog"
+        aria-label={t('sites.change.label', { site: name, label: site.label })}
+        disabled={props.busy}
+        onClick={props.onChange}
+      >
+        <span class="bp-sites-sees-caption">{t('sites.sees')}</span>
+        <span class="bp-sites-sees-who">
+          <span class="bp-sites-sees-label">{site.label}</span>
+          <span class="bp-mono">{shortAddress(site.address)}</span>
+        </span>
+        <span class="bp-sites-sees-change">{t('sites.change')}</span>
+        <Icon name="chevron-right" size={14} strokeWidth={2.2} />
+      </button>
+      <span class="bp-sites-since">{t('sites.since', { date: since })}</span>
+    </li>
   );
 }
 
@@ -97,13 +157,16 @@ export function ConnectedSitesScreen() {
     void load();
   }, [load]);
 
-  const run = async (
-    call: () => Promise<{ ok: true } | { ok: false; error: { code: string } }>,
-  ) => {
+  /** Runs the calls one by one and stops at the first failure. */
+  const run = async (calls: (() => Promise<Outcome>)[]) => {
     if (busy) return;
     setBusy(true);
     setError(null);
-    const r = await call();
+    let r: Outcome = { ok: true };
+    for (const call of calls) {
+      r = await call();
+      if (!r.ok) break;
+    }
     setBusy(false);
     if (r.ok) {
       setChanging(null);
@@ -117,19 +180,17 @@ export function ConnectedSitesScreen() {
     }
     await load();
   };
+  const disconnect = (origin: string) => () => client.call('sites.disconnect', { origin });
 
   const header = (
-    <>
-      <Button
-        variant="quiet"
-        onClick={() => {
-          navigate({ name: 'settings.main' });
-        }}
-      >
-        {t('sites.back')}
-      </Button>
-      <strong>{t('sites.title')}</strong>
-    </>
+    <ScreenHeader
+      title={t('sites.title')}
+      backLabel={t('sites.back')}
+      onBack={() => {
+        navigate({ name: 'settings.main' });
+      }}
+      right={listing && <span class="bp-sites-count">{listing.sites.length}</span>}
+    />
   );
 
   if (failed) {
@@ -147,59 +208,62 @@ export function ConnectedSitesScreen() {
     );
   }
 
+  const { sites } = listing;
   return (
-    <Layout header={header}>
+    <Layout
+      header={header}
+      footer={
+        sites.length > 1 ? (
+          <BottomActions>
+            <Button
+              variant="secondary"
+              class="bp-sites-all"
+              disabled={busy}
+              onClick={() => {
+                void run(sites.map((s) => disconnect(s.origin)));
+              }}
+            >
+              {t('sites.disconnectAll')}
+            </Button>
+          </BottomActions>
+        ) : undefined
+      }
+    >
       <main class="bp-sites">
-        {error !== null && <Banner tone="red">{error}</Banner>}
-        {listing.sites.length === 0 && (
-          <p class="bp-sites-empty">
-            {t('sites.empty', { network: networkName(listing.network) })}
-          </p>
+        <p class="bp-sites-sub">{t('sites.sub')}</p>
+        {error !== null && changing === null && <Banner tone="red">{error}</Banner>}
+        {sites.length === 0 ? (
+          <EmptyState icon="link" title={t('sites.empty')} sub={t('sites.empty.sub')} />
+        ) : (
+          <ul class="bp-sites-list">
+            {sites.map((site) => (
+              <SiteItem
+                key={site.origin}
+                site={site}
+                busy={busy}
+                onChange={() => {
+                  setChanging(site);
+                }}
+                onDisconnect={() => {
+                  void run([disconnect(site.origin)]);
+                }}
+              />
+            ))}
+          </ul>
         )}
-        <ul class="bp-sites-list">
-          {listing.sites.map((site) => (
-            <li key={site.origin} class="bp-sites-item">
-              <strong class="bp-sites-origin">{siteName(site.origin)}</strong>
-              <small>
-                {t('sites.sees', { label: site.label, address: shortAddress(site.address) })}
-              </small>
-              <small>
-                {t('sites.since', { date: new Date(site.connectedAt).toLocaleDateString() })}
-              </small>
-              <div class="bp-sites-actions">
-                <Button
-                  variant="quiet"
-                  disabled={busy}
-                  onClick={() => {
-                    setChanging(site);
-                  }}
-                >
-                  {t('sites.change')}
-                </Button>
-                <Button
-                  variant="quiet"
-                  disabled={busy}
-                  onClick={() => {
-                    void run(() => client.call('sites.disconnect', { origin: site.origin }));
-                  }}
-                >
-                  {t('sites.disconnect')}
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
       </main>
       {changing !== null && (
         <ChangeSheet
           site={changing}
           addresses={listing.addresses}
           busy={busy}
+          error={error}
           onSave={(index) => {
-            void run(() => client.call('sites.change', { origin: changing.origin, index }));
+            void run([() => client.call('sites.change', { origin: changing.origin, index })]);
           }}
           onClose={() => {
             setChanging(null);
+            setError(null);
           }}
         />
       )}

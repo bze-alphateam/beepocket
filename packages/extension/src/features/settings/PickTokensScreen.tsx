@@ -1,11 +1,12 @@
 import type { NetworkId } from '@beepocket/core';
-import { useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import { Layout } from '../../popup/Layout';
 import { useRoute, type RouteBase } from '../../popup/router';
-import { Banner, Button } from '../../ui';
+import { Banner, BottomBar, Button, InlineNote, ScreenHeader } from '../../ui';
 import { homeTarget } from '../lock/targets';
+import { TokenPicker } from '../tokens/TokenPicker';
 import { NetworkPill } from './NetworkPill';
 
 const networkName: Record<NetworkId, string> = {
@@ -13,69 +14,146 @@ const networkName: Record<NetworkId, string> = {
   testnet: t('settings.network.testnet'),
 };
 
+const SETTINGS: RouteBase = { name: 'settings.main' };
+
+/** What the screen opened on: the network and the tokens picked on it then. */
+interface Start {
+  network: NetworkId;
+  picked: string[];
+}
+
 /**
- * Where a network switch lands when that network has no preferred token yet. Minimal on
- * purpose: add BZE or switch to the other network (the onboarding token step is not shared yet).
+ * Settings › Preferred tokens, on the onboarding token picker. It is also where a network switch
+ * lands when that network has no preferred token yet: then there is no way back to a Home with
+ * nothing to show, only picking tokens or switching to the other network.
  */
 export function PickTokensScreen() {
   const client = useClient();
   const { navigate } = useRoute<RouteBase>();
-  const [network, setNetwork] = useState<NetworkId | null>(null);
+  const [start, setStart] = useState<Start | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
   const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let live = true;
-    void client.call('network.get', {}).then((r) => {
-      if (live && r.ok) setNetwork(r.value.id);
-    });
-    return () => {
-      live = false;
-    };
+  const read = useCallback(async () => {
+    const [network, tokens] = await Promise.all([
+      client.call('network.get', {}),
+      client.call('tokens.preferred', {}),
+    ]);
+    if (!network.ok || !tokens.ok) {
+      setFailed(true);
+      return null;
+    }
+    const picked = tokens.value.map((x) => x.denom);
+    setStart({ network: network.value.id, picked });
+    setSelected(picked);
+    return picked;
   }, [client]);
 
-  const addBze = async () => {
+  useEffect(() => {
+    void read();
+  }, [read]);
+
+  const toggle = (denom: string) => {
+    setSelected((s) => (s.includes(denom) ? s.filter((d) => d !== denom) : [...s, denom]));
+  };
+
+  /** Adds the new picks first, so removing never meets the last-token rule halfway. */
+  const save = async () => {
+    if (!start || busy) return;
+    setBusy(true);
     setFailed(false);
-    const r = await client.call('tokens.add', { denom: 'ubze' });
-    if (r.ok) navigate(homeTarget);
-    else setFailed(true);
+    const added = selected.filter((d) => !start.picked.includes(d));
+    const removed = start.picked.filter((d) => !selected.includes(d));
+    // A failed add stops the save before anything is removed: never a half-applied set.
+    let ok = true;
+    for (const denom of added) {
+      ok = (await client.call('tokens.add', { denom })).ok;
+      if (!ok) break;
+    }
+    for (const denom of ok ? removed : []) {
+      ok = (await client.call('tokens.remove', { denom })).ok;
+      if (!ok) break;
+    }
+    setBusy(false);
+    if (ok) navigate(SETTINGS);
+    else {
+      setFailed(true);
+      await read();
+    }
   };
 
   const switchNetwork = async () => {
+    if (!start) return;
     setFailed(false);
-    const other: NetworkId = network === 'testnet' ? 'mainnet' : 'testnet';
+    const other: NetworkId = start.network === 'testnet' ? 'mainnet' : 'testnet';
     const r = await client.call('network.set', { id: other });
     if (!r.ok) {
       setFailed(true);
       return;
     }
-    setNetwork(r.value.id);
-    const tokens = await client.call('tokens.preferred', {});
-    if (tokens.ok && tokens.value.length > 0) navigate(homeTarget);
+    const picked = await read();
+    if (picked !== null && picked.length > 0) navigate(homeTarget);
   };
 
-  if (network === null) return <Layout>{null}</Layout>;
+  if (start === null) {
+    return <Layout>{failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}</Layout>;
+  }
+  const landing = start.picked.length === 0;
+  const note =
+    selected.length === 0
+      ? t('settings.tokens.none')
+      : t('settings.tokens.selected', { count: selected.length });
   return (
-    <Layout header={<NetworkPill network={network} />}>
-      <main class="bp-settings">
-        <h1>{t('settings.network.pick.title')}</h1>
-        <p>{t('settings.network.pick.body', { network: networkName[network] })}</p>
-        {failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}
-        <Button
-          onClick={() => {
-            void addBze();
-          }}
-        >
-          {t('settings.network.pick.add')}
-        </Button>
-        <Button
-          variant="quiet"
-          onClick={() => {
-            void switchNetwork();
-          }}
-        >
-          {t('settings.network.pick.switch')}
-        </Button>
-      </main>
+    <Layout
+      header={
+        <ScreenHeader
+          title={landing ? t('settings.network.pick.title') : t('settings.tokens')}
+          onBack={
+            landing
+              ? undefined
+              : () => {
+                  navigate(SETTINGS);
+                }
+          }
+          right={<NetworkPill network={start.network} />}
+        />
+      }
+      footer={
+        <BottomBar note={note}>
+          <Button
+            disabled={selected.length === 0 || busy}
+            onClick={() => {
+              void save();
+            }}
+          >
+            {t('settings.tokens.save')}
+          </Button>
+        </BottomBar>
+      }
+    >
+      <section class="bp-settings-tokens">
+        {landing && (
+          <div class="bp-settings-landing">
+            <InlineNote tone="neutral" icon="alert-circle">
+              {t('settings.network.pick.body', { network: networkName[start.network] })}
+            </InlineNote>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                void switchNetwork();
+              }}
+            >
+              {t('settings.network.pick.switch')}
+            </Button>
+          </div>
+        )}
+        <TokenPicker
+          selected={selected}
+          onToggle={toggle}
+          notice={failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}
+        />
+      </section>
     </Layout>
   );
 }

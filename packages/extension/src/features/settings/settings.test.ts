@@ -102,6 +102,34 @@ describe('settings handlers', () => {
     expect(await t.call('settings.get', {})).toMatchObject({ value: { fullLockMinutes: 60 } });
   });
 
+  it('accepts only the lock times Settings offers, changing nothing otherwise', async () => {
+    const t = await unlocked();
+    for (const patch of [
+      { weakLockMinutes: 7 },
+      { fullLockMinutes: 90 },
+      { weakLockMinutes: 10081 },
+      { fullLockMinutes: -60 },
+      { weakLockMinutes: Number.NaN },
+    ]) {
+      expect(code(await t.call('settings.set', patch))).toBe(WalletErrorCodes.invalidSettings);
+    }
+    expect(await t.call('settings.get', {})).toMatchObject({
+      value: { weakLockMinutes: 15, fullLockMinutes: 60 },
+    });
+    expect(Object.fromEntries(t.alarms.active)).toEqual({ 'full-lock': 60, 'weak-lock': 15 });
+    for (const [weak, full] of [
+      [1, 2],
+      [30, 1440],
+      [10080, 10080],
+    ] as const) {
+      const r = await t.call('settings.set', { weakLockMinutes: weak, fullLockMinutes: full });
+      expect(r).toMatchObject({
+        ok: true,
+        value: { weakLockMinutes: weak, fullLockMinutes: full },
+      });
+    }
+  });
+
   it('rejects malformed patches', async () => {
     const t = await unlocked();
     for (const bad of [{ brandThemes: 'yes' }, { weakLockMinutes: '5' }, [1]]) {

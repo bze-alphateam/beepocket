@@ -43,7 +43,9 @@ const settle = () =>
     await new Promise((r) => setTimeout(r, 0));
   });
 const button = (host: HTMLElement, name: string) =>
-  [...host.querySelectorAll('button')].find((b) => b.textContent === name);
+  [...host.querySelectorAll('button')].find(
+    (b) => b.textContent === name || b.getAttribute('aria-label')?.startsWith(name),
+  );
 
 const listing = (sites: unknown[], network = 'mainnet') =>
   ok({ network, sites, addresses: ADDRESSES });
@@ -53,16 +55,38 @@ describe('Connected sites', () => {
     const t = rig({ 'sites.list': () => listing([SITE]) });
     await settle();
     expect(t.host.textContent).toContain('http://localhost:5173');
-    expect(t.host.textContent).toContain('Sees Savings');
+    expect(t.host.querySelector('.bp-sites-sees')?.textContent).toContain('SeesSavings');
     expect(t.host.textContent).toContain('Connected ');
+    expect(t.host.textContent).toContain('Each site sees one address.');
     expect(button(t.host, 'Change')).toBeDefined();
     expect(button(t.host, 'Disconnect')).toBeDefined();
   });
 
-  it('shows the empty state for the active network', async () => {
+  it('shows the empty state', async () => {
     const t = rig({ 'sites.list': () => listing([], 'testnet') });
     await settle();
-    expect(t.host.textContent).toContain('No sites connected on Testnet');
+    expect(t.host.textContent).toContain('No connected sites');
+    expect(t.host.textContent).toContain('you pick one address for it');
+    expect(button(t.host, 'Disconnect all sites')).toBeUndefined();
+  });
+
+  it('counts the sites in the header and disconnects them all, one by one', async () => {
+    const other = { ...SITE, origin: 'https://dex.getbze.com' };
+    let sites = [SITE, other];
+    const t = rig({
+      'sites.list': () => listing(sites),
+      'sites.disconnect': (req) => {
+        sites = sites.filter((s) => s.origin !== (req as { origin: string }).origin);
+        return ok({});
+      },
+    });
+    await settle();
+    expect(t.host.querySelector('.bp-sites-count')?.textContent).toBe('2');
+    fireEvent(button(t.host, 'Disconnect all sites'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: SITE.origin });
+    expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: other.origin });
+    expect(t.host.textContent).toContain('No connected sites');
   });
 
   it('Disconnect calls the worker at once, without a confirmation', async () => {
@@ -78,7 +102,7 @@ describe('Connected sites', () => {
     fireEvent(button(t.host, 'Disconnect'), 'click');
     await settle();
     expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: SITE.origin });
-    expect(t.host.textContent).toContain('No sites connected on Mainnet');
+    expect(t.host.textContent).toContain('No connected sites');
   });
 
   it('Change opens a sheet with the current address preselected and saves the pick', async () => {
@@ -86,13 +110,32 @@ describe('Connected sites', () => {
     await settle();
     fireEvent(button(t.host, 'Change'), 'click');
     await settle();
-    const radios = t.host.querySelectorAll('input[type=radio]');
-    expect((radios[1] as HTMLInputElement).checked).toBe(true);
-    fireEvent(radios[0], 'change');
+    const radios = t.host.querySelectorAll('[role=radio]');
+    expect(radios[1]?.getAttribute('aria-checked')).toBe('true');
+    fireEvent(radios[0], 'click');
     fireEvent(button(t.host, 'Save'), 'click');
     await settle();
     expect(t.call).toHaveBeenCalledWith('sites.change', { origin: SITE.origin, index: 0 });
     expect(t.host.querySelector('[role=dialog]')).toBeNull();
+  });
+
+  it('a failed change keeps the sheet open and shows the error inside it', async () => {
+    const t = rig({
+      'sites.list': () => listing([SITE]),
+      'sites.change': () => fail(WalletErrorCodes.needsPassword, 'locked'),
+    });
+    await settle();
+    fireEvent(button(t.host, 'Change'), 'click');
+    await settle();
+    fireEvent(t.host.querySelectorAll('[role=radio]')[0], 'click');
+    fireEvent(button(t.host, 'Save'), 'click');
+    await settle();
+    const sheet = t.host.querySelector('[role=dialog]');
+    expect(sheet?.querySelector('[role=alert]')?.textContent).toContain('Unlock the wallet');
+    expect(t.host.querySelectorAll('[role=alert]')).toHaveLength(1);
+    // Closing the sheet drops the error with it.
+    fireEvent(t.host.querySelector('.bp-sheet-backdrop'), 'click');
+    expect(t.host.querySelector('[role=alert]')).toBeNull();
   });
 
   it('asks to unlock when the profile cannot be saved in weak lock', async () => {

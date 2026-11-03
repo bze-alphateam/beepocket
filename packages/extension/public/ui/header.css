@@ -7,6 +7,10 @@
   padding: 0 16px 0 6px;
 }
 
+.bp-screen-header-plain {
+  padding-left: 16px;
+}
+
 .bp-screen-header > .bp-btn-icon {
   color: var(--bp-text);
 }

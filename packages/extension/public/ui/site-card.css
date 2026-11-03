@@ -95,3 +95,22 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+/* md: the head of a Connected sites card, which brings its own border and padding. */
+.bp-site-card-md {
+  gap: 12px;
+  border: 0;
+  background: transparent;
+}
+
+.bp-site-card-md .bp-avatar-site {
+  border-radius: 11px;
+}
+
+.bp-site-card-md .bp-site-card-text {
+  gap: 2px;
+}
+
+.bp-site-card-md .bp-site-card-name {
+  font-size: 14px;
+}
