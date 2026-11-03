@@ -487,6 +487,10 @@ describe('fee on the form', () => {
     const dialog = host.querySelector('[role=dialog]');
     expect(dialog?.querySelector('h2')?.textContent).toBe('Pay network fee with');
     expect(dialog?.textContent).toContain('Selected');
+    // Only the options: no intro above them and no note below.
+    expect(dialog?.querySelectorAll('.bp-send-options > p')).toHaveLength(0);
+    expect(dialog?.textContent).not.toContain('Paid from');
+    expect(dialog?.textContent).not.toContain('Only tokens held by this address are listed.');
     await press(host, 'PAGE, ≈ 50.00 PAGE');
     await scheduler.fire();
     expect(prepare).toHaveBeenLastCalledWith(

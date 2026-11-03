@@ -33,12 +33,9 @@ export const send = {
   'send.review.unlock': 'Enter your password to sign',
   'send.review.password': 'Password',
   'send.fee.title': 'Pay network fee with',
-  'send.fee.intro':
-    'Paid from {label}. Pick any token this address holds that the network takes for fees.',
   'send.fee.balance': 'Balance {amount}',
   'send.fee.selected': 'Selected',
   'send.fee.option': '{symbol}, {fee}',
-  'send.fee.note': 'Only tokens held by this address are listed.',
   'send.fee.row': 'Network fee about {fee}. Change fee token',
   'send.fee.row.empty': 'Network fee, shown once the recipient and amount are valid',
   'send.fee.estimating': 'Estimating…',

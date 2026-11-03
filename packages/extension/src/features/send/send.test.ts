@@ -275,6 +275,15 @@ describe('send.prepare', () => {
     expect((await quoteOf(sentToken, { denom: FACTORY })).fee.denom).toBe(FACTORY);
   });
 
+  it('defaults to BZE when the sent token can pay the fee too, with the wallet BZE logo', async () => {
+    const s = setup({ balances: { ubze: 9_000_000n, [FACTORY]: 9_000_000n } });
+    const quote = await quoteOf(s, { denom: FACTORY });
+    expect(quote.fee).toMatchObject({ denom: 'ubze', symbol: 'BZE', logo: '/tokens/bze.png' });
+    expect(quote.options.map((o: { denom: string }) => o.denom)).toEqual(['ubze', FACTORY]);
+    // A token picked in the fee sheet still wins.
+    expect((await quoteOf(s, { denom: FACTORY, feeDenom: FACTORY })).fee.denom).toBe(FACTORY);
+  });
+
   it('refuses with cannot-pay-fee when no eligible token covers the fee', async () => {
     const s = setup({ balances: { ubze: 100n, [OTHER]: 5_000_000n } });
     expect(await s.call('send.prepare', prepareReq({ denom: OTHER }))).toMatchObject({

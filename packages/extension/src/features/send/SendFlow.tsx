@@ -582,7 +582,6 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       {estimate && (
         <FeeSheet
           open={sheet === 'fee'}
-          label={labelOf(estimate.from.index)}
           options={estimate.options}
           selected={estimate.fee.denom}
           onPick={(d) => {

@@ -226,12 +226,6 @@
   min-height: 56px;
 }
 
-.bp-send-sheet-intro {
-  padding: 0 2px 6px;
-  color: var(--bp-muted);
-  font-size: 13px;
-}
-
 .bp-send-sheet-note {
   padding: 6px 2px 0;
   color: var(--bp-faint);

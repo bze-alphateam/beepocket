@@ -1,8 +1,9 @@
-import { FeeEstimator, TokenResolver } from '@beepocket/core';
+import { FeeEstimator } from '@beepocket/core';
 import { ErrorCodes, fail, ok, type Result } from '../../protocol';
 import type { SendPrepareRequest, SendSubmitRequest } from '../../protocol/send';
 import type { HandlerDeps } from '../../background/handlers';
 import type { HandlerRegistry } from '../../background/registry';
+import { createTokenResolver } from '../tokens/resolver';
 import { SendService } from './service';
 
 type Payload = Record<string, unknown>;
@@ -71,15 +72,14 @@ export function registerSendHandlers(
   const { platform, services, wallet } = deps;
   const service = async (): Promise<SendService> => {
     const { network, chain, scan } = await services.clients();
-    const cacheKeyPrefix = `${network.id}:`;
-    const tokens = new TokenResolver(chain, scan, { cache: platform.cache, cacheKeyPrefix });
+    const tokens = createTokenResolver({ chain, scan, cache: platform.cache }, network.id);
     return new SendService({
       network,
       chain,
       tokens,
       fees: new FeeEstimator(chain, platform.clock, {
         cache: platform.cache,
-        cacheKeyPrefix,
+        cacheKeyPrefix: `${network.id}:`,
         tokens,
       }),
       wallet,
