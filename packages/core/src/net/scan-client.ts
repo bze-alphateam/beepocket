@@ -76,7 +76,7 @@ export interface ActivityPage {
 export interface ScanClient {
   /** `null` when Scan does not know the denom. */
   token(denom: string): Promise<ScanToken | null>;
-  /** The registry asset of a denom; `null` when Scan does not list it. */
+  /** The registry asset of a denom; `null` when Scan does not list it (or answers for another). */
   asset(denom: string): Promise<ScanAsset | null>;
   activity(address: string, query: ActivityQuery): Promise<ActivityPage>;
 }
@@ -105,10 +105,12 @@ export class HttpScanClient implements ScanClient {
     const body = await this.getJson(`/api/v1/registry/assets/${encodeURIComponent(denom)}`, true);
     if (body === null) return null;
     const a = v.object(body, '$');
-    return {
+    const asset = {
       denom: v.string(v.field(a, 'denom', '$'), 'denom'),
       logo: v.nullable(v.field(a, 'logo', '$'), 'logo', v.string),
     };
+    // An answer about another denom is not an answer about this one.
+    return asset.denom === denom ? asset : null;
   }
 
   async activity(address: string, query: ActivityQuery): Promise<ActivityPage> {

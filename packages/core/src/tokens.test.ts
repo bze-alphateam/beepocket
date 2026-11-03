@@ -243,7 +243,7 @@ describe('TokenResolver cache', () => {
     });
     const cache = new MemoryCache();
     await new TokenResolver(chain, stubScan(), { cache, cacheKeyPrefix: 'test:' }).resolve(VDL);
-    expect([...cache.store.keys()]).toEqual([`test:token:${VDL}`]);
+    expect([...cache.store.keys()].sort()).toEqual([`test:logo:${VDL}`, `test:token:${VDL}`]);
   });
 
   it('does not keep a fallback, so a recovered Scan is picked up', async () => {
@@ -255,7 +255,7 @@ describe('TokenResolver cache', () => {
     const cache = new MemoryCache();
     const resolver = new TokenResolver(chain, stubScan({ token }), { cache });
     expect((await resolver.resolve(IBC)).source).toBe('fallback');
-    expect(cache.store.size).toBe(0);
+    expect(cache.store.has(`token:${IBC}`)).toBe(false);
     expect((await resolver.resolve(IBC)).source).toBe('scan');
   });
 
@@ -295,6 +295,9 @@ describe('TokenResolver cache', () => {
 });
 
 describe('TokenResolver logos', () => {
+  /** A logo lookup waits this long for Scan; a failed one is not retried for a minute. */
+  const LOGO_TIMEOUT_MS = 3_000;
+  const LOGO_RETRY_MS = 60_000;
   const LOGO =
     'https://raw.githubusercontent.com/cosmos/chain-registry/master/beezee/images/vdl.png';
 
@@ -305,8 +308,18 @@ describe('TokenResolver logos', () => {
     });
     const scan = stubScan({ asset });
     const cache = new MemoryCache();
-    const resolver = new TokenResolver(chain, scan, { cache, nativeLogo: '/tokens/bze.png' });
-    return { chain, scan, cache, resolver };
+    // The logo timeout never fires unless a test says so.
+    const clock = {
+      at: 1_000_000,
+      now: () => clock.at,
+      sleep: vi.fn<(ms: number) => Promise<void>>(() => new Promise(() => undefined)),
+    };
+    const resolver = new TokenResolver(chain, scan, {
+      cache,
+      nativeLogo: '/tokens/bze.png',
+      clock,
+    });
+    return { chain, scan, cache, clock, resolver };
   }
 
   it("takes the logo from Scan's asset list", async () => {
@@ -334,6 +347,14 @@ describe('TokenResolver logos', () => {
     ['a data: URL', 'data:image/png;base64,AAAA'],
     ['garbage', 'not a url'],
     ['an empty string', ''],
+    ['the host as userinfo', 'https://raw.githubusercontent.com@evil.io/b.png'],
+    ['an upper-case host', 'https://RAW.GITHUBUSERCONTENT.COM/b.png'],
+    ['a trailing-dot host', 'https://raw.githubusercontent.com./b.png'],
+    ['backslashes', 'https:\\\\raw.githubusercontent.com\\b.png'],
+    ['a backslash path', 'https://raw.githubusercontent.com\\@evil.io/b.png'],
+    ['leading whitespace', ' https://raw.githubusercontent.com/b.png'],
+    ['trailing whitespace', 'https://raw.githubusercontent.com/b.png '],
+    ['a tab inside', 'https://raw.githubusercontent.com/b\t.png'],
   ])('drops a logo with %s', async (_, logo) => {
     const { resolver } = setup(vi.fn().mockResolvedValue({ denom: VDL, logo }));
     const info = await resolver.resolve(VDL);
@@ -341,16 +362,32 @@ describe('TokenResolver logos', () => {
     expect(info.logo).toBeNull();
   });
 
-  it('still resolves when Scan is down, and picks the logo up once Scan is back', async () => {
+  it('does not wait for a slow Scan past the logo timeout, and still caches the token', async () => {
+    const t = setup(() => new Promise(() => undefined));
+    t.clock.sleep.mockImplementation(() => Promise.resolve());
+    expect(await t.resolver.resolve(VDL)).toMatchObject({ symbol: 'VDL', logo: null });
+    expect(t.clock.sleep).toHaveBeenCalledWith(LOGO_TIMEOUT_MS);
+    expect(t.cache.ttls.get(`token:${VDL}`)).toBe(TOKEN_TTL_MS);
+    expect(t.cache.ttls.get(`logo:${VDL}`)).toBe(LOGO_RETRY_MS);
+  });
+
+  it('does not ask a failed Scan again for a minute, then picks the logo up', async () => {
     const asset = vi
       .fn()
       .mockRejectedValueOnce(new TransportError('offline'))
       .mockResolvedValue({ denom: VDL, logo: LOGO });
-    const { cache, resolver } = setup(asset);
-    expect(await resolver.resolve(VDL)).toMatchObject({ symbol: 'VDL', logo: null });
-    expect(cache.store.size).toBe(0);
-    expect((await resolver.resolve(VDL)).logo).toBe(LOGO);
-    expect(cache.store.size).toBe(1);
+    const t = setup(asset);
+    expect(await t.resolver.resolve(VDL)).toMatchObject({ symbol: 'VDL', logo: null });
+    t.clock.at += LOGO_RETRY_MS - 1;
+    expect((await t.resolver.resolve(VDL)).logo).toBeNull();
+    expect(asset).toHaveBeenCalledTimes(1);
+    // The token itself was cached despite the failure: the chain is read once.
+    expect(t.chain.denomMetadata).toHaveBeenCalledTimes(1);
+    t.clock.at += 1;
+    expect((await t.resolver.resolve(VDL)).logo).toBe(LOGO);
+    expect((await t.resolver.resolve(VDL)).logo).toBe(LOGO);
+    expect(asset).toHaveBeenCalledTimes(2);
+    expect(t.cache.ttls.get(`logo:${VDL}`)).toBe(TOKEN_TTL_MS);
   });
 
   it('gives ubze the local logo and never asks Scan, also from the cache', async () => {
@@ -361,12 +398,9 @@ describe('TokenResolver logos', () => {
     expect(scan.asset).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['from before logos existed', undefined],
-    ['holding a logo from another host', 'https://example.com/b.png'],
-  ])('reads a cached entry %s again', async (_, logo) => {
-    const { chain, cache, resolver } = setup(vi.fn().mockResolvedValue({ denom: VDL, logo: LOGO }));
-    const entry: Record<string, unknown> = {
+  it('serves a cached token whatever logo it holds, with the logo from its own lookup', async () => {
+    const t = setup(vi.fn().mockResolvedValue({ denom: VDL, logo: LOGO }));
+    t.cache.store.set(`token:${VDL}`, {
       denom: VDL,
       symbol: 'VDL',
       name: 'Vidulum',
@@ -374,11 +408,17 @@ describe('TokenResolver logos', () => {
       kind: 'factory',
       source: 'chain',
       branding: null,
-    };
-    if (logo !== undefined) entry.logo = logo;
-    cache.store.set(`token:${VDL}`, entry);
-    expect((await resolver.resolve(VDL)).logo).toBe(LOGO);
-    expect(chain.denomMetadata).toHaveBeenCalledTimes(1);
+      logo: 'https://example.com/b.png',
+    });
+    expect(await t.resolver.resolve(VDL)).toMatchObject({ name: 'Vidulum', logo: LOGO });
+    expect(t.chain.denomMetadata).not.toHaveBeenCalled();
+  });
+
+  it('asks Scan again over a stored logo the filter would refuse', async () => {
+    const t = setup(vi.fn().mockResolvedValue({ denom: VDL, logo: LOGO }));
+    t.cache.store.set(`logo:${VDL}`, { url: 'https://example.com/b.png' });
+    expect((await t.resolver.resolve(VDL)).logo).toBe(LOGO);
+    expect(t.scan.asset).toHaveBeenCalledTimes(1);
   });
 });
 
