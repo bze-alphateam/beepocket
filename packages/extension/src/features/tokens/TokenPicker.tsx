@@ -28,13 +28,21 @@ export interface TokenPickerProps {
   onToggle: (denom: string) => void;
   /** Between the search field and the list: a failed-save banner, a note. */
   notice?: ComponentChildren;
+  /** Right under the search field: another way to find a token (Settings' token code). */
+  field?: ComponentChildren;
+  /**
+   * Tokens listed whatever the query, ahead of the search answer: the picks the wallet does not
+   * hold, a token found by its code. A denom the answer also has keeps the answer's place.
+   */
+  extra?: readonly ListedToken[];
 }
 
 /**
  * The token picker of onboarding (`Ob-Tokens`) and Settings › Preferred tokens: a search over
- * ubze and every token the wallet holds, one tickable row per token.
+ * ubze and every token the wallet holds, one tickable row per token. A search that could not read
+ * every address still lists what it found, under the error banner.
  */
-export function TokenPicker({ selected, onToggle, notice }: TokenPickerProps) {
+export function TokenPicker({ selected, onToggle, notice, field, extra = [] }: TokenPickerProps) {
   const client = useClient();
   const scheme = useScheme();
   const [query, setQuery] = useState('');
@@ -45,14 +53,18 @@ export function TokenPicker({ selected, onToggle, notice }: TokenPickerProps) {
     void client.call('tokens.search', { query }).then((res) => {
       if (!live) return;
       if (res.ok) {
-        setList(res.value);
-        setFailed(false);
+        setList(res.value.tokens);
+        setFailed(res.value.partial);
       } else setFailed(true);
     });
     return () => {
       live = false;
     };
   }, [client, query]);
+  const rows =
+    list === null
+      ? null
+      : [...extra.filter((x) => !list.some((l) => l.denom === x.denom)), ...list];
   return (
     <>
       <SearchField
@@ -61,10 +73,11 @@ export function TokenPicker({ selected, onToggle, notice }: TokenPickerProps) {
         value={query}
         onInput={setQuery}
       />
+      {field}
       {failed && <Banner tone="red">{t('app.error.generic')}</Banner>}
       {notice}
       <div class="ob-tokens">
-        {list?.map((tok) => {
+        {rows?.map((tok) => {
           const look = tokenLook(tok, scheme);
           return (
             <TokenRow
@@ -88,7 +101,7 @@ export function TokenPicker({ selected, onToggle, notice }: TokenPickerProps) {
           );
         })}
       </div>
-      {list?.length === 0 && <p class="ob-wait">{t('onboarding.tokens.empty')}</p>}
+      {rows?.length === 0 && <p class="ob-wait">{t('onboarding.tokens.empty')}</p>}
     </>
   );
 }

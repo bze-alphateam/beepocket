@@ -5,6 +5,7 @@ import {
   fail,
   lockStateEvent,
   ok,
+  TokenErrorCodes,
   WalletErrorCodes,
   type LockStateEvent,
   type Method,
@@ -42,6 +43,8 @@ const token = (denom: string, symbol: string) => ({
 });
 const BZE = token('ubze', 'BZE');
 const PAGE = token('factory/bze1x/upage', 'PAGE');
+const GOLD = token('factory/bze1x/ugold', 'GOLD');
+const CATALOG = new Map([BZE, PAGE, GOLD].map((x) => [x.denom, x]));
 
 class FakeClient implements Client {
   calls: { method: string; request: unknown }[] = [];
@@ -53,10 +56,17 @@ class FakeClient implements Client {
   contacts = [{ name: 'Alex', address: 'bze1alex' }];
   reveal: Result<unknown> = ok({ status: 'ok', mnemonic: PHRASE });
   failAdd = false;
+  search: Result<unknown> = ok({ tokens: [BZE, PAGE], partial: false });
+  lookup: (code: string) => Promise<Result<unknown>> = (code) =>
+    Promise.resolve(
+      CATALOG.has(code) ? ok(CATALOG.get(code)) : fail(TokenErrorCodes.noSuchToken, 'none'),
+    );
   call(method: Method, request: unknown): Promise<Result<never>> {
     this.calls.push({ method, request });
-    const tokens = () =>
-      (this.preferred[this.network] ?? []).map((d) => (d === 'ubze' ? BZE : PAGE));
+    if (method === 'tokens.lookup') {
+      return this.lookup((request as { code: string }).code) as Promise<Result<never>>;
+    }
+    const tokens = () => (this.preferred[this.network] ?? []).map((d) => CATALOG.get(d) ?? PAGE);
     const reply = (): Result<unknown> => {
       switch (method) {
         case 'settings.get':
@@ -77,7 +87,7 @@ class FakeClient implements Client {
         case 'tokens.preferred':
           return ok(tokens());
         case 'tokens.search':
-          return ok([BZE, PAGE]);
+          return this.search;
         case 'tokens.add': {
           if (this.failAdd) return fail('unexpected', 'no');
           const { denom } = request as { denom: string };
@@ -139,6 +149,23 @@ const clock = {
   sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
 };
 
+/** Timers that fire only when the test says so. */
+class FakeScheduler {
+  pending: { ms: number; fn: () => void }[] = [];
+  after(ms: number, fn: () => void): () => void {
+    const entry = { ms, fn };
+    this.pending.push(entry);
+    return () => {
+      this.pending = this.pending.filter((p) => p !== entry);
+    };
+  }
+  run(): void {
+    const due = this.pending;
+    this.pending = [];
+    for (const p of due) p.fn();
+  }
+}
+
 /** Lets the fake client's resolved promises settle; works with real and fake timers. */
 const flush = () =>
   act(async () => {
@@ -165,11 +192,13 @@ function rig(client = new FakeClient()) {
   const env: SettingsEnv = {
     manifest: { version: () => '1.2.3' },
     clipboard: {
+      readText: () => Promise.resolve(''),
       writeText: (text) => {
         written.push(text);
         return Promise.resolve();
       },
     },
+    scheduler: new FakeScheduler(),
   };
   const changed = vi.fn();
   function Home() {
@@ -604,19 +633,42 @@ describe('Show recovery phrase', () => {
 });
 
 describe('Preferred tokens', () => {
+  let scheduler = new FakeScheduler();
+  let clipboard = '';
   const openPick = async (client: FakeClient) => {
+    scheduler = new FakeScheduler();
+    clipboard = '';
+    const env: SettingsEnv = {
+      manifest: { version: () => '1.2.3' },
+      clipboard: { readText: () => Promise.resolve(clipboard), writeText: () => Promise.resolve() },
+      scheduler,
+    };
     const table = { ...settingsRoutes, 'home.main': Marker, 'settings.main': Marker };
     const { host } = render(
       <ClientProvider client={client}>
-        <Router
-          table={table as RouteTable<{ name: string }>}
-          initial={{ name: 'settings.pickTokens' }}
-        />
+        <SettingsEnvProvider env={env}>
+          <Router
+            table={table as RouteTable<{ name: string }>}
+            initial={{ name: 'settings.pickTokens' }}
+          />
+        </SettingsEnvProvider>
       </ClientProvider>,
     );
     await flush();
     return host;
   };
+  const codeField = (host: HTMLElement) => {
+    const el = host.querySelector('.ob-code input');
+    if (!(el instanceof HTMLInputElement)) throw new Error('no code field');
+    return el;
+  };
+  const typeCode = (host: HTMLElement, value: string) => {
+    const el = codeField(host);
+    el.value = value;
+    fireEvent(el, 'input');
+  };
+  const symbols = (host: HTMLElement) =>
+    [...host.querySelectorAll('.bp-token-row-title')].map((t) => t.textContent.split(' ')[0]);
   const row = (host: HTMLElement, symbol: string) =>
     must(
       [...host.querySelectorAll('[role="checkbox"]')].find((c) =>
@@ -683,6 +735,143 @@ describe('Preferred tokens', () => {
     expect(client.saw('tokens.remove')).toEqual([]);
     expect(client.preferred.mainnet).toEqual(['ubze']);
     expect(host.textContent).toContain('The change could not be saved.');
+  });
+
+  describe('token code', () => {
+    it('a found code lists the token ticked once, and Save adds it', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const host = await openPick(client);
+      expect(host.textContent).not.toContain('GOLD');
+      typeCode(host, GOLD.denom);
+      // Debounced: nothing is looked up until the pause.
+      expect(client.saw('tokens.lookup')).toEqual([]);
+      scheduler.run();
+      await flush();
+      expect(client.saw('tokens.lookup')).toEqual([{ code: GOLD.denom }]);
+      expect(row(host, 'GOLD').getAttribute('aria-checked')).toBe('true');
+      expect(host.textContent).toContain('2 selected');
+      // Finding it again adds no second row.
+      fireEvent(must(host.querySelector('.ob-code')), 'submit');
+      await flush();
+      expect(symbols(host).filter((x) => x === 'GOLD')).toHaveLength(1);
+      fireEvent(button(host, 'Save'), 'click');
+      await flush();
+      expect(client.saw('tokens.add')).toEqual([{ denom: GOLD.denom }]);
+      expect(client.saw('tokens.remove')).toEqual([]);
+      expect(host.textContent).toBe('at:settings.main');
+    });
+
+    it('a code the wallet already lists ticks that row, no duplicate', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const host = await openPick(client);
+      typeCode(host, PAGE.denom);
+      scheduler.run();
+      await flush();
+      expect(symbols(host)).toEqual(['BZE', 'PAGE']);
+      expect(row(host, 'PAGE').getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('Paste reads the clipboard on the tap and looks the code up', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const host = await openPick(client);
+      clipboard = `  ${GOLD.denom} `;
+      fireEvent(button(host, 'Paste token code'), 'click');
+      await flush();
+      expect(codeField(host).value).toBe(GOLD.denom);
+      expect(row(host, 'GOLD').getAttribute('aria-checked')).toBe('true');
+    });
+
+    it.each([
+      [
+        fail(TokenErrorCodes.noSuchToken, 'x'),
+        'No token uses this code. Check it with whoever shared it.',
+      ],
+      [fail(TokenErrorCodes.invalidCode, 'x'), "That isn't a valid token code."],
+      [fail('unexpected', 'x'), "We couldn't check this code. Try again."],
+    ])('an unknown code says so under the field and adds nothing (%#)', async (answer, text) => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      client.lookup = () => Promise.resolve(answer);
+      const host = await openPick(client);
+      typeCode(host, 'factory/bze1x/nope');
+      scheduler.run();
+      await flush();
+      expect(must(host.querySelector('.ob-code')).textContent).toContain(text);
+      expect(symbols(host)).toEqual(['BZE', 'PAGE']);
+      expect(host.textContent).toContain('1 selected');
+      fireEvent(row(host, 'PAGE'), 'click');
+      fireEvent(button(host, 'Save'), 'click');
+      await flush();
+      expect(client.saw('tokens.add')).toEqual([{ denom: PAGE.denom }]);
+    });
+
+    it('drops an older answer that lands after the latest one', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const answers = new Map<string, (r: Result<unknown>) => void>();
+      client.lookup = (code) =>
+        new Promise((resolve) => {
+          answers.set(code, resolve);
+        });
+      const host = await openPick(client);
+      typeCode(host, GOLD.denom);
+      scheduler.run();
+      typeCode(host, 'factory/bze1x/nope');
+      scheduler.run();
+      await flush();
+      expect(client.saw('tokens.lookup')).toEqual([
+        { code: GOLD.denom },
+        { code: 'factory/bze1x/nope' },
+      ]);
+      must(answers.get('factory/bze1x/nope'))(fail(TokenErrorCodes.noSuchToken, 'x'));
+      await flush();
+      must(answers.get(GOLD.denom))(ok(GOLD));
+      await flush();
+      expect(host.textContent).not.toContain('GOLD');
+      expect(host.textContent).toContain('No token uses this code.');
+    });
+
+    it('a new keystroke cancels the pending lookup', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      const host = await openPick(client);
+      typeCode(host, 'factory/bze1x/ug');
+      typeCode(host, GOLD.denom);
+      expect(scheduler.pending).toHaveLength(1);
+      scheduler.run();
+      await flush();
+      expect(client.saw('tokens.lookup')).toEqual([{ code: GOLD.denom }]);
+    });
+  });
+
+  it('lists a pick the wallet does not hold, ticked', async () => {
+    const client = new FakeClient();
+    client.preferred.mainnet = ['ubze', GOLD.denom];
+    client.search = ok({ tokens: [BZE], partial: false });
+    const host = await openPick(client);
+    expect(symbols(host)).toEqual(['GOLD', 'BZE']);
+    expect(row(host, 'GOLD').getAttribute('aria-checked')).toBe('true');
+    fireEvent(row(host, 'GOLD'), 'click');
+    fireEvent(button(host, 'Save'), 'click');
+    await flush();
+    expect(client.saw('tokens.remove')).toEqual([{ denom: GOLD.denom }]);
+  });
+
+  it('shows the error banner when an address could not be read, and still lists the rest', async () => {
+    const client = new FakeClient();
+    client.preferred.mainnet = ['ubze'];
+    client.search = ok({ tokens: [BZE, PAGE], partial: true });
+    const host = await openPick(client);
+    expect(host.querySelector('.bp-banner')?.textContent).toContain('Something went wrong');
+    expect(symbols(host)).toEqual(['BZE', 'PAGE']);
+  });
+
+  it('shows no banner when every address was read', async () => {
+    const host = await openPick(new FakeClient());
+    expect(host.querySelector('.bp-banner')).toBeNull();
   });
 
   describe('as the landing of a network without tokens', () => {

@@ -104,7 +104,7 @@ function setup(
       return ok({ ...b, addresses: addrs, total, partial: w.failed.length > 0 });
     },
     'tokens.theme': (r) => ok(r.denom === PAGE.denom ? BRAND : null),
-    'tokens.search': (r) => ok(r.query === '' ? w.held : w.search),
+    'tokens.search': (r) => ok({ tokens: r.query === '' ? w.held : w.search, partial: false }),
     'tokens.lookup': () => w.lookup,
     'tokens.add': (r) => {
       const added =
@@ -210,7 +210,8 @@ function setup(
   };
   const settingsEnv = {
     manifest: { version: () => '1.0.0' },
-    clipboard: { writeText: () => Promise.resolve() },
+    clipboard: { readText: () => Promise.resolve(''), writeText: () => Promise.resolve() },
+    scheduler: { after: () => () => undefined },
   };
   const seen: { name: string }[] = [];
   const Marker = (props: { route: SendTarget | SettingsTarget }) => {

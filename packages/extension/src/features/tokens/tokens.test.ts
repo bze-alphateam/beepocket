@@ -9,6 +9,7 @@ import type { Platform } from '../../platform';
 import { registerTokenHandlers } from './handlers';
 import type { WalletService } from '../wallet';
 import type { PreferredTokensStore, WalletAddress, WalletAddresses } from './ports';
+import type { TokenSearch } from '../../protocol';
 
 const FACTORY = 'factory/bze1abc/gold';
 const IBC = 'ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2';
@@ -400,8 +401,8 @@ describe('tokens.balances', () => {
 
 describe('tokens.search', () => {
   it('offers ubze alone before any address exists', async () => {
-    const r = await setup().call<TokenInfo[]>('tokens.search', { query: '' });
-    expect(r.ok && r.value.map((x) => x.denom)).toEqual(['ubze']);
+    const r = await setup().call<TokenSearch>('tokens.search', { query: '' });
+    expect(r.ok && r.value.tokens.map((x) => x.denom)).toEqual(['ubze']);
   });
 
   it('matches symbol, name and denom case-insensitively over held tokens', async () => {
@@ -410,14 +411,14 @@ describe('tokens.search', () => {
       [FACTORY, 7n],
       [IBC, 0n],
     ]);
-    const bySymbol = await t.call<TokenInfo[]>('tokens.search', { query: 'gOlD' });
-    expect(bySymbol.ok && bySymbol.value.map((x) => x.denom)).toEqual([FACTORY]);
-    const byName = await t.call<TokenInfo[]>('tokens.search', { query: 'beezee' });
-    expect(byName.ok && byName.value.map((x) => x.denom)).toEqual(['ubze']);
-    const byDenom = await t.call<TokenInfo[]>('tokens.search', { query: 'BZE1ABC' });
-    expect(byDenom.ok && byDenom.value.map((x) => x.denom)).toEqual([FACTORY]);
-    const zero = await t.call<TokenInfo[]>('tokens.search', { query: 'atom' });
-    expect(zero).toEqual({ ok: true, value: [] });
+    const bySymbol = await t.call<TokenSearch>('tokens.search', { query: 'gOlD' });
+    expect(bySymbol.ok && bySymbol.value.tokens.map((x) => x.denom)).toEqual([FACTORY]);
+    const byName = await t.call<TokenSearch>('tokens.search', { query: 'beezee' });
+    expect(byName.ok && byName.value.tokens.map((x) => x.denom)).toEqual(['ubze']);
+    const byDenom = await t.call<TokenSearch>('tokens.search', { query: 'BZE1ABC' });
+    expect(byDenom.ok && byDenom.value.tokens.map((x) => x.denom)).toEqual([FACTORY]);
+    const zero = await t.call<TokenSearch>('tokens.search', { query: 'atom' });
+    expect(zero).toEqual({ ok: true, value: { tokens: [], partial: false } });
   });
 });
 
@@ -427,8 +428,8 @@ describe('tokens.search limits', () => {
     const many = new Map<string, bigint>();
     for (let i = 0; i < 250; i++) many.set(`factory/bze1abc/t${String(i)}`, 1n);
     t.chainData.balances.bze1a = many;
-    const r = await t.call<TokenInfo[]>('tokens.search', { query: 't249' });
-    expect(r.ok && r.value.map((x) => x.denom)).toEqual(['factory/bze1abc/t249']);
+    const r = await t.call<TokenSearch>('tokens.search', { query: 't249' });
+    expect(r.ok && r.value.tokens.map((x) => x.denom)).toEqual(['factory/bze1abc/t249']);
   });
 
   it('caps only the answer', async () => {
@@ -436,15 +437,34 @@ describe('tokens.search limits', () => {
     const many = new Map<string, bigint>();
     for (let i = 0; i < 250; i++) many.set(`factory/bze1abc/t${String(i)}`, 1n);
     t.chainData.balances.bze1a = many;
-    const r = await t.call<TokenInfo[]>('tokens.search', { query: 'bze1abc' });
-    expect(r.ok && r.value.length).toBe(100);
+    const r = await t.call<TokenSearch>('tokens.search', { query: 'bze1abc' });
+    expect(r.ok && r.value.tokens.length).toBe(100);
   });
 
-  it('degrades to ubze when no address can be read', async () => {
+  it('degrades to ubze when no address can be read, and says so', async () => {
     const t = setup({ addresses: ADDRS });
     t.chainData.brokenAddresses.add('bze1a').add('bze1b');
-    const r = await t.call<TokenInfo[]>('tokens.search', { query: '' });
-    expect(r.ok && r.value.map((x) => x.denom)).toEqual(['ubze']);
+    const r = await t.call<TokenSearch>('tokens.search', { query: '' });
+    expect(r).toEqual({
+      ok: true,
+      value: { tokens: [expect.objectContaining({ denom: 'ubze' })], partial: true },
+    });
+  });
+
+  it('lists what the readable addresses hold when one fails, marked partial', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.balances.bze1a = new Map([[FACTORY, 7n]]);
+    t.chainData.brokenAddresses.add('bze1b');
+    const r = await t.call<TokenSearch>('tokens.search', { query: '' });
+    expect(r.ok && r.value.tokens.map((x) => x.denom)).toEqual(['ubze', FACTORY]);
+    expect(r.ok && r.value.partial).toBe(true);
+  });
+
+  it('is not partial when every address was read', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.balances.bze1a = new Map([[FACTORY, 7n]]);
+    const r = await t.call<TokenSearch>('tokens.search', { query: '' });
+    expect(r.ok && r.value.partial).toBe(false);
   });
 });
 

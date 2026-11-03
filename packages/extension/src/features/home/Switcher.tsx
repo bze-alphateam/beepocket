@@ -52,7 +52,7 @@ export function Switcher(props: SwitcherProps) {
     setBalances(new Map());
     void client.call('tokens.search', { query: '' }).then((res) => {
       if (!live) return;
-      if (res.ok) setHeld(res.value);
+      if (res.ok) setHeld(res.value.tokens);
       else setError(true);
     });
     return () => {
@@ -95,7 +95,10 @@ export function Switcher(props: SwitcherProps) {
       return;
     }
     const local = props.tokens.filter(matches(q.toLowerCase()));
-    const results = [...local, ...res.value.filter((x) => !local.some((l) => l.denom === x.denom))];
+    const results = [
+      ...local,
+      ...res.value.tokens.filter((x) => !local.some((l) => l.denom === x.denom)),
+    ];
     if (results.length > 0) {
       setFound(results);
       return;
