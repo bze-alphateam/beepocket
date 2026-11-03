@@ -51,7 +51,6 @@ export function FromSheet(props: {
 /** `W-Fee`: every token this address can pay the fee with. Choosing one re-prices the send. */
 export function FeeSheet(props: {
   open: boolean;
-  label: string;
   options: FeeChoice[];
   selected: string;
   onPick: (denom: string) => void;
@@ -60,7 +59,6 @@ export function FeeSheet(props: {
   return (
     <Sheet open={props.open} title={t('send.fee.title')} onClose={props.onClose}>
       <div class="bp-send-options">
-        <p class="bp-send-sheet-intro">{t('send.fee.intro', { label: props.label })}</p>
         {props.options.map((o) => {
           const on = o.denom === props.selected;
           const fee = `≈ ${exact(o.amount, o.decimals)} ${o.symbol}`;
@@ -86,7 +84,6 @@ export function FeeSheet(props: {
             />
           );
         })}
-        <p class="bp-send-sheet-note">{t('send.fee.note')}</p>
       </div>
     </Sheet>
   );
