@@ -167,7 +167,7 @@ const baseHandlers = {
   'wallet.createWallet': () => ok({ addresses: [] }),
   'wallet.importWallet': () => ok({ addresses: [] }),
   'tokens.add': ({ denom }: { denom: string }) => ok([{ ...BZE, denom }]),
-  'tokens.search': () => ok([BZE, GOLD]),
+  'tokens.search': () => ok({ tokens: [BZE, GOLD], partial: false }),
   'tokens.lookup': ({ code }: { code: string }) =>
     code === GOLD.denom
       ? ok(GOLD)
@@ -800,7 +800,10 @@ describe('pick tokens', () => {
 
   it('lists, searches, selects (BZE optional) and adds in order', async () => {
     const search = vi.fn(({ query }: { query: string }) =>
-      ok([BZE, GOLD].filter((t) => t.symbol.toLowerCase().includes(query.toLowerCase()))),
+      ok({
+        tokens: [BZE, GOLD].filter((t) => t.symbol.toLowerCase().includes(query.toLowerCase())),
+        partial: false,
+      }),
     );
     const client = mockClient({ ...baseHandlers, 'tokens.search': search });
     const { host, seen } = await toPick(client);

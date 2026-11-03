@@ -1,4 +1,5 @@
 import type { NetworkId } from '@beepocket/core';
+import type { ListedToken } from '../../protocol';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
@@ -8,6 +9,7 @@ import { Banner, BottomBar, Button, InlineNote, ScreenHeader } from '../../ui';
 import { homeTarget } from '../lock/targets';
 import { TokenPicker } from '../tokens/TokenPicker';
 import { NetworkPill } from './NetworkPill';
+import { TokenCodeField } from './TokenCodeField';
 
 const networkName: Record<NetworkId, string> = {
   mainnet: t('settings.network.mainnet'),
@@ -20,6 +22,8 @@ const SETTINGS: RouteBase = { name: 'settings.main' };
 interface Start {
   network: NetworkId;
   picked: string[];
+  /** The picks themselves: listed even when the wallet holds none of them. */
+  tokens: ListedToken[];
 }
 
 /**
@@ -32,6 +36,8 @@ export function PickTokensScreen() {
   const { navigate } = useRoute<RouteBase>();
   const [start, setStart] = useState<Start | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  // Tokens found by their code on this network, until it is switched.
+  const [found, setFound] = useState<ListedToken[]>([]);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -45,7 +51,7 @@ export function PickTokensScreen() {
       return null;
     }
     const picked = tokens.value.map((x) => x.denom);
-    setStart({ network: network.value.id, picked });
+    setStart({ network: network.value.id, picked, tokens: tokens.value });
     setSelected(picked);
     return picked;
   }, [client]);
@@ -56,6 +62,11 @@ export function PickTokensScreen() {
 
   const toggle = (denom: string) => {
     setSelected((s) => (s.includes(denom) ? s.filter((d) => d !== denom) : [...s, denom]));
+  };
+
+  const foundByCode = (token: ListedToken) => {
+    setFound((f) => (f.some((x) => x.denom === token.denom) ? f : [...f, token]));
+    setSelected((s) => (s.includes(token.denom) ? s : [...s, token.denom]));
   };
 
   /** Adds the new picks first, so removing never meets the last-token rule halfway. */
@@ -92,6 +103,7 @@ export function PickTokensScreen() {
       setFailed(true);
       return;
     }
+    setFound([]);
     const picked = await read();
     if (picked !== null && picked.length > 0) navigate(homeTarget);
   };
@@ -100,6 +112,9 @@ export function PickTokensScreen() {
     return <Layout>{failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}</Layout>;
   }
   const landing = start.picked.length === 0;
+  const extra = [...start.tokens, ...found].filter(
+    (x, i, all) => all.findIndex((y) => y.denom === x.denom) === i,
+  );
   const note =
     selected.length === 0
       ? t('settings.tokens.none')
@@ -151,6 +166,8 @@ export function PickTokensScreen() {
         <TokenPicker
           selected={selected}
           onToggle={toggle}
+          field={<TokenCodeField key={start.network} onFound={foundByCode} />}
+          extra={extra}
           notice={failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}
         />
       </section>
