@@ -1,4 +1,14 @@
-import { NETWORKS, type DenomBranding, type NetworkId, type TokenInfo } from '@beepocket/core';
+import {
+  HttpScanClient,
+  NETWORKS,
+  RestChainClient,
+  type DenomBranding,
+  type HttpTransport,
+  type NetworkId,
+  type TokenInfo,
+} from '@beepocket/core';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { registerHandlers } from '../../background/handlers';
 import type { DappService } from '../../dapp';
@@ -615,5 +625,112 @@ describe('wired to the wallet profile', () => {
     expect(
       await t.registry.dispatch({ method: 'tokens.add', payload: { denom: FACTORY } }),
     ).toMatchObject({ ok: false, error: { code: 'internal' } });
+  });
+});
+
+describe('tokens.lookup through the real REST and Scan clients', () => {
+  // What mainnet answered for one denom of each kind but factory (covered above): an IBC token,
+  // a pool's LP shares, and an LP denom whose pool pairs an IBC token with ubze.
+  const recorded = JSON.parse(
+    readFileSync(join(import.meta.dirname, '../../../test/fixtures/token-codes.json'), 'utf8'),
+  ) as { responses: Record<string, { status: number; body: unknown }> };
+  const SHERPA = 'ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2';
+  const LP = 'ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209';
+  const LP_IBC = 'ulp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze';
+
+  function setupLive() {
+    const network = NETWORKS.mainnet;
+    const urls: string[] = [];
+    const transport: HttpTransport = {
+      request: ({ url }) => {
+        urls.push(url);
+        const hit = recorded.responses[url];
+        if (hit) return Promise.resolve({ status: hit.status, body: JSON.stringify(hit.body) });
+        // Anything else is unknown: the chain's gRPC not-found and Scan's own one.
+        const body = url.startsWith(network.scan)
+          ? { error: { code: 'not_found', message: 'no such token' } }
+          : { code: 5, message: 'not found', details: [] };
+        if (url.includes('/supply/by_denom?')) {
+          const denom = decodeURIComponent(url.split('denom=')[1] ?? '');
+          return Promise.resolve({
+            status: 200,
+            body: JSON.stringify({ amount: { denom, amount: '0' } }),
+          });
+        }
+        return Promise.resolve({ status: 404, body: JSON.stringify(body) });
+      },
+    };
+    const services = {
+      activeNetwork: () => Promise.resolve(network),
+      clients: () =>
+        Promise.resolve({
+          network,
+          chain: new RestChainClient(transport, network),
+          scan: new HttpScanClient(transport, network),
+        }),
+    } as unknown as Services;
+    const kv = () => {
+      const m = new Map<string, unknown>();
+      return {
+        get: (k: string) => Promise.resolve(m.get(k)),
+        set: (k: string, v: unknown) => Promise.resolve(void m.set(k, v)),
+        remove: (k: string) => Promise.resolve(void m.delete(k)),
+      };
+    };
+    const platform = {
+      storage: kv(),
+      session: kv(),
+      cache: kv(),
+      clock: { now: () => 1_000_000, sleep: () => new Promise<never>(() => undefined) },
+    } as unknown as Platform;
+    const registry = new HandlerRegistry();
+    registerTokenHandlers(
+      registry,
+      { platform, services },
+      {
+        preferred: { get: () => Promise.resolve(['ubze']), set: () => Promise.resolve() },
+        addresses: { list: () => Promise.resolve([]) },
+      },
+    );
+    const lookup = (code: string) =>
+      registry.dispatch({ method: 'tokens.lookup', payload: { code } }) as Promise<
+        { ok: true; value: TokenInfo } | { ok: false; error: { code: string } }
+      >;
+    return { lookup, urls };
+  }
+
+  it("finds an IBC token by its ibc/<hash> code, with Scan's name and decimals", async () => {
+    const r = await setupLive().lookup(SHERPA);
+    expect(r).toEqual({
+      ok: true,
+      value: {
+        denom: SHERPA,
+        kind: 'ibc',
+        symbol: 'SHERPA',
+        name: 'Sherpa',
+        decimals: 6,
+        source: 'scan',
+        branding: null,
+        logo: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/sherpa.png',
+      },
+    });
+  });
+
+  it.each([LP, LP_IBC])('finds LP shares by their code (%s)', async (denom) => {
+    const r = await setupLive().lookup(denom);
+    expect(r).toMatchObject({ ok: true, value: { denom, kind: 'other', decimals: 6 } });
+  });
+
+  it('finds ubze without asking for its supply or asking Scan', async () => {
+    const live = setupLive();
+    expect(await live.lookup('ubze')).toMatchObject({ ok: true, value: { symbol: 'BZE' } });
+    expect(
+      live.urls.filter((u) => u.includes('/supply/') || u.startsWith(NETWORKS.mainnet.scan)),
+    ).toEqual([]);
+  });
+
+  it('a hash the chain does not hold is no such token, not an error', async () => {
+    const r = await setupLive().lookup(SHERPA.toLowerCase());
+    expect(r).toMatchObject({ ok: false, error: { code: 'no-such-token' } });
   });
 });

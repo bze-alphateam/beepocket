@@ -5,6 +5,7 @@ import { en } from '../../i18n';
 import { AppearanceProvider } from '../../popup/appearance';
 import { Router } from '../../popup/router';
 import { AppearanceState, type Scheme } from '../../theme';
+import { readPermittedClipboard, type ClipboardPermissions } from '../../popup/clipboard';
 import { ClientProvider } from '../../popup/client-context';
 import { fail, ok, type Method, type RequestOf, type Result } from '../../protocol';
 import type { Client } from '../../protocol/client';
@@ -77,7 +78,11 @@ function mockRandom(): Random {
   };
 }
 
-function mockEnv(clipboard = ''): OnboardingEnv & {
+/** With `permissions`, Paste goes through the real `clipboardRead` check, as in the browser. */
+function mockEnv(
+  clipboard = '',
+  permissions?: ClipboardPermissions,
+): OnboardingEnv & {
   readText: ReturnType<typeof vi.fn>;
   writeText: ReturnType<typeof vi.fn>;
 } {
@@ -86,7 +91,10 @@ function mockEnv(clipboard = ''): OnboardingEnv & {
   return {
     readText,
     writeText,
-    clipboard: { readText, writeText },
+    clipboard: {
+      readText: permissions ? () => readPermittedClipboard(permissions, { readText }) : readText,
+      writeText,
+    },
     // Runs on the next macrotask, which `flush` waits for.
     scheduler: {
       after: (_ms, fn) => {
@@ -468,6 +476,47 @@ describe('import flow', () => {
     expect(env.readText).toHaveBeenCalledTimes(2);
   });
 
+  it('Paste without clipboardRead asks for it once, then fills the phrase', async () => {
+    const permissions = {
+      contains: vi.fn(() => Promise.resolve(false)),
+      request: vi.fn(() => Promise.resolve(true)),
+    };
+    const env = mockEnv(PHRASE_12, permissions);
+    const { host } = await toImport(mockClient(baseHandlers), env);
+    await click(host, en['onboarding.import.paste']);
+    expect(permissions.request).toHaveBeenCalledExactlyOnceWith({
+      permissions: ['clipboardRead'],
+    });
+    expect(
+      cells(host)
+        .map((c) => c.value)
+        .join(' '),
+    ).toBe(PHRASE_12);
+  });
+
+  it('a declined Paste focuses the first word and says to paste by hand', async () => {
+    const permissions = {
+      contains: vi.fn(() => Promise.resolve(false)),
+      request: vi.fn(() => Promise.resolve(false)),
+    };
+    const env = mockEnv(PHRASE_12, permissions);
+    const { host } = await toImport(mockClient(baseHandlers), env);
+    await click(host, en['onboarding.import.paste']);
+    expect(env.readText).not.toHaveBeenCalled();
+    expect(cells(host).every((c) => c.value === '')).toBe(true);
+    expect(document.activeElement).toBe(cells(host)[0]);
+    expect(host.textContent).toContain(en['app.pasteHint']);
+    // Ctrl+V / ⌘V into the cell still fills the whole phrase and drops the hint.
+    paste(cells(host)[0], PHRASE_12);
+    await flush();
+    expect(
+      cells(host)
+        .map((c) => c.value)
+        .join(' '),
+    ).toBe(PHRASE_12);
+    expect(host.textContent).not.toContain(en['app.pasteHint']);
+  });
+
   it('marks a word no list word starts with and suggests the closest one', async () => {
     const { host } = await toImport(mockClient(baseHandlers));
     typeWords(host, 'marble echo tribe velvet pioneer gho');
@@ -670,6 +719,46 @@ describe('start with a token code', () => {
     expect((field(host, en['onboarding.start.codeLabel']) as HTMLInputElement).value).toBe(
       GOLD.denom,
     );
+    expect(button(host, 'Open wallet with GOLD')).toBeDefined();
+  });
+
+  it('a declined token-code Paste focuses the field, hints, and looks nothing up', async () => {
+    const permissions = {
+      contains: vi.fn(() => Promise.resolve(false)),
+      request: vi.fn(() => Promise.resolve(false)),
+    };
+    const client = mockClient(baseHandlers);
+    const env = mockEnv(GOLD.denom, permissions);
+    const { host } = await createdWallet(client, undefined, env);
+    await click(host, en['onboarding.start.haveCode']);
+    await click(host, en['onboarding.start.paste']);
+    await flush();
+    const input = field(host, en['onboarding.start.codeLabel']) as HTMLInputElement;
+    expect(permissions.request).toHaveBeenCalledOnce();
+    expect(env.readText).not.toHaveBeenCalled();
+    expect(client.calls.filter(([m]) => m === 'tokens.lookup')).toEqual([]);
+    expect(input.value).toBe('');
+    expect(document.activeElement).toBe(input);
+    expect(host.textContent).toContain(en['app.pasteHint']);
+    // Ctrl+V / ⌘V arrives as input and is looked up like typing.
+    type(input, GOLD.denom);
+    await flush();
+    await flush();
+    expect(host.textContent).not.toContain(en['app.pasteHint']);
+    expect(button(host, 'Open wallet with GOLD')).toBeDefined();
+  });
+
+  it('a granted token-code Paste asks for clipboardRead once, then looks it up', async () => {
+    const permissions = {
+      contains: vi.fn(() => Promise.resolve(false)),
+      request: vi.fn(() => Promise.resolve(true)),
+    };
+    const env = mockEnv(GOLD.denom, permissions);
+    const { host } = await createdWallet(mockClient(baseHandlers), undefined, env);
+    await click(host, en['onboarding.start.haveCode']);
+    await click(host, en['onboarding.start.paste']);
+    await flush();
+    expect(permissions.request).toHaveBeenCalledOnce();
     expect(button(host, 'Open wallet with GOLD')).toBeDefined();
   });
 
