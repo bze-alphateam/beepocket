@@ -722,10 +722,11 @@ describe('ActivityTab filter by keyboard', () => {
       fireEvent(document.body, 'keydown', { key: 'Tab' });
     };
     tab();
+    // The title row's × comes first, then the options.
+    expect(document.activeElement).toBe(sheet?.querySelector('[aria-label="Close"]'));
     const radios = [...(sheet?.querySelectorAll('[role="radio"]') ?? [])];
-    expect(document.activeElement).toBe(radios[0]);
-    // Shift+Tab from the first option wraps to the last one (Savings).
     fireEvent(document.body, 'keydown', { key: 'Tab', shiftKey: true });
+    // Shift+Tab from the × wraps to the last option (Savings).
     expect(document.activeElement).toBe(radios[2]);
     fireEvent(document.activeElement, 'click');
     await tick();

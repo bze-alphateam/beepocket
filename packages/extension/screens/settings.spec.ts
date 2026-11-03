@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from '@playwright/test';
 import { startDappServer } from '../e2e/mock-server';
-import { expect, openPopup, PASSWORD, reload, seedWallet, shot, test } from './support';
+import { expect, openPopup, PAGE, PASSWORD, reload, seedWallet, shot, test } from './support';
 
 // The Settings sheet over Home and what it opens: lock timers, address book, recovery phrase,
 // preferred tokens, the testnet landing and Connected sites (W-Settings, W-Sites*, W-Light-*).
@@ -77,6 +77,16 @@ test('settings sheet, lock timers, address book, recovery phrase', async ({
   await page.getByRole('button', { name: /^Preferred tokens/ }).click();
   await expect(page.getByRole('checkbox', { name: /PAGE/ })).toBeVisible();
   await shot(page, 'settings-tokens');
+
+  // A token the wallet does not hold, found by its code; then a code that is not one.
+  await page
+    .getByRole('textbox', { name: 'Token code' })
+    .fill(`${PAGE.slice(0, PAGE.lastIndexOf('/'))}/ugold`);
+  await expect(page.getByRole('checkbox', { name: /UGOLD/ })).toBeVisible();
+  await shot(page, 'settings-tokens-code');
+  await page.getByRole('textbox', { name: 'Token code' }).fill('not a code');
+  await expect(page.getByText("That isn't a valid token code.")).toBeVisible();
+  await shot(page, 'settings-tokens-code-error');
 });
 
 test('testnet: the toggle and the landing of a network without tokens', async ({

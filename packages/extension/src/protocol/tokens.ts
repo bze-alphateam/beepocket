@@ -32,6 +32,12 @@ export interface TokenBalances {
   partial: boolean;
 }
 
+export interface TokenSearch {
+  tokens: ListedToken[];
+  /** True when some address could not be read: tokens held only there are missing. */
+  partial: boolean;
+}
+
 /** Token methods. Bigints cross the boundary as decimal strings. */
 export interface TokensProtocol {
   /** A code is a base denom. */
@@ -43,7 +49,7 @@ export interface TokensProtocol {
   /** Refuses to remove the last token. Answers the new list. */
   'tokens.remove': { req: { denom: string }; res: ListedToken[] };
   /** Over ubze and every denom held on any address; the only method that may return unpicked tokens. */
-  'tokens.search': { req: { query: string }; res: ListedToken[] };
+  'tokens.search': { req: { query: string }; res: TokenSearch };
   /** Read-through with a 10 s freshness; `refresh` skips it. */
   'tokens.balances': { req: { denom: string; refresh?: boolean }; res: TokenBalances };
   /** On-chain brand kit for the theme engine; `null` for none and for ubze (its own rule). */

@@ -638,14 +638,13 @@ describe('Toggle, Check, RadioCardGroup', () => {
 });
 
 describe('Sheet layout', () => {
-  it('has a handle, a title row with count and close, a body and sticky actions', () => {
+  it('has a title row with count and close, a body and sticky actions, and no handle', () => {
     const onClose = vi.fn();
     const { host } = render(
       <Sheet
         open
         title="Connected sites"
         count={3}
-        closeButton
         onClose={onClose}
         height="tall"
         actions={<Button>Save</Button>}
@@ -655,9 +654,12 @@ describe('Sheet layout', () => {
     );
     const dialog = host.querySelector('[role="dialog"]');
     expect(dialog?.className).toBe('bp-sheet bp-sheet-tall');
-    expect(dialog?.querySelector('.bp-sheet-handle')).not.toBeNull();
+    expect(dialog?.querySelector('.bp-sheet-handle')).toBeNull();
+    const head = dialog?.querySelector('.bp-sheet-head');
+    expect([...(head?.children ?? [])].map((c) => c.tagName)).toEqual(['H2', 'SPAN', 'BUTTON']);
     expect(dialog?.querySelector('h2')?.textContent).toBe('Connected sites');
     expect(dialog?.querySelector('.bp-sheet-count')?.textContent).toBe('3');
+    expect(dialog?.querySelectorAll('[aria-label="Close"]')).toHaveLength(1);
     expect(dialog?.querySelector('.bp-sheet-body')?.textContent).toBe('body');
     expect(dialog?.querySelector('.bp-sheet-actions')?.textContent).toBe('Save');
     fireEvent(dialog?.querySelector('[aria-label="Close"]'), 'click');

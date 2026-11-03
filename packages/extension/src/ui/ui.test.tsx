@@ -160,7 +160,8 @@ describe('Sheet', () => {
   it('keeps Tab and Shift+Tab inside the dialog', () => {
     const { host } = render(<Harness />);
     fireEvent(host.querySelector('#trigger'), 'click');
-    const first = host.querySelector<HTMLElement>('#first');
+    // The title row's × is the dialog's first control, ahead of the body.
+    const first = host.querySelector<HTMLElement>('[role="dialog"] [aria-label="Close"]');
     const last = host.querySelector<HTMLElement>('#last');
     last?.focus();
     expect(press('Tab').defaultPrevented).toBe(true);

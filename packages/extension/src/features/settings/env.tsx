@@ -1,17 +1,33 @@
 import { createContext, type ComponentChildren } from 'preact';
 import { useContext } from 'preact/hooks';
+import type { Scheduler } from '../home/env';
 import { chromeManifest, type ManifestSource } from './manifest';
 
-/** What Settings needs from the browser: the version for the footer, the clipboard for Copy. */
+/**
+ * What Settings needs from the browser: the version for the footer, the clipboard for Copy and
+ * the token code's Paste (read only on that tap), the timer that debounces the code lookup.
+ */
 export interface SettingsEnv {
   manifest: ManifestSource;
-  clipboard: { writeText(text: string): Promise<void> };
+  clipboard: { readText(): Promise<string>; writeText(text: string): Promise<void> };
+  scheduler: Pick<Scheduler, 'after'>;
 }
 
-/** Both are only touched when used, so building this needs no `chrome` (tests, previews). */
+/** All are only touched when used, so building this needs no `chrome` (tests, previews). */
 export const browserSettingsEnv: SettingsEnv = {
   manifest: chromeManifest,
-  clipboard: { writeText: (text) => navigator.clipboard.writeText(text) },
+  clipboard: {
+    readText: () => navigator.clipboard.readText(),
+    writeText: (text) => navigator.clipboard.writeText(text),
+  },
+  scheduler: {
+    after: (ms, fn) => {
+      const id = setTimeout(fn, ms);
+      return () => {
+        clearTimeout(id);
+      };
+    },
+  },
 };
 
 const SettingsEnvContext = createContext<SettingsEnv>(browserSettingsEnv);

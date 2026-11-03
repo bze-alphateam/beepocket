@@ -56,7 +56,7 @@ export function SettingsFooter(props: {
   return (
     <footer class="bp-settings-footer">
       <span class="bp-settings-footer-line">
-        <Logo size={20} tint="kit" />
+        <Logo size={20} />
         {t('settings.footer', { version: props.version, chain: props.chainId })}
       </span>
       {props.links}

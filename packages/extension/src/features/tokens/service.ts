@@ -16,6 +16,7 @@ import {
   type AddressBalance,
   type ListedToken,
   type TokenBalances,
+  type TokenSearch,
 } from '../../protocol/tokens';
 import { fail, ok, type Result } from '../../protocol';
 import type { PreferredTokensStore, WalletAddresses } from './ports';
@@ -108,19 +109,26 @@ export class TokenService {
     return this.preferred();
   }
 
-  /** Every held denom is findable: the query filters first, only the answer is capped. */
-  async search(query: string): Promise<Result<ListedToken[]>> {
+  /**
+   * Every held denom is findable: the query filters first, only the answer is capped. An address
+   * that cannot be read adds nothing (ubze stays) and makes the answer `partial`.
+   */
+  async search(query: string): Promise<Result<TokenSearch>> {
     const needle = query.trim().slice(0, MAX_QUERY_LENGTH).toLowerCase();
     const held = new Set<string>([NATIVE_DENOM]);
+    let partial = false;
     for (const entry of await this.storedBalances(false)) {
-      if (!entry) continue; // an address that could not be read adds nothing; ubze stays
+      if (!entry) {
+        partial = true;
+        continue;
+      }
       for (const [denom, amount] of Object.entries(entry.balances)) {
         if (BigInt(amount) > 0n) held.add(denom);
       }
     }
     const tokens = await this.resolveAll([...held]);
-    return ok(
-      tokens
+    return ok({
+      tokens: tokens
         .filter(
           (t) =>
             needle === '' ||
@@ -129,7 +137,8 @@ export class TokenService {
             t.denom.toLowerCase().includes(needle),
         )
         .slice(0, MAX_SEARCH_RESULTS),
-    );
+      partial,
+    });
   }
 
   /** An address that cannot be read is reported as `failed` and makes the total `partial`. */
