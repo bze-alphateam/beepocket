@@ -399,8 +399,8 @@ export class SendService {
         });
       }
     }
-    // Business Logic §7: BZE if held, else the sent token if eligible, else the first one.
-    const wanted = [req.feeDenom, NATIVE_DENOM, req.denom];
+    // A picked token first; else the sent token if it can pay, else BZE, else the first one.
+    const wanted = [req.feeDenom, req.denom, NATIVE_DENOM];
     const fee =
       wanted.map((d) => options.find((o) => o.denom === d)).find((o) => o !== undefined) ??
       options[0];

@@ -254,7 +254,7 @@ describe('send.prepare', () => {
     expect(quote.fee.denom).toBe(FACTORY);
   });
 
-  it('defaults to BZE, else the sent token, else the first eligible one', async () => {
+  it('defaults to the sent token when it can pay, as BZE does for a BZE send', async () => {
     const both = await quoteOf(setup({ balances: { ubze: 9_000_000n, [FACTORY]: 9_000_000n } }));
     expect(both.fee.denom).toBe('ubze');
     expect(both.options.map((o: { denom: string }) => o.denom)).toEqual(['ubze', FACTORY]);
@@ -275,13 +275,35 @@ describe('send.prepare', () => {
     expect((await quoteOf(sentToken, { denom: FACTORY })).fee.denom).toBe(FACTORY);
   });
 
-  it('defaults to BZE when the sent token can pay the fee too, with the wallet BZE logo', async () => {
+  it('defaults to the sent token when it can pay the fee, even with BZE held', async () => {
     const s = setup({ balances: { ubze: 9_000_000n, [FACTORY]: 9_000_000n } });
     const quote = await quoteOf(s, { denom: FACTORY });
-    expect(quote.fee).toMatchObject({ denom: 'ubze', symbol: 'BZE', logo: '/tokens/bze.png' });
-    expect(quote.options.map((o: { denom: string }) => o.denom)).toEqual(['ubze', FACTORY]);
-    // A token picked in the fee sheet still wins.
-    expect((await quoteOf(s, { denom: FACTORY, feeDenom: FACTORY })).fee.denom).toBe(FACTORY);
+    expect(quote.fee).toMatchObject({ denom: FACTORY, symbol: 'VDL' });
+    // BZE stays an option, with the wallet's own logo.
+    expect(quote.options).toMatchObject([
+      { denom: 'ubze', symbol: 'BZE', logo: '/tokens/bze.png' },
+      { denom: FACTORY },
+    ]);
+  });
+
+  it('defaults to BZE when the sent token cannot pay the fee', async () => {
+    const s = setup({ balances: { ubze: 9_000_000n, [OTHER]: 9_000_000n } });
+    expect((await quoteOf(s, { denom: OTHER })).fee.denom).toBe('ubze');
+    // Nor when the amount leaves too little of it for the fee.
+    const whole = setup({ balances: { ubze: 9_000_000n, [FACTORY]: 9_000_000n } });
+    expect((await quoteOf(whole, { denom: FACTORY, amount: '9' })).fee.denom).toBe('ubze');
+  });
+
+  it('keeps a fee token picked in the sheet over the default', async () => {
+    const s = setup({ balances: { ubze: 9_000_000n, [FACTORY]: 9_000_000n } });
+    expect((await quoteOf(s, { denom: FACTORY, feeDenom: 'ubze' })).fee.denom).toBe('ubze');
+  });
+
+  it('defaults to the first option when neither the sent token nor BZE can pay', async () => {
+    const s = setup({ balances: { ubze: 100n, [FACTORY]: 9_000_000n, [OTHER]: 9_000_000n } });
+    const quote = await quoteOf(s, { denom: OTHER });
+    expect(quote.options.map((o) => o.denom)).toEqual([FACTORY]);
+    expect(quote.fee.denom).toBe(FACTORY);
   });
 
   it('refuses with cannot-pay-fee when no eligible token covers the fee', async () => {
