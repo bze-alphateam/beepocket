@@ -174,8 +174,18 @@ function rig(client = new FakeClient()) {
   const changed = vi.fn();
   function Home() {
     const [open, setOpen] = useState(true);
+    // Home re-renders on its own (the balance refresh); this button stands in for that.
+    const [renders, setRenders] = useState(0);
     return (
       <>
+        <button
+          type="button"
+          onClick={() => {
+            setRenders(renders + 1);
+          }}
+        >
+          Re-render home
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -567,6 +577,20 @@ describe('Show recovery phrase', () => {
     expect(r.host.textContent).not.toContain('abandon');
   });
 
+  it('hides the phrase after the idle time even while Home keeps re-rendering', async () => {
+    vi.useFakeTimers();
+    const r = await openReveal();
+    await submit(r.host, 'pw');
+    fireEvent(r.button(/^Reveal phrase/), 'click');
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      fireEvent(r.button('Re-render home'), 'click');
+    }
+    expect(r.host.textContent).not.toContain('abandon');
+  });
+
   it('hides the phrase after the idle time', async () => {
     vi.useFakeTimers();
     const r = await openReveal();
@@ -643,6 +667,21 @@ describe('Preferred tokens', () => {
     fireEvent(row(host, 'PAGE'), 'click');
     fireEvent(button(host, 'Save'), 'click');
     await flush();
+    expect(host.textContent).toContain('The change could not be saved.');
+  });
+
+  it('a failed add removes nothing, so the set is never half applied', async () => {
+    const client = new FakeClient();
+    client.failAdd = true;
+    client.preferred.mainnet = ['ubze'];
+    const host = await openPick(client);
+    fireEvent(row(host, 'PAGE'), 'click');
+    fireEvent(row(host, 'BZE'), 'click');
+    fireEvent(button(host, 'Save'), 'click');
+    await flush();
+    expect(client.saw('tokens.add')).toEqual([{ denom: PAGE.denom }]);
+    expect(client.saw('tokens.remove')).toEqual([]);
+    expect(client.preferred.mainnet).toEqual(['ubze']);
     expect(host.textContent).toContain('The change could not be saved.');
   });
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import type { PasswordOutcome, Result } from '../../protocol';
@@ -24,19 +24,26 @@ export function RevealPhrase({ onClose }: { onClose: () => void }) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // The parent passes a new `onClose` on every render (Home re-renders on its balance refresh):
+  // a ref keeps the timer and the subscription from restarting with it.
+  const close = useRef(onClose);
+  close.current = onClose;
+
   useEffect(() => {
     return events.subscribe((e) => {
-      if (e.state !== 'unlocked') onClose();
+      if (e.state !== 'unlocked') close.current();
     });
-  }, [events, onClose]);
+  }, [events]);
 
   useEffect(() => {
     if (phrase === null) return;
-    const idle = setTimeout(onClose, REVEAL_IDLE_MS);
+    const idle = setTimeout(() => {
+      close.current();
+    }, REVEAL_IDLE_MS);
     return () => {
       clearTimeout(idle);
     };
-  }, [phrase, onClose]);
+  }, [phrase]);
 
   const check = async (password: string): Promise<Result<PasswordOutcome>> => {
     const r = await client.call('wallet.revealMnemonic', { password });

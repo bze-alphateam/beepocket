@@ -258,3 +258,8 @@
 .bp-lock-waiting {
   overflow-wrap: anywhere;
 }
+
+/* A failed change, shown in the change sheet above the addresses. */
+.bp-sites-error {
+  margin-bottom: 10px;
+}

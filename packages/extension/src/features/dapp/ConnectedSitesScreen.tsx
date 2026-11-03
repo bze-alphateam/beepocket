@@ -41,6 +41,8 @@ function ChangeSheet(props: {
   site: ConnectedSiteView;
   addresses: Listing['addresses'];
   busy: boolean;
+  /** A failed save, shown in the sheet: the screen's banner would sit behind it. */
+  error: string | null;
   onSave: (index: number) => void;
   onClose: () => void;
 }) {
@@ -63,6 +65,11 @@ function ChangeSheet(props: {
         </Button>
       }
     >
+      {props.error !== null && (
+        <div class="bp-sites-error">
+          <Banner tone="red">{props.error}</Banner>
+        </div>
+      )}
       <RadioList
         label={t('sites.change.pick', { site: name })}
         value={index}
@@ -224,7 +231,7 @@ export function ConnectedSitesScreen() {
     >
       <main class="bp-sites">
         <p class="bp-sites-sub">{t('sites.sub')}</p>
-        {error !== null && <Banner tone="red">{error}</Banner>}
+        {error !== null && changing === null && <Banner tone="red">{error}</Banner>}
         {sites.length === 0 ? (
           <EmptyState icon="link" title={t('sites.empty')} sub={t('sites.empty.sub')} />
         ) : (
@@ -250,11 +257,13 @@ export function ConnectedSitesScreen() {
           site={changing}
           addresses={listing.addresses}
           busy={busy}
+          error={error}
           onSave={(index) => {
             void run([() => client.call('sites.change', { origin: changing.origin, index })]);
           }}
           onClose={() => {
             setChanging(null);
+            setError(null);
           }}
         />
       )}

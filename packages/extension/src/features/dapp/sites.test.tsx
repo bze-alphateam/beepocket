@@ -119,6 +119,25 @@ describe('Connected sites', () => {
     expect(t.host.querySelector('[role=dialog]')).toBeNull();
   });
 
+  it('a failed change keeps the sheet open and shows the error inside it', async () => {
+    const t = rig({
+      'sites.list': () => listing([SITE]),
+      'sites.change': () => fail(WalletErrorCodes.needsPassword, 'locked'),
+    });
+    await settle();
+    fireEvent(button(t.host, 'Change'), 'click');
+    await settle();
+    fireEvent(t.host.querySelectorAll('[role=radio]')[0], 'click');
+    fireEvent(button(t.host, 'Save'), 'click');
+    await settle();
+    const sheet = t.host.querySelector('[role=dialog]');
+    expect(sheet?.querySelector('[role=alert]')?.textContent).toContain('Unlock the wallet');
+    expect(t.host.querySelectorAll('[role=alert]')).toHaveLength(1);
+    // Closing the sheet drops the error with it.
+    fireEvent(t.host.querySelector('.bp-sheet-backdrop'), 'click');
+    expect(t.host.querySelector('[role=alert]')).toBeNull();
+  });
+
   it('asks to unlock when the profile cannot be saved in weak lock', async () => {
     const t = rig({
       'sites.list': () => listing([SITE]),

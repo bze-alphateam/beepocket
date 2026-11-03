@@ -65,9 +65,16 @@ export function PickTokensScreen() {
     setFailed(false);
     const added = selected.filter((d) => !start.picked.includes(d));
     const removed = start.picked.filter((d) => !selected.includes(d));
+    // A failed add stops the save before anything is removed: never a half-applied set.
     let ok = true;
-    for (const denom of added) ok = (await client.call('tokens.add', { denom })).ok && ok;
-    for (const denom of removed) ok = (await client.call('tokens.remove', { denom })).ok && ok;
+    for (const denom of added) {
+      ok = (await client.call('tokens.add', { denom })).ok;
+      if (!ok) break;
+    }
+    for (const denom of ok ? removed : []) {
+      ok = (await client.call('tokens.remove', { denom })).ok;
+      if (!ok) break;
+    }
     setBusy(false);
     if (ok) navigate(SETTINGS);
     else {
