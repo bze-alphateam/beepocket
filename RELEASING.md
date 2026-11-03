@@ -18,3 +18,5 @@ The release notes come from [`.github/release-notes.md`](.github/release-notes.m
 ## Extension ID
 
 `packages/extension/public/manifest.json` carries a fixed public `key`, so an unpacked install always gets the ID `ijohiojehlnmpoelmpnnbcfhkpgaclfc`, whatever folder it is loaded from. Only the public key is in the repository; no private key is needed to load the extension unpacked. Don't change the `key`: a new one gives a new ID, and users updating in place would lose access to their wallet data.
+
+The Chrome Web Store manages its own key, so the store upload (later) must use a zip whose `manifest.json` has no `key` field.

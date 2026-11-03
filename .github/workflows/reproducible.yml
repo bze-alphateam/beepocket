@@ -94,6 +94,7 @@ jobs:
           name: zip-a
           path: release
       - name: Name the zip and write SHA256SUMS
+        id: zip
         env:
           TAG: ${{ github.ref_name }}
         working-directory: release
@@ -101,14 +102,22 @@ jobs:
           mv beepocket.zip "beepocket-$TAG.zip"
           sha256sum "beepocket-$TAG.zip" > SHA256SUMS
           cat SHA256SUMS
+          echo "path=release/beepocket-$TAG.zip" >> "$GITHUB_OUTPUT"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
-          subject-path: release/beepocket-${{ github.ref_name }}.zip
+          subject-path: ${{ steps.zip.outputs.path }}
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
+          # GitHub does not tie drafts to tags uniquely, so a re-run would
+          # otherwise add a second draft for the same tag.
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | select(.tag_name == env.TAG) | .id')"
+          if [ -n "$existing" ]; then
+            echo "a release for $TAG already exists (id $existing); delete it first to recreate it" >&2
+            exit 1
+          fi
           sed "s/{{VERSION}}/$TAG/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
             --title "BeePocket $TAG" --notes-file "$RUNNER_TEMP/notes.md" \
