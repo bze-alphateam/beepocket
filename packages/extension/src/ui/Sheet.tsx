@@ -10,8 +10,6 @@ export interface SheetProps {
   children: ComponentChildren;
   /** Next to the title, muted ("Connected sites 3"). */
   count?: number | string | undefined;
-  /** Shows a close (×) button in the title row; Escape and the backdrop always close. */
-  closeButton?: boolean | undefined;
   /** The sticky bottom stack: primary over secondary. The body scrolls above it. */
   actions?: ComponentChildren;
   /** `auto` fits the content; `tall` takes the full height a sheet may have (lists, search). */
@@ -25,10 +23,11 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * Bottom sheet over the popup: backdrop, handle, title row, scrolling body, sticky actions.
+ * Bottom sheet over the popup: backdrop, title row with a close (×) button, scrolling body, sticky
+ * actions.
  * While open it owns the keyboard: focus moves into the dialog, Tab stays inside it, Escape
  * closes it, and focus returns to what had it before. A sheet opened inside another one takes
- * the keyboard until it closes. The backdrop and the handle close it too.
+ * the keyboard until it closes. The × and the backdrop close it too.
  */
 export function Sheet(props: SheetProps) {
   const { open, title, onClose, children } = props;
@@ -88,19 +87,16 @@ export function Sheet(props: SheetProps) {
         aria-label={title}
         tabIndex={-1}
       >
-        <span class="bp-sheet-handle" aria-hidden="true" onClick={onClose} />
         <div class="bp-sheet-head">
           <h2>{title}</h2>
           {props.count !== undefined && <span class="bp-sheet-count">{props.count}</span>}
-          {props.closeButton === true && (
-            <Button
-              variant="icon"
-              icon="x"
-              iconSize={18}
-              label={t('app.sheet.close')}
-              onClick={onClose}
-            />
-          )}
+          <Button
+            variant="icon"
+            icon="x"
+            iconSize={18}
+            label={t('app.sheet.close')}
+            onClick={onClose}
+          />
         </div>
         <div class="bp-sheet-body">{children}</div>
         {props.actions !== undefined && <div class="bp-sheet-actions">{props.actions}</div>}

@@ -263,11 +263,19 @@ describe('Settings sheet', () => {
     expect(text).toContain('15 min · 1 h');
     expect(text).toContain('Password needed');
     expect(text).toContain('BeePocket 1.2.3 · beezee-1');
+    // The footer logo stays BeePocket green whatever token kit is active.
+    const stops = [...host.querySelectorAll('.bp-settings-footer .bp-logo stop')];
+    expect(stops.map((s) => s.getAttribute('stop-color'))).toEqual([
+      '#3DD07A',
+      '#1E9150',
+      '#3DD07A',
+      '#1E9150',
+    ]);
     expect(host.querySelector('[aria-label="Connected sites · 2"]')).not.toBeNull();
     expect(host.querySelector('input[type="checkbox"], select')).toBeNull();
   });
 
-  it('closes on Escape, on the backdrop and on the handle', async () => {
+  it('closes on Escape, on the backdrop and on the ×', async () => {
     const { host, button, dialogs, key } = await opened();
     key('Escape');
     expect(dialogs()).toHaveLength(0);
@@ -277,7 +285,7 @@ describe('Settings sheet', () => {
     expect(dialogs()).toHaveLength(0);
     fireEvent(button('Open settings'), 'click');
     await flush();
-    fireEvent(host.querySelector('.bp-sheet-handle'), 'click');
+    fireEvent(button('Close'), 'click');
     expect(dialogs()).toHaveLength(0);
   });
 
@@ -361,6 +369,17 @@ describe('Settings sheet', () => {
     expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Address book']);
     expect(host.textContent).toContain('Alex');
     key('Escape');
+    await flush();
+    expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
+  });
+
+  it('the address book closes from its ×, back to Settings', async () => {
+    const { button, dialogs } = await opened();
+    fireEvent(button(/^Address book/), 'click');
+    await flush();
+    const close = dialogs()[0]?.querySelectorAll('button[aria-label="Close"]');
+    expect(close).toHaveLength(1);
+    fireEvent(close?.[0], 'click');
     await flush();
     expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
   });

@@ -61,14 +61,28 @@ describe('SettingsRow', () => {
 });
 
 describe('Sheet', () => {
-  it('closes from the handle', () => {
+  it('always has a × in the title row that closes it, and no handle', () => {
     const onClose = vi.fn();
     const { host } = render(
       <Sheet open title="Settings" onClose={onClose}>
         body
       </Sheet>,
     );
-    fireEvent(host.querySelector('.bp-sheet-handle'), 'click');
+    expect(host.querySelector('.bp-sheet-handle')).toBeNull();
+    const close = host.querySelector('.bp-sheet-head button[aria-label="Close"]');
+    expect(close).not.toBeNull();
+    fireEvent(close, 'click');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('closes on the backdrop', () => {
+    const onClose = vi.fn();
+    const { host } = render(
+      <Sheet open title="Settings" onClose={onClose}>
+        body
+      </Sheet>,
+    );
+    fireEvent(host.querySelector('.bp-sheet-backdrop'), 'click');
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -105,6 +119,38 @@ describe('Sheet', () => {
     expect(dialogs()).toEqual(['Lock timers']);
     key('Escape');
     expect(dialogs()).toEqual([]);
+  });
+
+  it("a dropdown's × inside a sheet closes only the dropdown", () => {
+    function Outer() {
+      const [open, setOpen] = useState(true);
+      const [v, setV] = useState<'a' | 'b'>('a');
+      return (
+        <Sheet
+          open={open}
+          title="Lock timers"
+          onClose={() => {
+            setOpen(false);
+          }}
+        >
+          <DropdownSheet
+            title="Lock sending after"
+            value={v}
+            onChange={setV}
+            options={[
+              { value: 'a', label: '5 min' },
+              { value: 'b', label: '15 min' },
+            ]}
+          />
+        </Sheet>
+      );
+    }
+    const { host } = render(<Outer />);
+    const dialogs = () => [...host.querySelectorAll('[role="dialog"]')];
+    fireEvent(host.querySelector('.bp-dropdown'), 'click');
+    const nested = dialogs().find((d) => d.getAttribute('aria-label') === 'Lock sending after');
+    fireEvent(nested?.querySelector('[aria-label="Close"]'), 'click');
+    expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Lock timers']);
   });
 });
 
