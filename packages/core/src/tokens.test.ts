@@ -9,6 +9,7 @@ import {
   TransportError,
   type DenomBranding,
   type DenomMetadata,
+  type ScanAsset,
   type ScanClient,
   type ScanToken,
 } from './index';
@@ -134,8 +135,11 @@ describe('TokenResolver.resolve', () => {
       denomBranding: vi.fn().mockResolvedValue(null),
     });
     const resolver = new TokenResolver(chain, stubScan());
-    expect(await resolver.resolve('ulp/ABCDEF')).toMatchObject({ kind: 'other', source: 'chain' });
-    expect(await resolver.resolve('ulp/123456')).toMatchObject({
+    expect(await resolver.resolve('uother/ABCDEF')).toMatchObject({
+      kind: 'other',
+      source: 'chain',
+    });
+    expect(await resolver.resolve('uother/123456')).toMatchObject({
       kind: 'other',
       symbol: '123456',
       decimals: 0,
@@ -213,6 +217,84 @@ describe('TokenResolver.resolve', () => {
     await expect(new TokenResolver(chain, stubScan()).resolve(VDL)).rejects.toBeInstanceOf(
       TransportError,
     );
+  });
+});
+
+describe('TokenResolver LP shares', () => {
+  // What mainnet answers for the CTL/BZE pool's shares: bank metadata says 6, Scan's registry 12.
+  const LP = 'ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209';
+  const LP_IBC = 'ulp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze';
+  const bankMeta: DenomMetadata = {
+    name: '',
+    symbol: '',
+    display: `lp/${LP.slice('ulp/'.length)}`,
+    exponent: 6,
+    description: '',
+  };
+  const registry: ScanAsset = {
+    denom: LP,
+    logo: null,
+    ticker: 'CTL/BZE LP',
+    name: 'CTL/BZE LP Shares',
+    decimals: 12,
+  };
+  function setup(asset: ScanClient['asset']) {
+    const chain = stubChain({
+      denomMetadata: vi.fn().mockResolvedValue(bankMeta),
+      denomBranding: vi.fn().mockResolvedValue(null),
+    });
+    const scan = stubScan({ asset: vi.fn(asset) });
+    const cache = new MemoryCache();
+    return { chain, scan, cache, resolver: new TokenResolver(chain, scan, { cache }) };
+  }
+
+  it("takes 12 decimals and the text from Scan's registry, never the chain's 6", async () => {
+    const { chain, scan, resolver } = setup(() => Promise.resolve(registry));
+    expect(await resolver.resolve(LP)).toEqual({
+      denom: LP,
+      symbol: 'CTL/BZE LP',
+      name: 'CTL/BZE LP Shares',
+      decimals: 12,
+      kind: 'lp',
+      source: 'scan',
+      branding: null,
+      logo: null,
+    });
+    expect(chain.denomMetadata).not.toHaveBeenCalled();
+    // One registry request serves both the display data and the logo.
+    expect(scan.asset).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['Scan does not list it', () => Promise.resolve(null)],
+    ['Scan is down', () => Promise.reject(new TransportError('offline'))],
+    [
+      'Scan lists no decimals',
+      () => Promise.resolve({ ...registry, denom: LP_IBC, decimals: null }),
+    ],
+  ])('uses 12 decimals when %s, and does not keep the guess', async (_, asset) => {
+    const { cache, resolver } = setup(asset);
+    expect(await resolver.resolve(LP_IBC)).toMatchObject({
+      kind: 'lp',
+      decimals: 12,
+      symbol: 'ulp_ibc/829311…',
+      source: 'fallback',
+    });
+    expect(cache.store.has(`token:${LP_IBC}`)).toBe(false);
+  });
+
+  it('does not reuse a stored entry from before LP shares had their own kind', async () => {
+    const { cache, resolver } = setup(() => Promise.resolve(registry));
+    cache.store.set(`token:${LP}`, {
+      denom: LP,
+      symbol: 'LP/072C05CF6D235FA4D564EC9B564C1D',
+      name: 'LP/072C05CF6D235FA4D564EC9B564C1D',
+      decimals: 6,
+      kind: 'other',
+      source: 'chain',
+      branding: null,
+    });
+    expect(await resolver.resolve(LP)).toMatchObject({ kind: 'lp', decimals: 12 });
   });
 });
 

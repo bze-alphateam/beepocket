@@ -78,6 +78,10 @@ export function registerTokenHandlers(
     },
     handle: async (req) => (await service()).balances(req.denom, req.refresh === true),
   });
+  registry.register('tokens.lastBalances', {
+    validate: stringField('tokens.lastBalances', 'denom'),
+    handle: async (req) => (await service()).lastBalances(req.denom),
+  });
   registry.register('tokens.theme', {
     validate: stringField('tokens.theme', 'denom'),
     handle: async (req) => (await service()).theme(req.denom),

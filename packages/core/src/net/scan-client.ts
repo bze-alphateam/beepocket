@@ -20,6 +20,11 @@ export interface ScanAsset {
   denom: string;
   /** Logo URL as Scan lists it: untrusted, may point anywhere. Null when there is none. */
   logo: string | null;
+  /** Display text, untrusted; null when Scan lists none. */
+  ticker: string | null;
+  name: string | null;
+  /** Decimals of the display unit; null when Scan lists none. */
+  decimals: number | null;
 }
 
 export interface ScanBalance {
@@ -105,9 +110,14 @@ export class HttpScanClient implements ScanClient {
     const body = await this.getJson(`/api/v1/registry/assets/${encodeURIComponent(denom)}`, true);
     if (body === null) return null;
     const a = v.object(body, '$');
+    // Scan versions without the display fields answer null for them.
+    const optional = (key: string) => a[key] ?? null;
     const asset = {
       denom: v.string(v.field(a, 'denom', '$'), 'denom'),
       logo: v.nullable(v.field(a, 'logo', '$'), 'logo', v.string),
+      ticker: v.nullable(optional('ticker'), 'ticker', v.string),
+      name: v.nullable(optional('name'), 'name', v.string),
+      decimals: v.nullable(optional('decimals'), 'decimals', v.exponent),
     };
     // An answer about another denom is not an answer about this one.
     return asset.denom === denom ? asset : null;

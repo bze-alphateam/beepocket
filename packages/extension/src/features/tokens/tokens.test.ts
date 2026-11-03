@@ -356,12 +356,12 @@ describe('tokens.balances', () => {
     });
   });
 
-  it('reuses a read for 10 s, refreshes after, and on demand', async () => {
+  it('reuses a read for 3 s, under the 4 s poll, refreshes after, and on demand', async () => {
     const t = withBalances();
     await t.call('tokens.balances', { denom: 'ubze' });
     await t.call('tokens.balances', { denom: FACTORY });
     expect(t.chainData.balanceCalls).toHaveLength(2);
-    t.advance(9_999);
+    t.advance(2_999);
     await t.call('tokens.balances', { denom: 'ubze' });
     expect(t.chainData.balanceCalls).toHaveLength(2);
     t.advance(1);
@@ -369,6 +369,40 @@ describe('tokens.balances', () => {
     expect(t.chainData.balanceCalls).toHaveLength(4);
     await t.call('tokens.balances', { denom: 'ubze', refresh: true });
     expect(t.chainData.balanceCalls).toHaveLength(6);
+  });
+
+  it('answers the last read of every address, however old, without asking the node', async () => {
+    const t = withBalances();
+    expect(await t.call('tokens.lastBalances', { denom: 'ubze' })).toEqual({
+      ok: true,
+      value: null,
+    });
+    await t.call('tokens.balances', { denom: 'ubze' });
+    t.chainData.balances.bze1a = new Map([['ubze', 50n]]);
+    t.advance(3_600_000);
+    expect(await t.call('tokens.lastBalances', { denom: FACTORY })).toEqual({
+      ok: true,
+      value: {
+        denom: FACTORY,
+        addresses: [
+          { index: 0, address: 'bze1a', amount: '7' },
+          { index: 1, address: 'bze1b', amount: '0' },
+        ],
+        total: '7',
+        partial: false,
+      },
+    });
+    expect(t.chainData.balanceCalls).toHaveLength(2);
+  });
+
+  it('answers null for last balances while some address was never read', async () => {
+    const t = withBalances();
+    t.chainData.brokenAddresses.add('bze1b');
+    await t.call('tokens.balances', { denom: 'ubze' });
+    expect(await t.call('tokens.lastBalances', { denom: 'ubze' })).toEqual({
+      ok: true,
+      value: null,
+    });
   });
 
   it('rejects a non-boolean refresh', async () => {
@@ -718,7 +752,11 @@ describe('tokens.lookup through the real REST and Scan clients', () => {
 
   it.each([LP, LP_IBC])('finds LP shares by their code (%s)', async (denom) => {
     const r = await setupLive().lookup(denom);
-    expect(r).toMatchObject({ ok: true, value: { denom, kind: 'other', decimals: 6 } });
+    // Bank metadata says 6 decimals for LP shares; Scan's registry says 12, which is right.
+    expect(r).toMatchObject({
+      ok: true,
+      value: { denom, kind: 'lp', decimals: 12, source: 'scan' },
+    });
   });
 
   it('finds ubze without asking for its supply or asking Scan', async () => {
