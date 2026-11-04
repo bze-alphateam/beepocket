@@ -135,11 +135,13 @@ function signersOf(msg: AnyMsg): string[] | null {
  * Checks a sign request before anything is shown to the user: right network, right address,
  * one signer, our key, plain `SIGN_MODE_DIRECT`, the chain's account number and sequence (0
  * for an account the chain has not seen) and no fee payer or granter. A `timeoutHeight` is
- * allowed: it can only shorten how long the transaction stays valid. A failure is never approvable. The wallet checks the dapp's fee itself and
- * rebuilds the auth info with the fee the user approved, using `withWalletFee`.
+ * allowed: it can only shorten how long the transaction stays valid. A failure is never
+ * approvable. The wallet checks the dapp's fee itself and rebuilds the auth info with the fee
+ * the user approved, using `withWalletFee`.
  *
- * Messages of a type the wallet cannot decode (and that are not in `RAW_SIGNER_FIELD`) have no checkable signer field; they are let
- * through (the chain refuses a transaction that lacks a signature) and summarised as unknown.
+ * Messages of a type the wallet cannot decode (and that are not in `RAW_SIGNER_FIELD`) have no
+ * checkable signer field; they are let through (the chain refuses a transaction that lacks a
+ * signature) and summarised as unknown.
  */
 export function verifySignRequest(input: VerifyInput): VerifyResult {
   const { signDoc, connectedAddress } = input;

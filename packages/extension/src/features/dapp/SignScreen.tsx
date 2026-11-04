@@ -97,9 +97,14 @@ function feeNote(view: SignView, fee: FeeChoice): { tone: 'amber' | 'info'; text
   if (!check) return null;
   if (check.status === 'unusable') return { tone: 'info', text: t('dapp.sign.fee.unusable') };
   if (fee.setBy === undefined) return null;
+  if (check.status === 'gas') return { tone: 'amber', text: t('dapp.sign.fee.gas') };
   if (check.status === 'low') return { tone: 'amber', text: t('dapp.sign.fee.low') };
   if (check.status === 'high') {
-    return { tone: 'amber', text: t('dapp.sign.fee.high', { times: String(check.times) }) };
+    const text =
+      check.times === null
+        ? t('dapp.sign.fee.higher')
+        : t('dapp.sign.fee.high', { times: String(check.times) });
+    return { tone: 'amber', text };
   }
   return null;
 }

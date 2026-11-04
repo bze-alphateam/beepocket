@@ -27,7 +27,7 @@ export function whenText(iso: string, locale?: string | string[]): string {
 }
 
 /** The unknown-token forms: `ibc/6490…9E0F`, `factory/…/name`; any other denom stays whole. */
-function shortDenom(denom: string): string {
+export function shortDenom(denom: string): string {
   if (denom.startsWith('ibc/')) {
     const hash = denom.slice(4);
     return hash.length <= 8 ? denom : `ibc/${hash.slice(0, 4)}…${hash.slice(-4)}`;

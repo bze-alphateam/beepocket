@@ -170,7 +170,8 @@ const HIGH_FEE_TIMES = 3n;
 
 /**
  * The site's fee as an option, with what the wallet makes of it; `null` option when it cannot
- * be paid. `walletAmount` is the wallet's own estimate in the same token, when it has one.
+ * be paid. `walletAmount` is the wallet's own estimate in the same token, when it has one;
+ * `gasUsed` is what the simulation of this transaction used.
  */
 function checkSiteFee(
   fee: SiteFee,
@@ -178,7 +179,7 @@ function checkSiteFee(
   data: FeeData,
   balances: Map<string, bigint>,
   info: FeeChoice | undefined,
-  walletAmount: bigint | undefined,
+  estimate: { walletAmount: bigint | undefined; gasUsed: bigint },
 ): { option: FeeChoice | null; check: SiteFeeCheck } {
   const unusable = { option: null, check: { status: 'unusable' as const } };
   const [coin] = fee.coins;
@@ -192,9 +193,14 @@ function checkSiteFee(
     gasLimit: fee.gasLimit.toString(),
     setBy: origin,
   };
+  // Too little gas runs out mid-way and the fee is still charged.
+  if (fee.gasLimit < estimate.gasUsed) return { option, check: { status: 'gas' } };
   if (amount < minimum) return { option, check: { status: 'low' } };
-  if (walletAmount !== undefined && walletAmount > 0n && amount > walletAmount * HIGH_FEE_TIMES) {
-    return { option, check: { status: 'high', times: roundedRatio(amount, walletAmount) } };
+  const { walletAmount } = estimate;
+  if (walletAmount !== undefined && amount > walletAmount * HIGH_FEE_TIMES) {
+    // A zero estimate (a zero gas price) makes any fee too high, by no meaningful ratio.
+    const times = walletAmount === 0n ? null : roundedRatio(amount, walletAmount);
+    return { option, check: { status: 'high', times } };
   }
   return { option, check: { status: 'ok' } };
 }
@@ -309,7 +315,10 @@ export async function prepareSign(
           feeData,
           balances,
           siteDenom === undefined ? undefined : infos.get(siteDenom),
-          estimate.options.find((o) => o.denom === siteDenom)?.amount,
+          {
+            walletAmount: estimate.options.find((o) => o.denom === siteDenom)?.amount,
+            gasUsed: estimate.gasUsed,
+          },
         )
       : null;
   const options = site?.option ? [site.option, ...walletOptions] : walletOptions;

@@ -1,8 +1,9 @@
-import { shortAddress } from '@beepocket/core';
+import { formatAmount, shortAddress } from '@beepocket/core';
 import { t } from '../../i18n';
 import type { WalletAddress } from '../../protocol';
 import type { FeeChoice } from '../../protocol/send';
 import { Avatar, ListRow, Sheet } from '../../ui';
+import { shortDenom } from '../activity/format';
 import { exact } from './format';
 
 export interface FromRow {
@@ -79,7 +80,12 @@ export function FeeSheet(props: {
               plainSubtitle
               subtitle={
                 o.setBy !== undefined
-                  ? t('send.fee.setBy', { site: o.setBy })
+                  ? // The denom and gas limit too: a site's token can borrow a known symbol.
+                    t('send.fee.setBy', {
+                      site: o.setBy,
+                      denom: shortDenom(o.denom),
+                      gas: formatAmount(BigInt(o.gasLimit), 0),
+                    })
                   : o.balance === undefined
                     ? undefined
                     : t('send.fee.balance', { amount: exact(o.balance, o.decimals) })

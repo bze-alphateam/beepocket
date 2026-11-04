@@ -75,6 +75,7 @@ interface Node {
   account: { accountNumber: bigint; sequence: bigint; pubKey: null } | null;
   estimate: () => Promise<FeeEstimate>;
   balances: Map<string, bigint>;
+  feeData: FeeData;
   broadcast: Mock<ChainClient['broadcast']>;
 }
 
@@ -85,6 +86,7 @@ const FEES: FeeEstimate = {
     { denom: 'uother', amount: 500n, gasLimit: 300_000n },
   ],
   default: 'ubze',
+  gasUsed: 150_000n,
 };
 
 /** 0.01 ubze per gas; 6 ubze per uother at the pool's spot ratio. */
@@ -131,6 +133,7 @@ async function rig() {
     account: { accountNumber: ACCOUNT_NUMBER, sequence: SEQUENCE, pubKey: null },
     estimate: () => Promise.resolve(FEES),
     balances: new Map([['ubze', 100_000_000n]]),
+    feeData: FEE_DATA,
     broadcast: vi.fn<ChainClient['broadcast']>(() => Promise.resolve({ txHash: HASH })),
   };
   const env: ChainEnv = {
@@ -143,7 +146,7 @@ async function rig() {
       liquidityPools: () => Promise.resolve([]),
       marketOrder: () => Promise.resolve(null),
     },
-    fees: { estimate: () => node.estimate(), feeData: () => Promise.resolve(FEE_DATA) },
+    fees: { estimate: () => node.estimate(), feeData: () => Promise.resolve(node.feeData) },
     tokens: {
       resolve: (denom) => {
         const known = TOKENS[denom];
@@ -351,7 +354,7 @@ describe('signDirect refuses before any window opens', () => {
   it('when no token can pay the fee', async () => {
     const t = await rig();
     await t.connect();
-    t.node.estimate = () => Promise.resolve({ options: [], default: null });
+    t.node.estimate = () => Promise.resolve({ options: [], default: null, gasUsed: 150_000n });
     const a = await t.ask('signDirect', request().params);
     expect(t.answerOf(a.id)).toMatchObject({ error: { code: 'invalid-request' } });
   });
@@ -791,6 +794,36 @@ describe('signDirect with a fee the site set', () => {
     expect(many.view.fee).toMatchObject({ amount: '9000', setBy: ORIGIN });
   });
 
+  it('warns about a gas limit below what the simulation used, even with fee to spare', async () => {
+    const t = await rig();
+    await t.connect();
+    // The simulation used 150,000 gas.
+    const below = await review(t, site([['ubze', 5_000n]], 149_999n));
+    expect(below.view.siteFee).toEqual({ status: 'gas' });
+    expect(below.view.fee).toMatchObject({ gasLimit: '149999', setBy: ORIGIN });
+    await t.dapp.answer(below.id, { approve: false });
+    const at = await review(t, site([['ubze', 1_500n]], 150_000n));
+    expect(at.view.siteFee).toEqual({ status: 'ok' });
+  });
+
+  it('calls any fee high when the wallets own estimate is zero', async () => {
+    const t = await rig();
+    await t.connect();
+    t.node.feeData = {
+      nativeDenom: 'ubze',
+      rates: new Map([['ubze', { num: 0n, den: 1n }]]),
+    };
+    t.node.estimate = () =>
+      Promise.resolve({
+        options: [{ denom: 'ubze', amount: 0n, gasLimit: 225_000n }],
+        default: 'ubze',
+        gasUsed: 150_000n,
+      });
+    const r = await review(t, site([['ubze', 1_000_000n]], 225_000n));
+    expect(r.view.siteFee).toEqual({ status: 'high', times: null });
+    expect(r.view.fee).toMatchObject({ amount: '1000000', setBy: ORIGIN });
+  });
+
   it('checks a fee in another token at the spot ratio, without the wallets margin', async () => {
     const t = await rig();
     await t.connect();
@@ -865,7 +898,7 @@ describe('signDirect with a fee the site set', () => {
   it('signs a usable site fee even when the wallets own options are all out of reach', async () => {
     const t = await rig();
     await t.connect();
-    t.node.estimate = () => Promise.resolve({ options: [], default: null });
+    t.node.estimate = () => Promise.resolve({ options: [], default: null, gasUsed: 150_000n });
     const r = await review(t, site([['ubze', 2_500n]], 250_000n));
     expect(r.view.options).toHaveLength(1);
     expect(r.view.siteFee).toEqual({ status: 'ok' });

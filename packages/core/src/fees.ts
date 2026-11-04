@@ -36,6 +36,8 @@ export interface FeeEstimate {
   options: FeeOption[];
   /** The denom to pre-select, null when the payer can pay with none. */
   default: string | null;
+  /** The gas the simulation used, before any headroom. */
+  gasUsed: bigint;
 }
 
 export interface EstimateParams {
@@ -210,7 +212,7 @@ export class FeeEstimator {
     const has = (denom: string | undefined): denom is string =>
       denom !== undefined && options.some((o) => o.denom === denom);
     const selected = [data.nativeDenom, params.preferred].find(has) ?? options[0]?.denom ?? null;
-    return { options, default: selected };
+    return { options, default: selected, gasUsed: simulation.gasUsed };
   }
 
   private async order(options: FeeOption[], native: string): Promise<FeeOption[]> {

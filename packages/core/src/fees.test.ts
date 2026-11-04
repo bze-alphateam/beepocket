@@ -171,6 +171,7 @@ describe('FeeEstimator.estimate', () => {
     expect(result).toEqual({
       options: [{ denom: NATIVE, amount: 3_000n, gasLimit: 300_000n }],
       default: NATIVE,
+      gasUsed: 200_000n,
     });
     expect(chain.simulate).toHaveBeenCalledWith(simulationTxBytes(body, pubKey, 7n));
   });
@@ -197,7 +198,7 @@ describe('FeeEstimator.estimate', () => {
 
   it('offers nothing when the payer holds one unit less than the fee', async () => {
     const result = await estimate(estimator(chainWith([deepPool])), [[X, 2_474n]]);
-    expect(result).toEqual({ options: [], default: null });
+    expect(result).toEqual({ options: [], default: null, gasUsed: 200_000n });
   });
 
   it('offers a token that is held exactly', async () => {
