@@ -100,12 +100,24 @@ export function quoteAdvanced(quote: SendQuote): QuoteAdvanced | null {
   };
 }
 
-/** `0.01` for the chain minimum: the native price in base units per gas, times `times`. */
+/** Digits a gas price whose fraction does not end in a power of ten is shown with. */
+const PRICE_DIGITS = 18;
+
+/**
+ * `0.01` for the chain minimum: the native price in base units per gas, times `times`. The
+ * chain's price is a decimal string, so its denominator is a power of ten and this is exact;
+ * any other fraction is shown to 18 digits, rounded up, in integer math.
+ */
 export function priceText(pricing: FeePricing, times: GasPrice): string {
   const { num, den } = pricing.nativePrice;
+  const scaled = num * BigInt(times);
   const decimals = den.toString().length - 1;
-  if (den !== 10n ** BigInt(decimals)) return String((Number(num) * times) / Number(den));
-  return formatAmount(num * BigInt(times), decimals, { maxFraction: decimals });
+  if (den === 10n ** BigInt(decimals)) {
+    return formatAmount(scaled, decimals, { maxFraction: decimals });
+  }
+  const unit = 10n ** BigInt(PRICE_DIGITS);
+  const up = (scaled * unit + den - 1n) / den;
+  return formatAmount(up, PRICE_DIGITS, { maxFraction: PRICE_DIGITS });
 }
 
 const pickLabel = (pick: QuickGasPick): string =>

@@ -68,7 +68,6 @@ const MAX_PASSES = 5;
 const TX_HASH = /^[0-9A-Fa-f]{64}$/;
 const BASE_UNITS = /^\d{1,60}$/;
 const CANNOT_PAY = "This address can't pay the network fee.";
-const TOO_LITTLE = 'This address holds too little for this fee.';
 
 interface Context {
   from: WalletAddress;
@@ -463,9 +462,11 @@ export class SendService {
       gasPrice: multiplierOf(override.gasPrice),
       spendable: held - sent,
     });
-    if (priced.status === 'afford') return fail(SendErrorCodes.cannotPayFee, TOO_LITTLE);
-    if (priced.status === 'low' || priced.status === 'high')
+    // Settings that no longer fit (a new simulation, a larger amount) give way to the estimate,
+    // which `options` has already checked against the balance.
+    if (priced.status === 'low' || priced.status === 'high' || priced.status === 'afford') {
       return ok({ fee, options, reset: true });
+    }
     const custom: FeeChoice = {
       ...fee,
       amount: priced.amount.toString(),

@@ -640,16 +640,25 @@ describe('Advanced gas limit and price', () => {
     expect(s.calls.sign).toBe(0);
   });
 
-  it('refuses settings whose fee the address cannot pay next to the amount', async () => {
+  it('drops settings whose fee the address cannot pay next to the amount', async () => {
     // 1 BZE sent out of 1.05: 50,000 ubze are left for the fee; 2,000,000 gas x 0.03 is 60,000.
     const s = setup({ balances: { ubze: 1_050_000n } });
-    expect(await s.call('send.prepare', prepareReq(override('2000000', 3)))).toMatchObject({
-      ok: false,
-      error: { code: 'cannot-pay-fee' },
-    });
-    expect(await s.call('send.prepare', prepareReq(override('2000000', 2)))).toMatchObject({
-      ok: true,
-    });
+    const fits = await quoteOf(s, override('2000000', 2));
+    expect(fits.fee).toMatchObject({ amount: '40000', gasLimit: '2000000' });
+    const above = await quoteOf(s, override('2000000', 3));
+    expect(above).toMatchObject({ overrideReset: true, gasLimit: '200000' });
+    expect(above.fee.amount).toBe('2000');
+    expect(above.override).toBeUndefined();
+  });
+
+  it('drops the settings when a larger amount leaves too little for their fee', async () => {
+    // 40,000 ubze for the fee fits next to 1 BZE out of 1.05, not next to 1.02.
+    const s = setup({ balances: { ubze: 1_050_000n } });
+    const settings = override('2000000', 2);
+    expect((await quoteOf(s, { amount: '1', ...settings })).override).toEqual(settings.override);
+    const larger = await quoteOf(s, { amount: '1.02', ...settings });
+    expect(larger).toMatchObject({ overrideReset: true, gasLimit: '200000', amount: '1020000' });
+    expect(larger.fee).toMatchObject({ amount: '2000', gasLimit: '200000' });
   });
 
   it('sends max less the custom fee', async () => {

@@ -227,6 +227,17 @@ describe('FeeSheet Advanced', () => {
     expect(gasField(host).value).toBe('200,000');
   });
 
+  it('shows a gas price that is not a decimal fraction exactly, rounded up at 18 digits', () => {
+    const thirds = { num: '1', den: '3' };
+    const { host } = advancedSheet({
+      option: { ...priced, pricing: { native: true, nativePrice: thirds, rate: thirds } },
+    });
+    openAdvanced(host);
+    expect(host.textContent).toContain('0.333333333333333334 ubze per gas · chain minimum');
+    fireEvent(priceButton(host, '×3'), 'click');
+    expect(host.textContent).toContain('1.00 ubze per gas');
+  });
+
   it('has no Advanced row for a token it cannot price', () => {
     const { host } = advancedSheet({ option: own });
     expect(host.textContent).not.toContain('Advanced');
