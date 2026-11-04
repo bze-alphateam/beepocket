@@ -61,8 +61,9 @@ const SIGNER_FIELDS = [
   'signer',
 ] as const;
 /**
- * Types the wallet has no decoder for but whose signer is a plain string field at a fixed
- * number (IBC transfer `sender`, staking and distribution `delegator_address`).
+ * Signers as a plain string field at a fixed number (IBC transfer `sender`, staking and
+ * distribution `delegator_address`), for when these types have no decoder. They all decode
+ * today, so `SIGNER_FIELDS` finds their signer; this is the fallback if a codec is dropped.
  */
 const RAW_SIGNER_FIELD: Record<string, number> = {
   '/ibc.applications.transfer.v1.MsgTransfer': 4,

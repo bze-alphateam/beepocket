@@ -38,8 +38,16 @@ import * as rewards from './proto/bze/rewards/tx';
 import * as factory from './proto/bze/tokenfactory/tx';
 import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
 import { MsgMultiSend, MsgSend } from './proto/cosmos/bank/v1beta1/tx';
-import { MsgBeginRedelegate, MsgDelegate, MsgUndelegate } from './proto/cosmos/staking/v1beta1/tx';
-import { MsgWithdrawDelegatorReward } from './proto/cosmos/distribution/v1beta1/tx';
+import {
+  MsgBeginRedelegate,
+  MsgCancelUnbondingDelegation,
+  MsgDelegate,
+  MsgUndelegate,
+} from './proto/cosmos/staking/v1beta1/tx';
+import {
+  MsgSetWithdrawAddress,
+  MsgWithdrawDelegatorReward,
+} from './proto/cosmos/distribution/v1beta1/tx';
 import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
 import { Any } from './proto/google/protobuf/any';
 
@@ -979,6 +987,16 @@ const SAMPLES: Record<string, AnyMsg> = {
     validatorDstAddress: VALOPER2,
     amount: bze('500000000'),
   }),
+  [MsgCancelUnbondingDelegation.typeUrl]: pack(MsgCancelUnbondingDelegation, {
+    delegatorAddress: ME,
+    validatorAddress: VALOPER,
+    amount: bze('500000000'),
+    creationHeight: 21_000_000n,
+  }),
+  [MsgSetWithdrawAddress.typeUrl]: pack(MsgSetWithdrawAddress, {
+    delegatorAddress: ME,
+    withdrawAddress: ALEX,
+  }),
   [MsgWithdrawDelegatorReward.typeUrl]: pack(MsgWithdrawDelegatorReward, {
     delegatorAddress: ME,
     validatorAddress: VALOPER,
@@ -1119,6 +1137,16 @@ describe('BZE and cosmos message summaries', () => {
       'rewards',
       `Claim staking rewards · Your rewards · from ${short(VALOPER)}`,
     ],
+    [
+      MsgCancelUnbondingDelegation.typeUrl,
+      'stake',
+      `Cancel unstaking · 500.00 BZE · back to ${short(VALOPER)}`,
+    ],
+    [
+      MsgSetWithdrawAddress.typeUrl,
+      'rewards',
+      'Change rewards address · Alex · staking rewards go there from now on',
+    ],
     [MsgTransfer.typeUrl, 'send', `Send · 25.00 USDC · to ${short(NOBLE)} via channel-3`],
   ])('summarises %s', async (typeUrl, icon, line) => {
     const s = await run([sample(typeUrl)]);
@@ -1140,7 +1168,7 @@ describe('BZE and cosmos message summaries', () => {
       ...Object.values(SAMPLES),
       ...GOVERNANCE_ONLY.map(([typeUrl]) => ({ typeUrl, value: new Uint8Array() })),
     ];
-    expect(Object.keys(SAMPLES)).toHaveLength(34);
+    expect(Object.keys(SAMPLES)).toHaveLength(36);
     const s = await run(all);
     for (const [i, m] of s.messages.entries()) {
       const typeUrl = all[i]?.typeUrl ?? '';

@@ -4,6 +4,79 @@ import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";
 import { BinaryReader, BinaryWriter } from "../../../binary";
 import { GlobalDecoderRegistry } from "../../../registry";
 /**
+ * MsgSetWithdrawAddress sets the withdraw address for
+ * a delegator (or validator self-delegation).
+ * @name MsgSetWithdrawAddress
+ * @package cosmos.distribution.v1beta1
+ * @see proto type: cosmos.distribution.v1beta1.MsgSetWithdrawAddress
+ */
+export interface MsgSetWithdrawAddress {
+  delegatorAddress: string;
+  withdrawAddress: string;
+}
+export interface MsgSetWithdrawAddressProtoMsg {
+  typeUrl: "/cosmos.distribution.v1beta1.MsgSetWithdrawAddress";
+  value: Uint8Array;
+}
+/**
+ * MsgSetWithdrawAddress sets the withdraw address for
+ * a delegator (or validator self-delegation).
+ * @name MsgSetWithdrawAddressAmino
+ * @package cosmos.distribution.v1beta1
+ * @see proto type: cosmos.distribution.v1beta1.MsgSetWithdrawAddress
+ */
+export interface MsgSetWithdrawAddressAmino {
+  delegator_address?: string;
+  withdraw_address?: string;
+}
+export interface MsgSetWithdrawAddressAminoMsg {
+  type: "cosmos-sdk/MsgModifyWithdrawAddress";
+  value: MsgSetWithdrawAddressAmino;
+}
+/**
+ * MsgSetWithdrawAddress sets the withdraw address for
+ * a delegator (or validator self-delegation).
+ * @name MsgSetWithdrawAddressSDKType
+ * @package cosmos.distribution.v1beta1
+ * @see proto type: cosmos.distribution.v1beta1.MsgSetWithdrawAddress
+ */
+export interface MsgSetWithdrawAddressSDKType {
+  delegator_address: string;
+  withdraw_address: string;
+}
+/**
+ * MsgSetWithdrawAddressResponse defines the Msg/SetWithdrawAddress response
+ * type.
+ * @name MsgSetWithdrawAddressResponse
+ * @package cosmos.distribution.v1beta1
+ * @see proto type: cosmos.distribution.v1beta1.MsgSetWithdrawAddressResponse
+ */
+export interface MsgSetWithdrawAddressResponse {}
+export interface MsgSetWithdrawAddressResponseProtoMsg {
+  typeUrl: "/cosmos.distribution.v1beta1.MsgSetWithdrawAddressResponse";
+  value: Uint8Array;
+}
+/**
+ * MsgSetWithdrawAddressResponse defines the Msg/SetWithdrawAddress response
+ * type.
+ * @name MsgSetWithdrawAddressResponseAmino
+ * @package cosmos.distribution.v1beta1
+ * @see proto type: cosmos.distribution.v1beta1.MsgSetWithdrawAddressResponse
+ */
+export interface MsgSetWithdrawAddressResponseAmino {}
+export interface MsgSetWithdrawAddressResponseAminoMsg {
+  type: "cosmos-sdk/MsgSetWithdrawAddressResponse";
+  value: MsgSetWithdrawAddressResponseAmino;
+}
+/**
+ * MsgSetWithdrawAddressResponse defines the Msg/SetWithdrawAddress response
+ * type.
+ * @name MsgSetWithdrawAddressResponseSDKType
+ * @package cosmos.distribution.v1beta1
+ * @see proto type: cosmos.distribution.v1beta1.MsgSetWithdrawAddressResponse
+ */
+export interface MsgSetWithdrawAddressResponseSDKType {}
+/**
  * MsgWithdrawDelegatorReward represents delegation withdrawal to a delegator
  * from a single validator.
  * @name MsgWithdrawDelegatorReward
@@ -88,6 +161,179 @@ export interface MsgWithdrawDelegatorRewardResponseAminoMsg {
 export interface MsgWithdrawDelegatorRewardResponseSDKType {
   amount: CoinSDKType[];
 }
+function createBaseMsgSetWithdrawAddress(): MsgSetWithdrawAddress {
+  return {
+    delegatorAddress: "",
+    withdrawAddress: ""
+  };
+}
+/**
+ * MsgSetWithdrawAddress sets the withdraw address for
+ * a delegator (or validator self-delegation).
+ * @name MsgSetWithdrawAddress
+ * @package cosmos.distribution.v1beta1
+ * @see proto type: cosmos.distribution.v1beta1.MsgSetWithdrawAddress
+ */
+export const MsgSetWithdrawAddress = {
+  typeUrl: "/cosmos.distribution.v1beta1.MsgSetWithdrawAddress",
+  aminoType: "cosmos-sdk/MsgModifyWithdrawAddress",
+  is(o: any): o is MsgSetWithdrawAddress {
+    return o && (o.$typeUrl === MsgSetWithdrawAddress.typeUrl || typeof o.delegatorAddress === "string" && typeof o.withdrawAddress === "string");
+  },
+  isSDK(o: any): o is MsgSetWithdrawAddressSDKType {
+    return o && (o.$typeUrl === MsgSetWithdrawAddress.typeUrl || typeof o.delegator_address === "string" && typeof o.withdraw_address === "string");
+  },
+  isAmino(o: any): o is MsgSetWithdrawAddressAmino {
+    return o && (o.$typeUrl === MsgSetWithdrawAddress.typeUrl || typeof o.delegator_address === "string" && typeof o.withdraw_address === "string");
+  },
+  encode(message: MsgSetWithdrawAddress, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.delegatorAddress !== "") {
+      writer.uint32(10).string(message.delegatorAddress);
+    }
+    if (message.withdrawAddress !== "") {
+      writer.uint32(18).string(message.withdrawAddress);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgSetWithdrawAddress {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgSetWithdrawAddress();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.delegatorAddress = reader.string();
+          break;
+        case 2:
+          message.withdrawAddress = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromPartial(object: Partial<MsgSetWithdrawAddress>): MsgSetWithdrawAddress {
+    const message = createBaseMsgSetWithdrawAddress();
+    message.delegatorAddress = object.delegatorAddress ?? "";
+    message.withdrawAddress = object.withdrawAddress ?? "";
+    return message;
+  },
+  fromAmino(object: MsgSetWithdrawAddressAmino): MsgSetWithdrawAddress {
+    const message = createBaseMsgSetWithdrawAddress();
+    if (object.delegator_address !== undefined && object.delegator_address !== null) {
+      message.delegatorAddress = object.delegator_address;
+    }
+    if (object.withdraw_address !== undefined && object.withdraw_address !== null) {
+      message.withdrawAddress = object.withdraw_address;
+    }
+    return message;
+  },
+  toAmino(message: MsgSetWithdrawAddress): MsgSetWithdrawAddressAmino {
+    const obj: any = {};
+    obj.delegator_address = message.delegatorAddress === "" ? undefined : message.delegatorAddress;
+    obj.withdraw_address = message.withdrawAddress === "" ? undefined : message.withdrawAddress;
+    return obj;
+  },
+  fromAminoMsg(object: MsgSetWithdrawAddressAminoMsg): MsgSetWithdrawAddress {
+    return MsgSetWithdrawAddress.fromAmino(object.value);
+  },
+  toAminoMsg(message: MsgSetWithdrawAddress): MsgSetWithdrawAddressAminoMsg {
+    return {
+      type: "cosmos-sdk/MsgModifyWithdrawAddress",
+      value: MsgSetWithdrawAddress.toAmino(message)
+    };
+  },
+  fromProtoMsg(message: MsgSetWithdrawAddressProtoMsg): MsgSetWithdrawAddress {
+    return MsgSetWithdrawAddress.decode(message.value);
+  },
+  toProto(message: MsgSetWithdrawAddress): Uint8Array {
+    return MsgSetWithdrawAddress.encode(message).finish();
+  },
+  toProtoMsg(message: MsgSetWithdrawAddress): MsgSetWithdrawAddressProtoMsg {
+    return {
+      typeUrl: "/cosmos.distribution.v1beta1.MsgSetWithdrawAddress",
+      value: MsgSetWithdrawAddress.encode(message).finish()
+    };
+  },
+  registerTypeUrl() {}
+};
+function createBaseMsgSetWithdrawAddressResponse(): MsgSetWithdrawAddressResponse {
+  return {};
+}
+/**
+ * MsgSetWithdrawAddressResponse defines the Msg/SetWithdrawAddress response
+ * type.
+ * @name MsgSetWithdrawAddressResponse
+ * @package cosmos.distribution.v1beta1
+ * @see proto type: cosmos.distribution.v1beta1.MsgSetWithdrawAddressResponse
+ */
+export const MsgSetWithdrawAddressResponse = {
+  typeUrl: "/cosmos.distribution.v1beta1.MsgSetWithdrawAddressResponse",
+  aminoType: "cosmos-sdk/MsgSetWithdrawAddressResponse",
+  is(o: any): o is MsgSetWithdrawAddressResponse {
+    return o && o.$typeUrl === MsgSetWithdrawAddressResponse.typeUrl;
+  },
+  isSDK(o: any): o is MsgSetWithdrawAddressResponseSDKType {
+    return o && o.$typeUrl === MsgSetWithdrawAddressResponse.typeUrl;
+  },
+  isAmino(o: any): o is MsgSetWithdrawAddressResponseAmino {
+    return o && o.$typeUrl === MsgSetWithdrawAddressResponse.typeUrl;
+  },
+  encode(_: MsgSetWithdrawAddressResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgSetWithdrawAddressResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgSetWithdrawAddressResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromPartial(_: Partial<MsgSetWithdrawAddressResponse>): MsgSetWithdrawAddressResponse {
+    const message = createBaseMsgSetWithdrawAddressResponse();
+    return message;
+  },
+  fromAmino(_: MsgSetWithdrawAddressResponseAmino): MsgSetWithdrawAddressResponse {
+    const message = createBaseMsgSetWithdrawAddressResponse();
+    return message;
+  },
+  toAmino(_: MsgSetWithdrawAddressResponse): MsgSetWithdrawAddressResponseAmino {
+    const obj: any = {};
+    return obj;
+  },
+  fromAminoMsg(object: MsgSetWithdrawAddressResponseAminoMsg): MsgSetWithdrawAddressResponse {
+    return MsgSetWithdrawAddressResponse.fromAmino(object.value);
+  },
+  toAminoMsg(message: MsgSetWithdrawAddressResponse): MsgSetWithdrawAddressResponseAminoMsg {
+    return {
+      type: "cosmos-sdk/MsgSetWithdrawAddressResponse",
+      value: MsgSetWithdrawAddressResponse.toAmino(message)
+    };
+  },
+  fromProtoMsg(message: MsgSetWithdrawAddressResponseProtoMsg): MsgSetWithdrawAddressResponse {
+    return MsgSetWithdrawAddressResponse.decode(message.value);
+  },
+  toProto(message: MsgSetWithdrawAddressResponse): Uint8Array {
+    return MsgSetWithdrawAddressResponse.encode(message).finish();
+  },
+  toProtoMsg(message: MsgSetWithdrawAddressResponse): MsgSetWithdrawAddressResponseProtoMsg {
+    return {
+      typeUrl: "/cosmos.distribution.v1beta1.MsgSetWithdrawAddressResponse",
+      value: MsgSetWithdrawAddressResponse.encode(message).finish()
+    };
+  },
+  registerTypeUrl() {}
+};
 function createBaseMsgWithdrawDelegatorReward(): MsgWithdrawDelegatorReward {
   return {
     delegatorAddress: "",

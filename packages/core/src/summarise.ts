@@ -3,8 +3,16 @@ import { formatAmount, displayPrice } from './amounts';
 import { decodeAny } from './decode';
 import type { ChainClient, Market, MarketOrder, Pool } from './net';
 import { MsgMultiSend, MsgSend } from './proto/cosmos/bank/v1beta1/tx';
-import { MsgBeginRedelegate, MsgDelegate, MsgUndelegate } from './proto/cosmos/staking/v1beta1/tx';
-import { MsgWithdrawDelegatorReward } from './proto/cosmos/distribution/v1beta1/tx';
+import {
+  MsgBeginRedelegate,
+  MsgCancelUnbondingDelegation,
+  MsgDelegate,
+  MsgUndelegate,
+} from './proto/cosmos/staking/v1beta1/tx';
+import {
+  MsgSetWithdrawAddress,
+  MsgWithdrawDelegatorReward,
+} from './proto/cosmos/distribution/v1beta1/tx';
 import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
 import { SendAuthorization } from './proto/cosmos/bank/v1beta1/authz';
 import { GenericAuthorization, Grant } from './proto/cosmos/authz/v1beta1/authz';
@@ -1250,6 +1258,17 @@ async function stakingParts(
   };
 }
 
+function setWithdrawAddressParts(l: Lookups, msg: MsgSetWithdrawAddress): Parts {
+  return {
+    level: 'normal',
+    icon: 'rewards',
+    title: 'Change rewards address',
+    hero: l.who(msg.withdrawAddress),
+    sub: 'staking rewards go there from now on',
+    rows: [['Rewards address', safeText(msg.withdrawAddress, 80), 'mono']],
+  };
+}
+
 function withdrawRewardParts(l: Lookups, msg: MsgWithdrawDelegatorReward): Parts {
   return {
     level: 'normal',
@@ -1474,6 +1493,21 @@ async function partsOf(l: Lookups, msg: AnyMsg): Promise<Parts> {
       }
       case MsgWithdrawDelegatorReward.typeUrl:
         return withdrawRewardParts(l, MsgWithdrawDelegatorReward.decode(msg.value));
+      case MsgCancelUnbondingDelegation.typeUrl: {
+        const m = MsgCancelUnbondingDelegation.decode(msg.value);
+        return await stakingParts(
+          l,
+          'Cancel unstaking',
+          m.amount,
+          `back to ${l.who(m.validatorAddress)}`,
+          [
+            ['Validator', safeText(m.validatorAddress, 80), 'mono'],
+            ['Unstaking started at height', m.creationHeight.toString()],
+          ],
+        );
+      }
+      case MsgSetWithdrawAddress.typeUrl:
+        return setWithdrawAddressParts(l, MsgSetWithdrawAddress.decode(msg.value));
       case MsgTransfer.typeUrl:
         return await transferParts(l, MsgTransfer.decode(msg.value));
       default:

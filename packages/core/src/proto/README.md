@@ -38,10 +38,11 @@ prepended, except where noted. The copied files still import `GlobalDecoderRegis
   upgrade, distribution, params and cointrunk proposal types)
 - `cosmos/gov/v1/gov.ts`: trimmed to the `VoteOption` enum and its JSON helpers
 - `cosmos/staking/v1beta1/tx.ts`: trimmed to `MsgDelegate`, `MsgBeginRedelegate`,
-  `MsgUndelegate` and their responses (the full file pulls in validator, tendermint and pubkey
-  types); keeps the `//@ts-nocheck` line
-- `cosmos/distribution/v1beta1/tx.ts`: trimmed to `MsgWithdrawDelegatorReward` and its response
-  (the full file pulls in the distribution params); keeps the `//@ts-nocheck` line
+  `MsgUndelegate`, `MsgCancelUnbondingDelegation` and their responses (the full file pulls in
+  validator, tendermint and pubkey types); keeps the `//@ts-nocheck` line
+- `cosmos/distribution/v1beta1/tx.ts`: trimmed to `MsgSetWithdrawAddress`,
+  `MsgWithdrawDelegatorReward` and their responses (the full file pulls in the distribution
+  params); keeps the `//@ts-nocheck` line
 
 ## Hand-written stand-ins
 

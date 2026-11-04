@@ -47,7 +47,7 @@ const FILES = [
 const GOV_TX = 'cosmos/gov/v1/tx.ts';
 const GOV = 'cosmos/gov/v1/gov.ts';
 // Trimmed too: the full staking and distribution tx files pull in validator, tendermint and
-// pubkey types. Only the delegation messages and the reward withdrawal are kept.
+// pubkey types. Only the delegation messages and the reward-address messages are kept.
 const STAKING_TX = 'cosmos/staking/v1beta1/tx.ts';
 const DISTRIBUTION_TX = 'cosmos/distribution/v1beta1/tx.ts';
 
@@ -137,7 +137,8 @@ const slice = (path, imports, [ifaceFrom, ifaceTo], [implFrom, implTo]) => {
   write(path, body.join('\n') + '\n');
 };
 
-// staking: MsgDelegate, MsgBeginRedelegate, MsgUndelegate and their responses.
+// staking: MsgDelegate, MsgBeginRedelegate, MsgUndelegate, MsgCancelUnbondingDelegation and
+// their responses.
 slice(
   STAKING_TX,
   [
@@ -147,14 +148,11 @@ slice(
     'import { GlobalDecoderRegistry } from "../../../registry";',
     'import { toTimestamp, fromTimestamp } from "../../../helpers";',
   ],
-  [' * MsgDelegate defines a SDK message', ' * MsgCancelUnbondingDelegation defines'],
-  [
-    'function createBaseMsgDelegate(): MsgDelegate {',
-    'function createBaseMsgCancelUnbondingDelegation()',
-  ],
+  [' * MsgDelegate defines a SDK message', ' * MsgUpdateParams is the Msg/UpdateParams'],
+  ['function createBaseMsgDelegate(): MsgDelegate {', 'function createBaseMsgUpdateParams()'],
 );
 
-// distribution: MsgWithdrawDelegatorReward and its response.
+// distribution: MsgSetWithdrawAddress, MsgWithdrawDelegatorReward and their responses.
 slice(
   DISTRIBUTION_TX,
   [
@@ -162,9 +160,9 @@ slice(
     'import { BinaryReader, BinaryWriter } from "../../../binary";',
     'import { GlobalDecoderRegistry } from "../../../registry";',
   ],
-  [' * MsgWithdrawDelegatorReward represents', ' * MsgWithdrawValidatorCommission withdraws'],
+  [' * MsgSetWithdrawAddress sets', ' * MsgWithdrawValidatorCommission withdraws'],
   [
-    'function createBaseMsgWithdrawDelegatorReward(): MsgWithdrawDelegatorReward {',
+    'function createBaseMsgSetWithdrawAddress(): MsgSetWithdrawAddress {',
     'function createBaseMsgWithdrawValidatorCommission()',
   ],
 );

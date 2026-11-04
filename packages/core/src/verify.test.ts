@@ -346,9 +346,20 @@ describe('verifySignRequest signers of decoded types', () => {
   it.each([
     ['/bze.cointrunk.MsgAddArticle', 1],
     ['/ibc.applications.transfer.v1.MsgUpdateParams', 1],
+    ['/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation', 1],
+    ['/cosmos.distribution.v1beta1.MsgSetWithdrawAddress', 1],
   ])('%s: the signer field is the connected address or the request is refused', (url, no) => {
     expect(code(request({}, [stringMsg(url, no, ME)]))).toBe('ok');
     expect(code(request({}, [stringMsg(url, no, OTHER)]))).toBe('multi-signer');
+  });
+
+  it('does not take the new rewards address for a signer', () => {
+    const value = new Uint8Array([
+      ...stringMsg('x', 1, ME).value,
+      ...stringMsg('x', 2, OTHER).value,
+    ]);
+    const msg: AnyMsg = { typeUrl: '/cosmos.distribution.v1beta1.MsgSetWithdrawAddress', value };
+    expect(code(request({}, [msg]))).toBe('ok');
   });
 });
 
