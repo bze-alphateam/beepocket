@@ -6,7 +6,6 @@ import {
   FEE_TTL_MS,
   FeeEstimator,
   GAS_PRICE_MULTIPLIERS,
-  estimatedGasLimit,
   feeAt,
   feePricing,
   gasLimitBounds,
@@ -492,7 +491,6 @@ describe('gas price multipliers', () => {
 
 describe('gasLimitBounds', () => {
   it('is the simulation, the estimate and ten times it for a BZE fee', () => {
-    expect(estimatedGasLimit(82_417n, true)).toBe(123_626n);
     expect(gasLimitBounds(82_417n, true)).toEqual({
       min: 82_417n,
       estimate: 123_626n,
@@ -501,7 +499,6 @@ describe('gasLimitBounds', () => {
   });
 
   it('starts at the native estimate for a fee in another token, whose swap the simulation leaves out', () => {
-    expect(estimatedGasLimit(82_417n, false)).toBe(185_439n);
     expect(gasLimitBounds(82_417n, false)).toEqual({
       min: 123_626n,
       estimate: 185_439n,

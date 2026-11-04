@@ -137,7 +137,7 @@ export function feeAt(
 }
 
 /** The wallet's gas limit for a simulation: `ceil(gasUsed x 1.5)`, and x 1.5 again for a fee swap. */
-export function estimatedGasLimit(gasUsed: bigint, native: boolean): bigint {
+function estimatedGasLimit(gasUsed: bigint, native: boolean): bigint {
   const nativeGas = ceilDiv(gasUsed * GAS_HEADROOM.num, GAS_HEADROOM.den);
   return native
     ? nativeGas

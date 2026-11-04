@@ -1,4 +1,5 @@
 import {
+  GAS_PRICE_MULTIPLIERS,
   feeAt,
   formatAmount,
   gasLimitBounds,
@@ -16,7 +17,7 @@ import { Avatar, Button, Field, FieldSuffix, Icon } from '../../ui';
 import { exact } from './format';
 import { multiplierOf, pricingFromWire } from './override';
 
-const PRICES: readonly GasPrice[] = [1, 2, 3];
+const PRICES = GAS_PRICE_MULTIPLIERS.map((m) => Number(m) as GasPrice);
 const MAX_DIGITS = 18;
 
 /** What a fee option becomes under Advanced settings, for the screens that show it. */

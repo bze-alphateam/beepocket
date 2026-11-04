@@ -1,4 +1,4 @@
-import type { FeePricing, GasPriceMultiplier } from '@beepocket/core';
+import { isGasPriceMultiplier, type FeePricing, type GasPriceMultiplier } from '@beepocket/core';
 import type { FeeOverride, FeePricingWire, GasPrice } from '../../protocol/send';
 
 /** Advanced's settings and pricing cross the message boundary as decimal strings. */
@@ -29,6 +29,7 @@ export function validOverride(x: unknown): FeeOverride | null {
   if (typeof x !== 'object' || x === null) return null;
   const { gasLimit, gasPrice } = x as Record<string, unknown>;
   if (typeof gasLimit !== 'string' || !GAS_LIMIT.test(gasLimit)) return null;
-  if (gasPrice !== 1 && gasPrice !== 2 && gasPrice !== 3) return null;
-  return { gasLimit, gasPrice };
+  if (typeof gasPrice !== 'number' || !Number.isInteger(gasPrice)) return null;
+  if (!isGasPriceMultiplier(BigInt(gasPrice))) return null;
+  return { gasLimit, gasPrice: gasPrice as GasPrice };
 }
