@@ -35,12 +35,32 @@ const quote = (over: Partial<SendQuote> = {}): SendQuote => ({
   amount: '1500000',
   balance: '5000000',
   gasLimit: '200000',
-  fee: { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
+  fee: {
+    denom: 'ubze',
+    amount: '2000',
+    gasLimit: '200000',
+    gasUsed: '166666',
+    symbol: 'BZE',
+    decimals: 6,
+  },
   options: [
-    { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
-    { denom: 'factory/x/page', amount: '5000', gasLimit: '300000', symbol: 'PAGE', decimals: 2 },
+    {
+      denom: 'ubze',
+      amount: '2000',
+      gasLimit: '200000',
+      gasUsed: '166666',
+      symbol: 'BZE',
+      decimals: 6,
+    },
+    {
+      denom: 'factory/x/page',
+      amount: '5000',
+      gasLimit: '300000',
+      gasUsed: '250000',
+      symbol: 'PAGE',
+      decimals: 2,
+    },
   ],
-  gasUsed: '133334',
   ...over,
 });
 
@@ -362,6 +382,7 @@ describe('review', () => {
                   denom: 'ubze',
                   amount: '3000',
                   gasLimit: '200000',
+                  gasUsed: '166666',
                   symbol: 'BZE',
                   decimals: 6,
                 },
@@ -530,6 +551,7 @@ describe('fee on the form', () => {
     denom: 'factory/x/page',
     amount: '5000',
     gasLimit: '300000',
+    gasUsed: '250000',
     symbol: 'PAGE',
     decimals: 2,
   };
@@ -675,7 +697,14 @@ describe('fee on the form', () => {
     release(
       ok(
         quote({
-          fee: { denom: 'ubze', amount: '9000000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
+          fee: {
+            denom: 'ubze',
+            amount: '9000000',
+            gasLimit: '200000',
+            gasUsed: '166666',
+            symbol: 'BZE',
+            decimals: 6,
+          },
         }),
       ),
     );

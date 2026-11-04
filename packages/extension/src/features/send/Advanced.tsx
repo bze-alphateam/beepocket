@@ -38,17 +38,18 @@ export function pricingOf(option: FeeChoice): FeePricing | null {
 }
 
 /**
- * `option` (as the fee sheet lists it, with its own gas limit) under `override`. `spendable` is
- * what the fee may take of its token. Without settings it is the option itself.
+ * `option` (as the fee sheet lists it, with its own gas limit and simulated gas) under
+ * `override`. `spendable` is what the fee may take of its token. Without settings it is the
+ * option itself.
  */
 export function applyOverride(
   option: FeeChoice,
-  gasUsed: bigint,
   override: FeeOverride | null,
   spendable: bigint,
 ): AppliedFee {
   const pricing = pricingOf(option);
-  const bounds = pricing ? gasLimitBounds(gasUsed, pricing.native) : null;
+  const gasUsed = BigInt(option.gasUsed);
+  const bounds = pricing ? gasLimitBounds(gasUsed) : null;
   if (!override || !pricing) {
     // The site's own fee keeps the site-fee warnings (Business Logic §8), never a refusal.
     const status = option.setBy !== undefined && BigInt(option.gasLimit) < gasUsed ? 'site' : 'ok';
@@ -128,10 +129,8 @@ const pickLabel = (pick: QuickGasPick): string =>
       : pick.replace('x', '×');
 
 export interface AdvancedProps {
-  /** The picked fee option as the sheet lists it: its own gas limit and fee. */
+  /** The picked fee option as the sheet lists it: its own gas limit, fee and simulated gas. */
   option: FeeChoice;
-  /** What the simulation used. */
-  gasUsed: bigint;
   /** The settings in force, null for none. */
   applied: FeeOverride | null;
   /** A gas limit to start from instead ("Raise gas"). */
@@ -152,7 +151,8 @@ export interface AdvancedProps {
  * the balance it is refused and Done is off; below the estimate it warns.
  */
 export function Advanced(props: AdvancedProps) {
-  const { option, gasUsed } = props;
+  const { option } = props;
+  const gasUsed = BigInt(option.gasUsed);
   const pricing = pricingOf(option);
   const own = option.gasLimit;
   const [text, setText] = useState(props.prefill ?? props.applied?.gasLimit ?? own);
@@ -162,8 +162,8 @@ export function Advanced(props: AdvancedProps) {
   const untouched = text === own && price === 1;
   const draft: FeeOverride | null =
     text === '' || untouched ? null : { gasLimit: text, gasPrice: price };
-  const applied = applyOverride(option, gasUsed, draft, props.spendable);
-  const bounds = applied.bounds ?? gasLimitBounds(gasUsed, pricing.native);
+  const applied = applyOverride(option, draft, props.spendable);
+  const bounds = applied.bounds ?? gasLimitBounds(gasUsed);
   const status = text === '' ? 'empty' : applied.status;
   const refused =
     status === 'empty' || status === 'low' || status === 'high' || status === 'afford';
@@ -172,9 +172,7 @@ export function Advanced(props: AdvancedProps) {
     status === 'empty'
       ? t('send.gas.empty')
       : status === 'low'
-        ? pricing.native
-          ? t('send.gas.low', { min: fmt(bounds.min) })
-          : t('send.gas.low.swap', { min: fmt(bounds.min), symbol: option.symbol })
+        ? t('send.gas.low', { min: fmt(bounds.min) })
         : status === 'high'
           ? t('send.gas.high', { max: fmt(bounds.max) })
           : status === 'afford'

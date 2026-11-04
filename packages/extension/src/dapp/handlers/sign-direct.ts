@@ -8,6 +8,7 @@ import { bigintToWire, bytesToWire, DappErrorCodes } from '../wire';
 import type { TxDeps } from './env';
 import {
   detailsOf,
+  gasUsedFor,
   prepareSign,
   validateSignParams,
   type Prepared,
@@ -118,7 +119,7 @@ function overrideFee(
   if (!override || !pricing || override.gasLimit !== reviewed.gasLimit) return null;
   const priced = priceGasOverride({
     pricing,
-    gasUsed: p.gasUsed,
+    gasUsed: gasUsedFor(p.simulated, pricing.native),
     gasLimit: BigInt(override.gasLimit),
     gasPrice: multiplierOf(override.gasPrice),
     spendable: p.balances.get(reviewed.denom) ?? 0n,

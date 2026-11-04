@@ -292,12 +292,32 @@ const SIGN: Extract<RequestView, { status: 'sign' }> = {
   rawJson: '[{"typeUrl":"/cosmos.bank.v1beta1.MsgSend"}]',
   messageJson: ['{"typeUrl":"/cosmos.bank.v1beta1.MsgSend"}'],
   locked: false,
-  fee: { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
+  fee: {
+    denom: 'ubze',
+    amount: '2000',
+    gasLimit: '200000',
+    gasUsed: '166666',
+    symbol: 'BZE',
+    decimals: 6,
+  },
   options: [
-    { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
-    { denom: 'uother', amount: '500', gasLimit: '300000', symbol: 'OTH', decimals: 6 },
+    {
+      denom: 'ubze',
+      amount: '2000',
+      gasLimit: '200000',
+      gasUsed: '166666',
+      symbol: 'BZE',
+      decimals: 6,
+    },
+    {
+      denom: 'uother',
+      amount: '500',
+      gasLimit: '300000',
+      gasUsed: '250000',
+      symbol: 'OTH',
+      decimals: 6,
+    },
   ],
-  gasUsed: '150000',
 };
 
 function signRig(view: RequestView, extra: Partial<Record<Method, Handler>> = {}) {

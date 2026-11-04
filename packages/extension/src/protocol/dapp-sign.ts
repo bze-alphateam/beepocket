@@ -34,17 +34,15 @@ export interface SignDetails {
   options: FeeChoice[];
   /** What the wallet makes of the fee the site set; absent when the site set none. */
   siteFee?: SiteFeeCheck;
-  /** What the simulation used, decimal string: Advanced's bounds start from it. */
-  gasUsed: string;
 }
 
 /**
  * The site's fee, checked: `unusable` when its token cannot pay fees on BZE, the address holds
  * too little of it or it is in more than one token (the wallet's own fee is pre-selected
- * instead); `gas` when its gas limit is below what the simulation used; `low` when the chain
- * would refuse it for its gas limit; `high` when it is more than three times the wallet's own
- * estimate (`times` rounded, null when the wallet's estimate is zero); `ok` otherwise. Only the
- * first problem in that order is reported.
+ * instead); `gas` when its gas limit is below what the simulation with a fee in its token's kind
+ * used; `low` when the chain would refuse it for its gas limit; `high` when it is more than three
+ * times the wallet's own estimate in its token (`times` rounded, null when the wallet's estimate
+ * is zero); `ok` otherwise. Only the first problem in that order is reported.
  */
 export type SiteFeeCheck =
   | { status: 'ok' }

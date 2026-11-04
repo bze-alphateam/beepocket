@@ -26,6 +26,16 @@ describe('simulationTxBytes', () => {
       signerInfos: [{ sequence: '3', modeInfo: { single: { mode: 1 } } }],
     });
   });
+
+  it('carries a fee coin with a zero gas limit when given one', () => {
+    const bodyBytes = buildBody({ messages: [] });
+    const raw = TxRaw.decode(
+      simulationTxBytes(bodyBytes, fromB64(c.pubKey), 3n, [{ denom: 'ubze', amount: '1' }]),
+    );
+    expect(decodeAuthInfo(raw.authInfoBytes)).toMatchObject({
+      fee: { amount: [{ denom: 'ubze', amount: '1' }], gasLimit: '0' },
+    });
+  });
 });
 
 describe('buildBody', () => {

@@ -15,6 +15,8 @@ import {
   quickGasLimits,
   SimulationError,
   UnexpectedResponseError,
+  decodeAuthInfo,
+  decodeTxRaw,
   simulationTxBytes,
   type ChainClient,
   type Pool,
@@ -41,9 +43,32 @@ function pool(
 /** Native 1,000,000,000,000 against 500,000,000,000 of X: spot 2 BZE per X. */
 const deepPool = pool(NATIVE, X, 1_000_000_000_000n, 500_000_000_000n);
 
+/** The fee coins a simulated transaction carries, as `denom:amount`. */
+function feeOf(tx: Uint8Array): string[] {
+  const authInfo = decodeAuthInfo(decodeTxRaw(tx).authInfoBytes) as {
+    fee: { amount: { denom: string; amount: string }[] };
+  };
+  return authInfo.fee.amount.map((c) => `${c.denom}:${c.amount}`);
+}
+
+/** The fee coins of every simulation the chain ran, in call order. */
+function simulatedFees(chain: ChainClient): string[][] {
+  return vi.mocked(chain.simulate).mock.calls.map(([tx]) => feeOf(tx));
+}
+
+/**
+ * `gasUsed` answers every simulation, `foreignGasUsed` (when set) one with a fee in another
+ * token, and `failForeign` makes that one fail.
+ */
 function chainWith(
   pools: Pool[],
-  options: { halted?: string[]; gasUsed?: bigint; gasPrice?: string } = {},
+  options: {
+    halted?: string[];
+    gasUsed?: bigint;
+    foreignGasUsed?: bigint;
+    failForeign?: Error;
+    gasPrice?: string;
+  } = {},
 ): ChainClient {
   return stubChain({
     feeParams: vi.fn().mockResolvedValue({
@@ -55,7 +80,12 @@ function chainWith(
     }),
     liquidityPools: vi.fn().mockResolvedValue(pools),
     haltedDenoms: vi.fn().mockResolvedValue(options.halted ?? []),
-    simulate: vi.fn().mockResolvedValue({ gasUsed: options.gasUsed ?? 200_000n }),
+    simulate: vi.fn((tx: Uint8Array) => {
+      const foreign = feeOf(tx).some((c) => !c.startsWith(`${NATIVE}:`));
+      if (foreign && options.failForeign) return Promise.reject(options.failForeign);
+      const gas = foreign ? (options.foreignGasUsed ?? options.gasUsed) : options.gasUsed;
+      return Promise.resolve({ gasUsed: gas ?? 200_000n });
+    }),
   });
 }
 
@@ -172,44 +202,171 @@ describe('FeeEstimator.feeTokenRates', () => {
 });
 
 describe('FeeEstimator.estimate', () => {
-  it('prices BZE: gas 200,000 gives limit 300,000 and a fee of 3,000 ubze', async () => {
+  it('prices BZE: gas 200,000 gives limit 240,000 and a fee of 2,400 ubze', async () => {
     const chain = chainWith([]);
     const result = await estimate(estimator(chain), [[NATIVE, 5_000n]]);
     expect(result).toEqual({
-      options: [{ denom: NATIVE, amount: 3_000n, gasLimit: 300_000n }],
+      options: [{ denom: NATIVE, amount: 2_400n, gasLimit: 240_000n, gasUsed: 200_000n }],
       default: NATIVE,
-      gasUsed: 200_000n,
+      simulated: { native: 200_000n, foreign: null },
     });
-    expect(chain.simulate).toHaveBeenCalledWith(simulationTxBytes(body, pubKey, 7n));
+    expect(chain.simulate).toHaveBeenCalledWith(
+      simulationTxBytes(body, pubKey, 7n, [{ denom: NATIVE, amount: '1' }]),
+    );
   });
 
-  it('gives a fee in another token the gas of the swap: limit 450,000 and 2,475 uX', async () => {
-    // 200,000 simulated -> 300,000 native -> 450,000 with the swap; 4,500 ubze at 0.01,
-    // 2,250 uX at 2 BZE per X, plus 10% slippage.
-    const result = await estimate(estimator(chainWith([deepPool])), [[X, 10_000n]]);
-    expect(result.options).toEqual([{ denom: X, amount: 2_475n, gasLimit: 450_000n }]);
+  it('simulates once, with a 1 ubze fee, for a payer that holds no other fee token', async () => {
+    const chain = chainWith([deepPool]);
+    await estimate(estimator(chain), [
+      [NATIVE, 5_000n],
+      [Y, 10n ** 9n],
+    ]);
+    expect(simulatedFees(chain)).toEqual([[`${NATIVE}:1`]]);
+  });
+
+  it('simulates a fee in another token with 1 unit of it and adds 20%: limit 300,000, 1,650 uX', async () => {
+    // 250,000 simulated with the fee in X -> 300,000; 3,000 ubze at 0.01, 1,500 uX at 2 BZE
+    // per X, plus 10% slippage.
+    const chain = chainWith([deepPool], { foreignGasUsed: 250_000n });
+    const result = await estimate(estimator(chain), [
+      [NATIVE, 10_000n],
+      [X, 10_000n],
+    ]);
+    expect(result.options).toEqual([
+      { denom: NATIVE, amount: 2_400n, gasLimit: 240_000n, gasUsed: 200_000n },
+      { denom: X, amount: 1_650n, gasLimit: 300_000n, gasUsed: 250_000n },
+    ]);
+    expect(result.simulated).toEqual({ native: 200_000n, foreign: 250_000n });
+    expect(simulatedFees(chain)).toEqual([[`${NATIVE}:1`], [`${X}:1`]]);
+  });
+
+  it('simulates with no fee for the native kind when the payer holds no BZE', async () => {
+    const chain = chainWith([deepPool], { foreignGasUsed: 250_000n });
+    const result = await estimate(estimator(chain), [[X, 10_000n]]);
+    expect(simulatedFees(chain)).toEqual([[], [`${X}:1`]]);
+    expect(result.options).toEqual([
+      { denom: X, amount: 1_650n, gasLimit: 300_000n, gasUsed: 250_000n },
+    ]);
     expect(result.default).toBe(X);
   });
 
-  it('gives each option its own gas limit', async () => {
-    const result = await estimate(estimator(chainWith([deepPool], { gasUsed: 76_403n })), [
+  it('simulates with the preferred token when it can pay and is held, else the first option', async () => {
+    const pools = [deepPool, pool(NATIVE, Y, 1_000_000_000_000n, 500_000_000_000n)];
+    const balances: [string, bigint][] = [
       [NATIVE, 10n ** 9n],
       [X, 10n ** 9n],
+      [Y, 10n ** 9n],
+    ];
+    const preferred = chainWith(pools);
+    await estimate(estimator(preferred), balances, Y);
+    expect(simulatedFees(preferred)).toEqual([[`${NATIVE}:1`], [`${Y}:1`]]);
+    // Not preferred: the first in option order (by denom here, X before Y).
+    const first = chainWith(pools);
+    await estimate(estimator(first), balances);
+    expect(simulatedFees(first)).toEqual([[`${NATIVE}:1`], [`${X}:1`]]);
+    // Preferred but not held: the first held one.
+    const notHeld = chainWith(pools);
+    await estimate(
+      estimator(notHeld),
+      [
+        [NATIVE, 10n ** 9n],
+        [X, 10n ** 9n],
+      ],
+      Y,
+    );
+    expect(simulatedFees(notHeld)).toEqual([[`${NATIVE}:1`], [`${X}:1`]]);
+  });
+
+  it('picks the representative in symbol order when a symbol source is given', async () => {
+    const tokens = {
+      resolve: vi.fn((denom: string) => Promise.resolve({ symbol: denom === X ? 'ZED' : 'ALPHA' })),
+    };
+    const pools = [deepPool, pool(NATIVE, Y, 1_000_000_000_000n, 500_000_000_000n)];
+    const chain = chainWith(pools);
+    await estimate(estimator(chain, { tokens }), [
+      [X, 10n ** 9n],
+      [Y, 10n ** 9n],
     ]);
-    const [native, token] = result.options;
-    expect(native?.gasLimit).toBe(114_605n);
-    // At least 2.25x what the simulation measured, so the swap fits.
-    expect(token?.gasLimit).toBe(171_908n);
-    expect((token?.gasLimit ?? 0n) * 100n).toBeGreaterThanOrEqual(76_403n * 225n);
+    expect(simulatedFees(chain)).toEqual([[], [`${Y}:1`]]);
+  });
+
+  it('prices every other token with the one simulation in another token', async () => {
+    const pools = [deepPool, pool(NATIVE, Y, 1_000_000_000_000n, 500_000_000_000n)];
+    const chain = chainWith(pools, { gasUsed: 76_403n, foreignGasUsed: 90_000n });
+    const result = await estimate(estimator(chain), [
+      [NATIVE, 10n ** 9n],
+      [X, 10n ** 9n],
+      [Y, 10n ** 9n],
+    ]);
+    expect(chain.simulate).toHaveBeenCalledTimes(2);
+    expect(result.options.map((o) => [o.denom, o.gasLimit, o.gasUsed])).toEqual([
+      // ceil(76,403 x 1.2) = 91,684; 90,000 x 1.2 = 108,000
+      [NATIVE, 91_684n, 76_403n],
+      [X, 108_000n, 90_000n],
+      [Y, 108_000n, 90_000n],
+    ]);
+  });
+
+  it('keeps the BZE options when the simulation in another token fails', async () => {
+    const chain = chainWith([deepPool], {
+      failForeign: new SimulationError('insufficient funds', 400),
+    });
+    const result = await estimate(estimator(chain), [
+      [NATIVE, 10_000n],
+      [X, 10_000n],
+    ]);
+    expect(result.options.map((o) => o.denom)).toEqual([NATIVE]);
+    expect(result.simulated).toEqual({ native: 200_000n, foreign: null });
+  });
+
+  it('keeps the other tokens when only the BZE simulation fails', async () => {
+    // Sending the whole BZE balance leaves nothing for a 1 ubze fee coin.
+    const chain = chainWith([deepPool]);
+    vi.mocked(chain.simulate).mockImplementation((tx) =>
+      feeOf(tx).some((c) => c.startsWith(`${NATIVE}:`))
+        ? Promise.reject(new SimulationError('insufficient funds', 400))
+        : Promise.resolve({ gasUsed: 200_000n }),
+    );
+    const result = await estimate(estimator(chain), [
+      [NATIVE, 10_000n],
+      [X, 10_000n],
+    ]);
+    expect(result.options.map((o) => o.denom)).toEqual([X]);
+    expect(result.simulated).toEqual({ native: null, foreign: 200_000n });
+  });
+
+  it('throws what the BZE simulation threw when the other one fails too', async () => {
+    const chain = chainWith([deepPool]);
+    vi.mocked(chain.simulate).mockImplementation((tx) =>
+      Promise.reject(new SimulationError(`refused ${feeOf(tx).join()}`, 400)),
+    );
+    await expect(
+      estimate(estimator(chain), [
+        [NATIVE, 10_000n],
+        [X, 10_000n],
+      ]),
+    ).rejects.toMatchObject({ name: 'SimulationError', message: `refused ${NATIVE}:1` });
+  });
+
+  it('lets an error that is no node answer propagate from either simulation', async () => {
+    const chain = chainWith([deepPool], { failForeign: new TypeError('bug') });
+    await expect(
+      estimate(estimator(chain), [
+        [NATIVE, 10_000n],
+        [X, 10_000n],
+      ]),
+    ).rejects.toBeInstanceOf(TypeError);
   });
 
   it('offers nothing when the payer holds one unit less than the fee', async () => {
-    const result = await estimate(estimator(chainWith([deepPool])), [[X, 2_474n]]);
-    expect(result).toEqual({ options: [], default: null, gasUsed: 200_000n });
+    // 200,000 -> 240,000 -> 2,400 ubze -> 1,200 uX -> 1,320 uX with the margin.
+    const result = await estimate(estimator(chainWith([deepPool])), [[X, 1_319n]]);
+    expect(result.options).toEqual([]);
+    expect(result.default).toBeNull();
   });
 
   it('offers a token that is held exactly', async () => {
-    const result = await estimate(estimator(chainWith([deepPool])), [[X, 2_475n]]);
+    const result = await estimate(estimator(chainWith([deepPool])), [[X, 1_320n]]);
     expect(result.default).toBe(X);
   });
 
@@ -224,20 +381,20 @@ describe('FeeEstimator.estimate', () => {
   });
 
   it('rounds the gas limit and every fee up', async () => {
-    // 1 gas used -> limit ceil(1.5) = 2; 0.01 × 2 = 0.02 -> 1 ubze
+    // 1 gas used -> limit ceil(1.2) = 2; 0.01 × 2 = 0.02 -> 1 ubze
     const small = await estimate(estimator(chainWith([], { gasUsed: 1n })), [[NATIVE, 5n]]);
-    expect(small.options).toEqual([{ denom: NATIVE, amount: 1n, gasLimit: 2n }]);
-    // exact multiple does not round up: 10 gas -> 15
+    expect(small.options).toEqual([{ denom: NATIVE, amount: 1n, gasLimit: 2n, gasUsed: 1n }]);
+    // exact multiple does not round up: 10 gas -> 12
     const exact = await estimate(estimator(chainWith([], { gasUsed: 10n })), [[NATIVE, 5n]]);
-    expect(exact.options[0]?.gasLimit).toBe(15n);
-    // gas 1 -> 2 -> ceil(3) = 3; 0.03 ubze -> 1; ÷ 2 × 1.1 = 0.55 uX -> 1
+    expect(exact.options[0]?.gasLimit).toBe(12n);
+    // gas 1 -> ceil(1.2) = 2; 0.02 ubze -> 1; ÷ 2 × 1.1 = 0.55 uX -> 1
     const token = await estimate(estimator(chainWith([deepPool], { gasUsed: 1n })), [[X, 5n]]);
-    expect(token.options).toEqual([{ denom: X, amount: 1n, gasLimit: 3n }]);
-    // the native fee is rounded up before the conversion: gas 3 -> 5 -> 8 -> 0.08 -> 1 ubze,
-    // which at 1 BZE per uY is 1.1 -> 2 uY (one rounding at the end would give 0.088 -> 1)
+    expect(token.options).toEqual([{ denom: X, amount: 1n, gasLimit: 2n, gasUsed: 1n }]);
+    // the native fee is rounded up before the conversion: gas 3 -> 4 -> 0.04 -> 1 ubze, which
+    // at 1 BZE per uY is 1.1 -> 2 uY (one rounding at the end would give 0.044 -> 1)
     const even = pool(NATIVE, Y, MIN_LIQUIDITY, MIN_LIQUIDITY);
     const stepwise = await estimate(estimator(chainWith([even], { gasUsed: 3n })), [[Y, 5n]]);
-    expect(stepwise.options).toEqual([{ denom: Y, amount: 2n, gasLimit: 8n }]);
+    expect(stepwise.options).toEqual([{ denom: Y, amount: 2n, gasLimit: 4n, gasUsed: 3n }]);
   });
 
   it('puts BZE first and makes it the default when the payer holds it', async () => {
@@ -322,12 +479,13 @@ describe('FeeEstimator.estimate', () => {
       estimator(chainWith([pool(NATIVE, X, huge * 2n, huge)], { gasUsed: 10n ** 24n })),
       [[X, huge]],
     );
-    // limit = 1.5e24 × 1.5 = 2.25e24, fee = 2.25e24 × 0.01 × 1/2 × 1.1 = 1.2375e22
+    // limit = 1e24 × 1.2 = 1.2e24, fee = 1.2e24 × 0.01 × 1/2 × 1.1 = 6.6e21
     expect(result.options).toEqual([
       {
         denom: X,
-        amount: 12_375_000_000_000_000_000_000n,
-        gasLimit: 2_250_000_000_000_000_000_000_000n,
+        amount: 6_600_000_000_000_000_000_000n,
+        gasLimit: 1_200_000_000_000_000_000_000_000n,
+        gasUsed: 1_000_000_000_000_000_000_000_000n,
       },
     ]);
   });
@@ -490,31 +648,44 @@ describe('gas price multipliers', () => {
 });
 
 describe('gasLimitBounds', () => {
-  it('is the simulation, the estimate and ten times it for a BZE fee', () => {
-    expect(gasLimitBounds(82_417n, true)).toEqual({
+  it('is the simulation, the estimate (x 1.2, rounded up) and ten times it', () => {
+    expect(gasLimitBounds(82_417n)).toEqual({
       min: 82_417n,
-      estimate: 123_626n,
-      max: 1_236_260n,
+      estimate: 98_901n,
+      max: 989_010n,
     });
   });
 
-  it('starts at the native estimate for a fee in another token, whose swap the simulation leaves out', () => {
-    expect(gasLimitBounds(82_417n, false)).toEqual({
-      min: 123_626n,
-      estimate: 185_439n,
-      max: 1_854_390n,
+  it('starts each token at its own simulation', async () => {
+    const chain = chainWith([deepPool], { gasUsed: 82_417n, foreignGasUsed: 100_000n });
+    const result = await estimate(estimator(chain), [
+      [NATIVE, 10n ** 9n],
+      [X, 10n ** 9n],
+    ]);
+    const [native, token] = result.options;
+    if (!native || !token) throw new Error('missing options');
+    expect(gasLimitBounds(native.gasUsed)).toEqual({
+      min: 82_417n,
+      estimate: native.gasLimit,
+      max: 989_010n,
+    });
+    expect(gasLimitBounds(token.gasUsed)).toEqual({
+      min: 100_000n,
+      estimate: token.gasLimit,
+      max: 1_200_000n,
     });
   });
 });
 
 describe('quickGasLimits', () => {
   it('rounds x1.5, x2 and x5 of the estimate up to two significant digits', () => {
-    expect(quickGasLimits(gasLimitBounds(82_417n, true))).toEqual([
-      { pick: 'auto', gasLimit: 123_626n },
-      { pick: 'x1.5', gasLimit: 190_000n },
-      { pick: 'x2', gasLimit: 250_000n },
-      { pick: 'x5', gasLimit: 620_000n },
-      { pick: 'max', gasLimit: 1_236_260n },
+    // estimate 98,901: x1.5 = 148,352 -> 150,000; x2 = 197,802 -> 200,000; x5 = 494,505 -> 500,000
+    expect(quickGasLimits(gasLimitBounds(82_417n))).toEqual([
+      { pick: 'auto', gasLimit: 98_901n },
+      { pick: 'x1.5', gasLimit: 150_000n },
+      { pick: 'x2', gasLimit: 200_000n },
+      { pick: 'x5', gasLimit: 500_000n },
+      { pick: 'max', gasLimit: 989_010n },
     ]);
   });
 
@@ -565,21 +736,22 @@ describe('priceGasOverride', () => {
     const { native } = await pricings();
     expect(run(native, 82_416n).status).toBe('low');
     expect(run(native, 82_417n).status).toBe('warn');
-    expect(run(native, 123_625n).status).toBe('warn');
-    expect(run(native, 123_626n)).toEqual({
+    expect(run(native, 98_900n).status).toBe('warn');
+    expect(run(native, 98_901n)).toEqual({
       status: 'ok',
-      amount: 1_237n,
-      bounds: { min: 82_417n, estimate: 123_626n, max: 1_236_260n },
+      amount: 990n,
+      bounds: { min: 82_417n, estimate: 98_901n, max: 989_010n },
     });
-    expect(run(native, 1_236_260n).status).toBe('ok');
-    expect(run(native, 1_236_261n).status).toBe('high');
+    expect(run(native, 989_010n).status).toBe('ok');
+    expect(run(native, 989_011n).status).toBe('high');
   });
 
-  it('starts the foreign floor at the native estimate, for the fee swap', async () => {
+  it('gives a fee in another token the same bounds for the same simulation', async () => {
+    // The caller passes the simulation in the fee's kind; no extra swap headroom is added.
     const { token } = await pricings();
-    expect(run(token, 123_625n).status).toBe('low');
-    expect(run(token, 123_626n).status).toBe('warn');
-    expect(run(token, 185_439n).status).toBe('ok');
+    expect(run(token, 82_416n).status).toBe('low');
+    expect(run(token, 82_417n).status).toBe('warn');
+    expect(run(token, 98_901n).status).toBe('ok');
   });
 
   it('refuses a fee above what may be spent, at the picked price', async () => {

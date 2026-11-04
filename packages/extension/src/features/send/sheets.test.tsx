@@ -10,6 +10,7 @@ const own: FeeChoice = {
   denom: 'ubze',
   amount: '2000',
   gasLimit: '200000',
+  gasUsed: '166666',
   symbol: 'BZE',
   decimals: 6,
 };
@@ -17,6 +18,7 @@ const site: FeeChoice = {
   denom: LOOKALIKE,
   amount: '5000',
   gasLimit: '250000',
+  gasUsed: '166666',
   symbol: 'BZE',
   decimals: 6,
   setBy: 'https://dex.example',
@@ -67,7 +69,7 @@ const NATIVE_PRICING = {
   nativePrice: { num: '1', den: '100' },
   rate: { num: '1', den: '100' },
 };
-// 133,333 simulated: the BZE estimate is 200,000 gas for 2,000 ubze at 0.01 ubze per gas.
+// 166,666 simulated: the BZE estimate is 200,000 gas for 2,000 ubze at 0.01 ubze per gas.
 const priced: FeeChoice = { ...own, balance: '100000000', pricing: NATIVE_PRICING };
 
 const gasField = (host: HTMLElement): HTMLInputElement => {
@@ -115,7 +117,6 @@ function advancedSheet(
       onPick={() => undefined}
       onClose={() => undefined}
       advanced={{
-        gasUsed: 133_333n,
         applied: options.applied ?? null,
         spendable: () => options.spendable ?? 100_000_000n,
         holder: 'Main',
@@ -140,7 +141,7 @@ describe('FeeSheet Advanced', () => {
     openAdvanced(host);
     expect(host.querySelector('h2')?.textContent).toBe('Advanced');
     expect(host.textContent).toContain('Paid in BZE');
-    expect(host.textContent).toContain("Auto = BeePocket's estimate, 200,000 · simulated 133,333");
+    expect(host.textContent).toContain("Auto = BeePocket's estimate, 200,000 · simulated 166,666");
     expect(gasField(host).value).toBe('200,000');
     expect(feeLine(host)).toBe('≈ 0.002 BZE');
     typeGas(host, '300,000');
@@ -167,11 +168,11 @@ describe('FeeSheet Advanced', () => {
     const { host } = advancedSheet({ spendable: 5_000n });
     openAdvanced(host);
     const done = () => byText(host, 'Done').disabled;
-    typeGas(host, '150000');
+    typeGas(host, '180000');
     expect(host.textContent).toContain('Below the estimate of 200,000');
     expect(done()).toBe(false);
-    typeGas(host, '133332');
-    expect(host.textContent).toContain('At least 133,333, the gas the simulation used.');
+    typeGas(host, '166665');
+    expect(host.textContent).toContain('At least 166,666, the gas the simulation used.');
     expect(gasField(host).getAttribute('aria-invalid')).toBe('true');
     expect(feeLine(host)).toBe('—');
     expect(done()).toBe(true);
@@ -212,7 +213,7 @@ describe('FeeSheet Advanced', () => {
     openAdvanced(host);
     expect(feeLine(host)).toBe('≈ 0.0012 BZE');
     expect(host.textContent).toContain(
-      'https://dex.example set 120,000, below the simulated 133,333. It may run out of gas.',
+      'https://dex.example set 120,000, below the simulated 166,666. It may run out of gas.',
     );
     fireEvent(byText(host, 'Auto'), 'click');
     expect(host.textContent).toContain('This replaces the fee https://dex.example set.');

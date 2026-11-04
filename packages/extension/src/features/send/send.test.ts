@@ -4,6 +4,7 @@ import {
   BroadcastError,
   HttpStatusError,
   decodeAuthInfo,
+  decodeTxBody,
   decodeTxRaw,
   TransportError,
   txHash,
@@ -61,7 +62,10 @@ interface Options {
   balances?: Record<string, bigint>;
   /** null: the address is not on chain yet. */
   account?: { accountNumber: bigint; sequence: bigint } | null;
+  /** What a simulation with a fee in BZE (or none) uses. */
   gasUsed?: bigint;
+  /** What a simulation with a fee in another token uses. */
+  foreignGasUsed?: bigint;
   fallbackToken?: boolean;
   /** Pools pairing ubze with these tokens: [token, native reserve, token reserve]. */
   pools?: [string, bigint, bigint][];
@@ -73,8 +77,12 @@ function setup(opts: Options = {}) {
   const signedFor: string[] = [];
   const sent: Uint8Array[] = [];
   const waits: { txHash: string; options: unknown }[] = [];
+  /** The fee coins of each simulation, as `denom:amount`. */
+  const simulatedFees: string[][] = [];
   const control = {
-    gasUsed: opts.gasUsed ?? 133_333n,
+    // x 1.2 gives the golden transactions' 200,000 (BZE fee) and 300,000 (fee in VDL).
+    gasUsed: opts.gasUsed ?? 166_666n,
+    foreignGasUsed: opts.foreignGasUsed ?? 250_000n,
     balances: opts.balances ?? { ubze: 100_000_000n },
     broadcastError: null as Error | null,
     simulateError: null as Error | null,
@@ -95,11 +103,27 @@ function setup(opts: Options = {}) {
       calls.balances++;
       return Promise.resolve(new Map(Object.entries(control.balances)));
     },
-    simulate: () => {
+    simulate: (tx: Uint8Array) => {
       calls.simulate++;
-      return control.simulateError
-        ? Promise.reject(control.simulateError)
-        : Promise.resolve({ gasUsed: control.gasUsed });
+      const raw = decodeTxRaw(tx);
+      const fee = (decodeAuthInfo(raw.authInfoBytes) as { fee: { amount: Coin[] } }).fee.amount;
+      simulatedFees.push(fee.map((c) => `${c.denom}:${c.amount}`));
+      if (control.simulateError) return Promise.reject(control.simulateError);
+      // Like the chain: the fee coin is deducted before the send runs, so both must be held.
+      const messages = (
+        decodeTxBody(raw.bodyBytes) as { messages: { value: { amount: Coin[] } }[] }
+      ).messages;
+      const spent = new Map<string, bigint>();
+      for (const c of [...fee, ...messages.flatMap((m) => m.value.amount)]) {
+        spent.set(c.denom, (spent.get(c.denom) ?? 0n) + BigInt(c.amount));
+      }
+      for (const [denom, amount] of spent) {
+        if (amount > (control.balances[denom] ?? 0n)) {
+          return Promise.reject(new SimulationError('insufficient funds', 400));
+        }
+      }
+      const foreign = fee.some((c) => c.denom !== 'ubze');
+      return Promise.resolve({ gasUsed: foreign ? control.foreignGasUsed : control.gasUsed });
     },
     broadcast: (tx: Uint8Array) => {
       calls.broadcast++;
@@ -179,7 +203,12 @@ function setup(opts: Options = {}) {
     registry.dispatch({ method, payload }) as Promise<
       { ok: true; value: unknown } | { ok: false; error: { code: string; message: string } }
     >;
-  return { call, calls, signed, signedFor, sent, waits, control };
+  return { call, calls, signed, signedFor, sent, waits, control, simulatedFees };
+}
+
+interface Coin {
+  denom: string;
+  amount: string;
 }
 
 const prepareReq = (over: Record<string, unknown> = {}) => ({
@@ -256,16 +285,17 @@ describe('send.prepare', () => {
     expect(s.calls.simulate).toBeGreaterThanOrEqual(2);
   });
 
-  it('pays for the fee swap when the fee is in another token', async () => {
+  it('prices each fee token on its own simulation, with a 1-unit fee coin', async () => {
     const s = setup({ balances: { ubze: 100_000_000n, [FACTORY]: 100_000_000n } });
     const quote = await quoteOf(s, { feeDenom: FACTORY });
-    // Gas: 133,333 simulated x 1.5 -> 200,000 for a ubze fee, x 1.5 again -> 300,000 with the
-    // swap. Fee: 300,000 x 0.01 = 3,000 ubze. The pool holds 21,000 ubze per 50,000 uvdl, so
-    // spot = 0.42 ubze per uvdl and 3,000 / 0.42 = 7,142.86 uvdl; x 1.1 slippage = 7,857.14,
-    // rounded up to 7,858.
+    // Gas: 166,666 simulated with 1 ubze x 1.2 -> 200,000; 250,000 simulated with 1 uvdl x 1.2
+    // -> 300,000. Fee: 300,000 x 0.01 = 3,000 ubze. The pool holds 21,000 ubze per 50,000
+    // uvdl, so spot = 0.42 ubze per uvdl and 3,000 / 0.42 = 7,142.86 uvdl; x 1.1 slippage =
+    // 7,857.14, rounded up to 7,858.
+    expect(s.simulatedFees).toEqual([['ubze:1'], [`${FACTORY}:1`]]);
     expect(quote.options).toMatchObject([
-      { denom: 'ubze', amount: '2000', gasLimit: '200000' },
-      { denom: FACTORY, amount: '7858', gasLimit: '300000' },
+      { denom: 'ubze', amount: '2000', gasLimit: '200000', gasUsed: '166666' },
+      { denom: FACTORY, amount: '7858', gasLimit: '300000', gasUsed: '250000' },
     ]);
     expect(quote.fee).toMatchObject({ denom: FACTORY, amount: '7858', gasLimit: '300000' });
     expect(quote.gasLimit).toBe('300000');
@@ -300,6 +330,32 @@ describe('send.prepare', () => {
     const quote = await quoteOf(s, { amount: '', max: true, feeDenom: FACTORY });
     expect(quote.amount).toBe('5000000');
     expect(quote.fee.denom).toBe(FACTORY);
+    // The whole BZE balance leaves nothing for a 1 ubze fee coin: only the VDL fee is priced.
+    expect(quote.options.map((o) => o.denom)).toEqual([FACTORY]);
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+  });
+
+  it('simulates the fee in another token with the picked token, at review and at submit', async () => {
+    const s = setup({
+      balances: { [FACTORY]: 1_000_000n, [OTHER]: 1_000_000n },
+      pools: [
+        [FACTORY, 21_000_000_000n, 50_000_000_000n],
+        [OTHER, 21_000_000_000n, 50_000_000_000n],
+      ],
+    });
+    // All of VDL is sent, so a VDL fee coin could never be simulated; GOLD pays.
+    const quote = await quoteOf(s, { denom: FACTORY, amount: '', max: true, feeDenom: OTHER });
+    expect(quote).toMatchObject({ amount: '1000000', fee: { denom: OTHER } });
+    const reviewed = s.simulatedFees.length;
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+    expect(s.simulatedFees.slice(reviewed)).toEqual([[], [`${OTHER}:1`]]);
+  });
+
+  it('simulates a max BZE send one unit short, so the 1 ubze fee coin fits', async () => {
+    const s = setup({ balances: { ubze: 5_000_000n } });
+    const quote = await quoteOf(s, { amount: '', max: true });
+    expect(s.simulatedFees.every((f) => f.join() === 'ubze:1')).toBe(true);
+    expect(quote.amount).toBe('4998000');
   });
 
   it('defaults to the sent token when it can pay, as BZE does for a BZE send', async () => {
@@ -559,7 +615,7 @@ describe('send.submit', () => {
 });
 
 describe('Advanced gas limit and price', () => {
-  // 133,333 simulated: the BZE estimate is 200,000 gas for 2,000 ubze at 0.01 ubze per gas.
+  // 166,666 simulated: the BZE estimate is 200,000 gas for 2,000 ubze at 0.01 ubze per gas.
   const override = (gasLimit: string, gasPrice = 1) => ({
     feeDenom: 'ubze',
     override: { gasLimit, gasPrice },
@@ -573,8 +629,11 @@ describe('Advanced gas limit and price', () => {
     expect(quote.gasLimit).toBe('300000');
     expect(quote.override).toEqual({ gasLimit: '300000', gasPrice: 2 });
     expect(quote.overrideReset).toBeUndefined();
-    expect(quote.gasUsed).toBe('133333');
-    expect(quote.options[0]).toMatchObject({ amount: '2000', gasLimit: '200000' });
+    expect(quote.options[0]).toMatchObject({
+      amount: '2000',
+      gasLimit: '200000',
+      gasUsed: '166666',
+    });
     expect(quote.options[0]?.pricing).toEqual({
       native: true,
       nativePrice: { num: '1', den: '100' },
@@ -592,10 +651,10 @@ describe('Advanced gas limit and price', () => {
 
   it('allows a limit between the simulation and the estimate, refuses one below it', async () => {
     const s = setup();
-    const low = await quoteOf(s, override('133333'));
-    expect(low.fee).toMatchObject({ amount: '1334', gasLimit: '133333' });
+    const low = await quoteOf(s, override('166666'));
+    expect(low.fee).toMatchObject({ amount: '1667', gasLimit: '166666' });
     expect(await s.call('send.submit', submitFrom(low))).toMatchObject({ ok: true });
-    const below = await quoteOf(s, override('133332'));
+    const below = await quoteOf(s, override('166665'));
     // Below the simulation the settings are dropped: the estimate comes back, flagged.
     expect(below.overrideReset).toBe(true);
     expect(below.override).toBeUndefined();
@@ -611,16 +670,16 @@ describe('Advanced gas limit and price', () => {
 
   it('drops the limit when the fresh simulation needs more, and signs nothing on submit', async () => {
     const s = setup();
-    const quote = await quoteOf(s, override('140000'));
-    expect(quote.fee).toMatchObject({ amount: '1400', gasLimit: '140000' });
-    s.control.gasUsed = 150_000n;
+    const quote = await quoteOf(s, override('170000'));
+    expect(quote.fee).toMatchObject({ amount: '1700', gasLimit: '170000' });
+    s.control.gasUsed = 180_000n;
     expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
       ok: false,
       error: { code: 'review-changed' },
     });
     expect(s.calls.sign).toBe(0);
-    const again = await quoteOf(s, override('140000'));
-    expect(again).toMatchObject({ overrideReset: true, gasLimit: '225000' });
+    const again = await quoteOf(s, override('170000'));
+    expect(again).toMatchObject({ overrideReset: true, gasLimit: '216000' });
   });
 
   it('signs nothing for a fee or a limit the settings do not price to', async () => {
@@ -666,6 +725,21 @@ describe('Advanced gas limit and price', () => {
     const quote = await quoteOf(s, { max: true, ...override('300000') });
     expect(quote.fee.amount).toBe('3000');
     expect(quote.amount).toBe('9997000');
+  });
+
+  it('bounds a fee in another token by its own simulation', async () => {
+    // The VDL simulation used 250,000: below it is refused, from it on allowed.
+    const s = setup({ balances: { ubze: 100_000_000n, [FACTORY]: 100_000_000n } });
+    const at = await quoteOf(s, {
+      feeDenom: FACTORY,
+      override: { gasLimit: '250000', gasPrice: 1 },
+    });
+    expect(at.override).toBeDefined();
+    const below = await quoteOf(s, {
+      feeDenom: FACTORY,
+      override: { gasLimit: '249999', gasPrice: 1 },
+    });
+    expect(below).toMatchObject({ overrideReset: true, gasLimit: '300000' });
   });
 
   it('prices a fee in another token at the picked price', async () => {
