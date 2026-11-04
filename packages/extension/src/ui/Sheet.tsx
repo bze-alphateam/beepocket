@@ -14,6 +14,11 @@ export interface SheetProps {
   actions?: ComponentChildren;
   /** `auto` fits the content; `tall` takes the full height a sheet may have (lists, search). */
   height?: 'auto' | 'tall' | undefined;
+  /**
+   * Rendered inside a screen's footer: the sheet rises from the top of the footer and covers only
+   * what is above it, so the footer's buttons stay visible and usable.
+   */
+  docked?: boolean | undefined;
 }
 
 // The open sheets. One opened inside another (a DropdownSheet in a sheet) takes the keyboard.
@@ -77,7 +82,7 @@ export function Sheet(props: SheetProps) {
 
   if (!open) return null;
   return (
-    <div class="bp-sheet-root">
+    <div class={props.docked === true ? 'bp-sheet-root bp-sheet-docked' : 'bp-sheet-root'}>
       <div class="bp-sheet-backdrop" aria-hidden="true" onClick={onClose} />
       <section
         ref={dialog}

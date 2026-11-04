@@ -190,7 +190,13 @@ test('Settings › Connected sites: Change pushes accountChanged, Disconnect mak
     await settings.goto(`chrome-extension://${extensionId}/popup.html`);
     await settings.getByRole('button', { name: 'Settings' }).click();
     await settings.getByRole('button', { name: /Connected sites · 1/ }).click();
-    await settings.getByRole('button', { name: 'Change' }).click();
+    // One compact row: the whole origin, the address it sees, the browser's icon for the site.
+    await expect(settings.getByText('Mainnet · 1')).toBeVisible();
+    const row = settings.locator('.bp-sites-list .bp-site-row');
+    await expect(row.locator('.bp-site-row-domain')).toHaveText(new URL(dapp.url()).origin);
+    await expect(row.locator('.bp-site-row-who')).toContainText('Main · bze1');
+    await expect(row.locator('img')).toHaveAttribute('src', /\/_favicon\/\?pageUrl=/);
+    await settings.getByRole('button', { name: /^Change the address/ }).click();
     await settings.getByRole('radio', { name: /Address 3/ }).check();
     await settings.getByRole('button', { name: 'Save' }).click();
 
@@ -202,7 +208,7 @@ test('Settings › Connected sites: Change pushes accountChanged, Disconnect mak
     await dapp.getByRole('button', { name: 'Get key' }).click();
     await expect(dapp.getByRole('status')).toHaveText(`address ${THIRD} name Address 3`);
 
-    await settings.getByRole('button', { name: 'Disconnect' }).click();
+    await settings.getByRole('button', { name: /^Disconnect http/ }).click();
     await expect
       .poll(() => dapp.evaluate(() => (window as unknown as { changes: number }).changes))
       .toBe(2);

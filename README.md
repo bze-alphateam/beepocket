@@ -9,7 +9,7 @@ BeePocket is a security-first browser-extension wallet for the BeeZee (BZE) netw
 - **Self-custody.** Keys are generated and used on the user's device and never leave it.
 - **Tiny supply chain.** Runtime dependencies are limited to `@noble/*`, `@scure/*` and `preact`. Everything else is a dev dependency, and every version is pinned exactly.
 - **No install scripts.** `ignore-scripts=true` is set in `.npmrc`; the lockfile is committed and CI installs with `--frozen-lockfile`.
-- **Minimal permissions.** The manifest asks for `storage`, `alarms` and `activeTab` only (`activeTab` lets Home show the connected site in the tab you opened the wallet over, and has no install warning), with no host permissions until a feature needs them, and a strict extension-page CSP. Reading the clipboard (`clipboardRead`) is optional: the wallet asks for it the first time you tap a Paste button, and Ctrl+V / ⌘V works without it.
+- **Minimal permissions.** The manifest asks for `storage`, `alarms`, `activeTab` and `favicon` only (`activeTab` lets Home show the connected site in the tab you opened the wallet over, and has no install warning; `favicon` shows each connected site's icon from the browser's own icon cache, so nothing is fetched from the site), with no host permissions until a feature needs them, and a strict extension-page CSP. Reading the clipboard (`clipboardRead`) is optional: the wallet asks for it the first time you tap a Paste button, and Ctrl+V / ⌘V works without it.
 - **Reproducible builds.** The release zip is built twice in fresh CI jobs and the SHA-256 sums must match.
 
 ## Layout

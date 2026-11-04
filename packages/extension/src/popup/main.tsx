@@ -10,6 +10,7 @@ import { App } from './App';
 import { AppearanceProvider } from './appearance';
 import { ClientProvider } from './client-context';
 import { fitWalletWindow } from './fit-window';
+import { browserSiteIcons, SiteIconsProvider } from '../features/dapp/site-icons';
 
 // A wallet window fills its viewport, so the pinned footer stays on screen whatever the frame
 // around it, and grows itself to the intended inner 360 × 600.
@@ -61,7 +62,9 @@ if (root) {
             clock={new SystemClock()}
             events={new RuntimeStateEvents(chrome.runtime.onMessage)}
           >
-            <App initial={initialRouteFor(window.location.search)} />
+            <SiteIconsProvider icons={browserSiteIcons(chrome.runtime)}>
+              <App initial={initialRouteFor(window.location.search)} />
+            </SiteIconsProvider>
           </LockEnvProvider>
         </RandomProvider>
       </AppearanceProvider>
