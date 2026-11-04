@@ -61,6 +61,15 @@ class FakeClient implements Client {
   contacts = [{ name: 'Alex', address: 'bze1alex' }];
   reveal: Result<unknown> = ok({ status: 'ok', mnemonic: PHRASE });
   failAdd = false;
+  /** Weak lock: token writes after this many are refused with needs-password until reauth. */
+  weakLockAfter: number | null = null;
+  private writes = 0;
+  private weakLocked(): boolean {
+    if (this.weakLockAfter === null) return false;
+    if (this.writes >= this.weakLockAfter) return true;
+    this.writes++;
+    return false;
+  }
   search: Result<unknown> = ok({ tokens: [BZE, PAGE], partial: false });
   lookup: (code: string) => Promise<Result<unknown>> = (code) =>
     Promise.resolve(
@@ -94,12 +103,14 @@ class FakeClient implements Client {
         case 'tokens.search':
           return this.search;
         case 'tokens.add': {
+          if (this.weakLocked()) return fail(WalletErrorCodes.needsPassword, 'pw');
           if (this.failAdd) return fail('unexpected', 'no');
           const { denom } = request as { denom: string };
           this.preferred[this.network] = [...(this.preferred[this.network] ?? []), denom];
           return ok(tokens());
         }
         case 'tokens.remove': {
+          if (this.weakLocked()) return fail(WalletErrorCodes.needsPassword, 'pw');
           const { denom } = request as { denom: string };
           this.preferred[this.network] = (this.preferred[this.network] ?? []).filter(
             (d) => d !== denom,
@@ -117,6 +128,9 @@ class FakeClient implements Client {
         case 'wallet.lock':
           this.walletState = 'locked';
           return ok({});
+        case 'wallet.reauth':
+          this.weakLockAfter = null;
+          return ok({ status: 'ok' });
         default:
           return fail('unexpected', method);
       }
@@ -682,12 +696,14 @@ describe('Preferred tokens', () => {
     const table = { ...settingsRoutes, 'home.main': Marker, 'settings.main': Marker };
     const { host } = render(
       <ClientProvider client={client}>
-        <SettingsEnvProvider env={env}>
-          <Router
-            table={table as RouteTable<{ name: string }>}
-            initial={{ name: 'settings.pickTokens' }}
-          />
-        </SettingsEnvProvider>
+        <LockEnvProvider clock={clock} events={events}>
+          <SettingsEnvProvider env={env}>
+            <Router
+              table={table as RouteTable<{ name: string }>}
+              initial={{ name: 'settings.pickTokens' }}
+            />
+          </SettingsEnvProvider>
+        </LockEnvProvider>
       </ClientProvider>,
     );
     await flush();
@@ -771,6 +787,58 @@ describe('Preferred tokens', () => {
     expect(client.saw('tokens.remove')).toEqual([]);
     expect(client.preferred.mainnet).toEqual(['ubze']);
     expect(host.textContent).toContain('The change could not be saved.');
+  });
+
+  describe('in the weak lock', () => {
+    const password = (host: HTMLElement) =>
+      host.querySelector<HTMLInputElement>('input[type="password"]');
+    const unlock = async (host: HTMLElement) => {
+      const input = must(password(host));
+      input.value = 'pw';
+      fireEvent(input, 'input');
+      fireEvent(input.closest('form'), 'submit');
+      await flush();
+    };
+
+    it('asks the password in place, keeps the picks, then saves them', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      client.weakLockAfter = 0;
+      const host = await openPick(client);
+      fireEvent(row(host, 'PAGE'), 'click');
+      fireEvent(row(host, 'BZE'), 'click');
+      fireEvent(button(host, 'Save'), 'click');
+      await flush();
+      expect(password(host)).not.toBeNull();
+      expect(host.textContent).toContain('Unlock and save');
+      expect(host.textContent).not.toContain('The change could not be saved.');
+      expect(client.saw('tokens.remove')).toEqual([]);
+      expect(client.preferred.mainnet).toEqual(['ubze']);
+      expect(row(host, 'PAGE').getAttribute('aria-checked')).toBe('true');
+      expect(row(host, 'BZE').getAttribute('aria-checked')).toBe('false');
+      await unlock(host);
+      expect(client.saw('wallet.reauth')).toEqual([{ password: 'pw' }]);
+      expect(client.preferred.mainnet).toEqual([PAGE.denom]);
+      expect(host.textContent).toBe('at:settings.main');
+    });
+
+    it('a retry sends only what the interrupted save had not written yet', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = ['ubze'];
+      // The add lands, then the weak lock refuses the remove.
+      client.weakLockAfter = 1;
+      const host = await openPick(client);
+      fireEvent(row(host, 'PAGE'), 'click');
+      fireEvent(row(host, 'BZE'), 'click');
+      fireEvent(button(host, 'Save'), 'click');
+      await flush();
+      expect(client.preferred.mainnet).toEqual(['ubze', PAGE.denom]);
+      await unlock(host);
+      expect(client.saw('tokens.add')).toEqual([{ denom: PAGE.denom }]);
+      expect(client.saw('tokens.remove')).toEqual([{ denom: 'ubze' }, { denom: 'ubze' }]);
+      expect(client.preferred.mainnet).toEqual([PAGE.denom]);
+      expect(host.textContent).toBe('at:settings.main');
+    });
   });
 
   describe('token code', () => {

@@ -6,6 +6,7 @@ import {
   fail,
   ok,
   TokenErrorCodes,
+  WalletErrorCodes,
   type ListedToken,
   type Method,
   type RequestOf,
@@ -17,7 +18,14 @@ import {
 import { ClientProvider } from '../../popup/client-context';
 import { Router, type RouteTable } from '../../popup/router';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
-import { Home, type HomeRoute, type SendTarget, type SettingsTarget } from './Home';
+import {
+  Home,
+  type HomeRoute,
+  type PickTokensTarget,
+  type SendTarget,
+  type SettingsTarget,
+} from './Home';
+import { LockEnvProvider } from '../lock/env';
 import { SettingsEnvProvider } from '../settings/env';
 import { HomeEnvProvider, type HomeEnv } from './env';
 import { registerHomeTab } from './tabs';
@@ -79,6 +87,8 @@ interface World {
   site: ConnectedSiteView | null;
   /** Error code `sites.change` / `sites.disconnect` answer with, when set. */
   sitesFail: string | null;
+  /** Weak lock: token writes answer needs-password until `wallet.reauth`. */
+  weakLocked: boolean;
 }
 
 function setup(
@@ -101,6 +111,7 @@ function setup(
     hidden: false,
     site: null,
     sitesFail: null,
+    weakLocked: false,
     ...over,
   };
   const calls: { method: string; req: unknown }[] = [];
@@ -124,12 +135,14 @@ function setup(
     'tokens.search': (r) => ok({ tokens: r.query === '' ? w.held : w.search, partial: false }),
     'tokens.lookup': () => w.lookup,
     'tokens.add': (r) => {
+      if (w.weakLocked) return fail(WalletErrorCodes.needsPassword, 'pw');
       const added =
         [...w.search, ...w.held].find((x) => x.denom === r.denom) ?? tok(r.denom, 'NEW');
       w.tokens = [...w.tokens, added];
       return ok(w.tokens);
     },
     'tokens.remove': (r) => {
+      if (w.weakLocked) return fail(WalletErrorCodes.needsPassword, 'pw');
       if (w.tokens.length === 1) return fail(TokenErrorCodes.lastToken, 'last');
       w.tokens = w.tokens.filter((x) => x.denom !== r.denom);
       return ok(w.tokens);
@@ -154,6 +167,10 @@ function setup(
       return ok({ address: renamed });
     },
     'wallet.lock': () => ok({}),
+    'wallet.reauth': () => {
+      w.weakLocked = false;
+      return ok({ status: 'ok' });
+    },
     'settings.get': () =>
       ok({ brandThemes: w.brandThemes, weakLockMinutes: 15, fullLockMinutes: 60 }),
     'network.get': () => ok({ id: w.network }),
@@ -256,7 +273,7 @@ function setup(
     scheduler: { after: () => () => undefined },
   };
   const seen: { name: string }[] = [];
-  const Marker = (props: { route: SendTarget | SettingsTarget }) => {
+  const Marker = (props: { route: SendTarget | SettingsTarget | PickTokensTarget }) => {
     seen.push(props.route);
     return <p>at:{props.route.name}</p>;
   };
@@ -264,14 +281,23 @@ function setup(
     'home.main': Home,
     send: Marker,
     'settings.main': Marker,
-  } as RouteTable<HomeRoute | SendTarget | SettingsTarget>;
+    'settings.pickTokens': Marker,
+  } as RouteTable<HomeRoute | SendTarget | SettingsTarget | PickTokensTarget>;
   const { host } = render(
     <ClientProvider client={client}>
-      <HomeEnvProvider env={env}>
-        <SettingsEnvProvider env={settingsEnv}>
-          <Router<HomeRoute | SendTarget | SettingsTarget> table={table} initial={route} />
-        </SettingsEnvProvider>
-      </HomeEnvProvider>
+      <LockEnvProvider
+        clock={{ now: () => 0, sleep: () => Promise.resolve() }}
+        events={{ subscribe: () => () => undefined }}
+      >
+        <HomeEnvProvider env={env}>
+          <SettingsEnvProvider env={settingsEnv}>
+            <Router<HomeRoute | SendTarget | SettingsTarget | PickTokensTarget>
+              table={table}
+              initial={route}
+            />
+          </SettingsEnvProvider>
+        </HomeEnvProvider>
+      </LockEnvProvider>
     </ClientProvider>,
   );
   const tick = async () => {
@@ -685,6 +711,42 @@ describe('token switcher', () => {
     click(star);
     await s.tick();
     expect(s.calls.filter((c) => c.method === 'tokens.remove')).toHaveLength(1);
+  });
+
+  it('asks the password when a star meets the weak lock, then applies it', async () => {
+    const gold = tok('factory/bze1x/gold', 'GOLD');
+    const s = setup({
+      held: [BZE, gold],
+      amounts: { ubze: ['1', '0'], [PAGE.denom]: ['1', '0'], [gold.denom]: ['3', '0'] },
+      weakLocked: true,
+    });
+    await open(s);
+    click(byLabel(s.host, 'Add GOLD to preferred'));
+    await s.tick();
+    expect(text(s.host)).not.toContain('Could not load tokens.');
+    expect(s.w.tokens.map((x) => x.symbol)).toEqual(['BZE', 'PAGE']);
+    const input = dialog(s)?.querySelector<HTMLInputElement>('input[type="password"]') ?? null;
+    if (input === null) throw new Error('no password field');
+    input.value = 'pw';
+    fireEvent(input, 'input');
+    fireEvent(input.closest('form'), 'submit');
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'wallet.reauth').map((c) => c.req)).toEqual([
+      { password: 'pw' },
+    ]);
+    expect(s.w.tokens.map((x) => x.symbol)).toEqual(['BZE', 'PAGE', 'GOLD']);
+    expect(dialog(s)?.querySelector('input[type="password"]')).toBeNull();
+  });
+});
+
+describe('an empty preferred list in the weak lock', () => {
+  it('opens the token picker, which can ask the password, instead of failing', async () => {
+    const s = setup({ tokens: [], weakLocked: true });
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'tokens.add').map((c) => c.req)).toEqual([
+      { denom: 'ubze' },
+    ]);
+    expect(text(s.host)).toBe('at:settings.pickTokens');
   });
 });
 

@@ -7,9 +7,17 @@ import { Router } from '../../popup/router';
 import { AppearanceState, type Scheme } from '../../theme';
 import { readPermittedClipboard, type ClipboardPermissions } from '../../popup/clipboard';
 import { ClientProvider } from '../../popup/client-context';
-import { fail, ok, type Method, type RequestOf, type Result } from '../../protocol';
+import {
+  fail,
+  ok,
+  WalletErrorCodes,
+  type Method,
+  type RequestOf,
+  type Result,
+} from '../../protocol';
 import type { Client } from '../../protocol/client';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
+import { LockEnvProvider } from '../lock/env';
 import {
   onboardingRoutes,
   OnboardingEnvProvider,
@@ -136,11 +144,16 @@ function mount(
           )
         }
       >
-        <OnboardingEnvProvider env={env}>
-          <RandomProvider random={mockRandom()}>
-            <Router table={table} initial={route} />
-          </RandomProvider>
-        </OnboardingEnvProvider>
+        <LockEnvProvider
+          clock={{ now: () => 0, sleep: () => Promise.resolve() }}
+          events={{ subscribe: () => () => undefined }}
+        >
+          <OnboardingEnvProvider env={env}>
+            <RandomProvider random={mockRandom()}>
+              <Router table={table} initial={route} />
+            </RandomProvider>
+          </OnboardingEnvProvider>
+        </LockEnvProvider>
       </AppearanceProvider>
     </ClientProvider>,
   );
@@ -1068,6 +1081,49 @@ describe('pick tokens', () => {
     fireEvent(boxes[1], 'click');
     await click(host, 'Finish');
     expect(client.calls.filter(([m]) => m === 'tokens.add')).toHaveLength(1);
+  });
+
+  it('asks the password when the weak lock stops the picks, then saves the rest', async () => {
+    let preferred: unknown[] = [];
+    let weakLocked = false;
+    const client = mockClient({
+      ...baseHandlers,
+      'tokens.preferred': () => ok(preferred),
+      'tokens.add': ({ denom }: { denom: string }) => {
+        if (weakLocked) return fail(WalletErrorCodes.needsPassword, 'Enter it.');
+        preferred = [...preferred, { ...BZE, denom }];
+        // The idle timer fires after the first pick is saved.
+        weakLocked = true;
+        return ok(preferred);
+      },
+      'wallet.reauth': () => {
+        weakLocked = false;
+        return ok({ status: 'ok' });
+      },
+    });
+    const { host, seen } = await toPick(client);
+    const boxes = host.querySelectorAll('.bp-token-row');
+    fireEvent(boxes[0], 'click'); // BZE
+    fireEvent(boxes[1], 'click'); // GOLD
+    await click(host, 'Finish');
+    expect(seen).toEqual([]);
+    expect(host.textContent).toContain(en['onboarding.unlock.title']);
+    expect(host.textContent).not.toContain(en['app.error.generic']);
+    const input = host.querySelector<HTMLInputElement>('input[type="password"]');
+    if (input === null) throw new Error('no password field');
+    type(input, 'pw');
+    fireEvent(input.closest('form'), 'submit');
+    await flush();
+    await flush();
+    expect(client.calls.filter(([m]) => m === 'wallet.reauth').map(([, r]) => r)).toEqual([
+      { password: 'pw' },
+    ]);
+    expect(client.calls.filter(([m]) => m === 'tokens.add').map(([, r]) => r)).toEqual([
+      { denom: 'ubze' },
+      { denom: GOLD.denom },
+      { denom: GOLD.denom },
+    ]);
+    expect(seen).toEqual([{ name: 'home.main' }]);
   });
 });
 

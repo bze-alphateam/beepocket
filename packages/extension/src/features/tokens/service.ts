@@ -89,7 +89,8 @@ export class TokenService {
     if (!found.ok) return found;
     const current = await this.deps.preferred.get(this.deps.network);
     if (!current.includes(denom)) {
-      await this.deps.preferred.set(this.deps.network, [...current, denom]);
+      const saved = await this.deps.preferred.set(this.deps.network, [...current, denom]);
+      if (!saved.ok) return saved;
     }
     return this.preferred();
   }
@@ -100,11 +101,11 @@ export class TokenService {
     if (current.length === 1) {
       return fail(TokenErrorCodes.lastToken, 'At least one token must stay in the list.');
     }
-    await this.deps.preferred.set(
+    const saved = await this.deps.preferred.set(
       this.deps.network,
       current.filter((d) => d !== denom),
     );
-    return this.preferred();
+    return saved.ok ? this.preferred() : saved;
   }
 
   /**

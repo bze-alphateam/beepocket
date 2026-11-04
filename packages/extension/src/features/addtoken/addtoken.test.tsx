@@ -7,6 +7,7 @@ import {
   fail,
   ok,
   TokenErrorCodes,
+  WalletErrorCodes,
   type AddTokenView,
   type Method,
   type RequestOf,
@@ -283,6 +284,36 @@ describe('the Add a token screen', () => {
   it('works directly with the weak lock', async () => {
     const t = await mounted(link(), {}, 'weakLocked');
     expect(button(t.host, 'Add GOLD')).toBeDefined();
+  });
+
+  it('asks the password in place when adding meets the weak lock, then adds', async () => {
+    let unlocked = false;
+    const t = await mounted(
+      link(),
+      {
+        'tokens.add': () =>
+          unlocked ? ok([BZE, GOLD]) : fail(WalletErrorCodes.needsPassword, 'Enter it.'),
+        'wallet.reauth': () => {
+          unlocked = true;
+          return ok({ status: 'ok' });
+        },
+      },
+      'weakLocked',
+    );
+    fireEvent(button(t.host, 'Add GOLD'), 'click');
+    await settle();
+    expect(t.host.textContent).not.toContain(en['addtoken.failed']);
+    expect(t.host.textContent).toContain('Unlock and add GOLD');
+    const input = t.host.querySelector<HTMLInputElement>('input[type="password"]');
+    if (input === null) throw new Error('no password field');
+    input.value = 'pw';
+    fireEvent(input, 'input');
+    fireEvent(input.closest('form'), 'submit');
+    await settle();
+    await settle();
+    expect(t.calls).toContainEqual(['wallet.reauth', { password: 'pw' }]);
+    expect(t.calls.filter(([m]) => m === 'tokens.add')).toHaveLength(2);
+    expect(t.seen.at(-1)).toEqual({ name: 'home.main', denom: GOLD.denom, toast: 'GOLD added' });
   });
 
   it('hands over to onboarding when no wallet exists yet', async () => {

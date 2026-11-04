@@ -36,6 +36,7 @@ import {
   TokenRow,
   WordGrid,
 } from '../../ui';
+import { PasswordGate } from '../lock/PasswordGate';
 import { tokenLook, TokenPicker } from '../tokens/TokenPicker';
 import { useOnboardingEnv } from './env';
 import { useRandom } from './random';
@@ -834,6 +835,31 @@ export function Tokens(props: {
         onToggle={toggle}
         notice={finishFailed && <Banner tone="red">{t('app.error.generic')}</Banner>}
       />
+    </Step>
+  );
+}
+
+/**
+ * The wallet weak-locked while the tokens were being picked: saving them writes the encrypted
+ * profile, so the password comes first, then the picks are saved.
+ */
+export function UnlockStep(props: { frame: StepFrame; failed: boolean; onUnlocked: () => void }) {
+  return (
+    <Step
+      {...props.frame}
+      title={t('onboarding.unlock.title')}
+      hint={t('onboarding.unlock.hint')}
+      footer={
+        <div class="bp-bottom">
+          <PasswordGate
+            submitLabel={t('onboarding.unlock.submit')}
+            labelIcon="lock"
+            onUnlocked={props.onUnlocked}
+          />
+        </div>
+      }
+    >
+      {props.failed && <Banner tone="red">{t('app.error.generic')}</Banner>}
     </Step>
   );
 }

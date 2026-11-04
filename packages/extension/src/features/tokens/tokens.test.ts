@@ -19,7 +19,7 @@ import type { Platform } from '../../platform';
 import { registerTokenHandlers } from './handlers';
 import type { WalletService } from '../wallet';
 import type { PreferredTokensStore, WalletAddress, WalletAddresses } from './ports';
-import type { TokenSearch } from '../../protocol';
+import { ok, WalletErrorCodes, type TokenSearch } from '../../protocol';
 
 const FACTORY = 'factory/bze1abc/gold';
 const IBC = 'ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2';
@@ -139,7 +139,10 @@ function setup(
   if (opts.preferred) prefs.set('mainnet', opts.preferred);
   const preferred: PreferredTokensStore = {
     get: (n) => Promise.resolve([...(prefs.get(n) ?? [])]),
-    set: (n, d) => Promise.resolve(void prefs.set(n, [...d])),
+    set: (n, d) => {
+      prefs.set(n, [...d]);
+      return Promise.resolve(ok(null));
+    },
   };
   const addresses: WalletAddresses = {
     list: () => Promise.resolve(opts.addresses ?? []),
@@ -579,18 +582,26 @@ describe('tokens.theme', () => {
 
 describe('wired to the wallet profile', () => {
   const ADDR = 'bze1a';
-  function wired(unlocked: boolean) {
+  /** `weak`: the profile is readable but there is no key to re-seal it (weak lock). */
+  function wired(state: 'unlocked' | 'weak' | 'locked', preferred = ['ubze']) {
     let profile = {
       addresses: [{ index: 0, label: 'Main', address: ADDR }],
-      preferredTokens: { mainnet: ['ubze'], testnet: ['ubze'] },
+      preferredTokens: { mainnet: [...preferred], testnet: ['ubze'] },
     };
-    const locked = { ok: false, error: { code: 'locked', message: 'locked' } };
+    const readable = state !== 'locked';
+    const locked = { ok: false, error: { code: WalletErrorCodes.locked, message: 'locked' } };
     const wallet = {
-      getProfile: () => Promise.resolve(unlocked ? { ok: true, value: profile } : locked),
+      getProfile: () => Promise.resolve(readable ? { ok: true, value: profile } : locked),
       addresses: () =>
-        Promise.resolve(unlocked ? { ok: true, value: { addresses: profile.addresses } } : locked),
+        Promise.resolve(readable ? { ok: true, value: { addresses: profile.addresses } } : locked),
       updateProfile: (patch: (p: typeof profile) => typeof profile) => {
-        if (!unlocked) return Promise.resolve(locked);
+        if (state === 'locked') return Promise.resolve(locked);
+        if (state === 'weak') {
+          return Promise.resolve({
+            ok: false,
+            error: { code: WalletErrorCodes.needsPassword, message: 'Enter your password.' },
+          });
+        }
         profile = patch(structuredClone(profile));
         return Promise.resolve({ ok: true, value: profile });
       },
@@ -628,7 +639,7 @@ describe('wired to the wallet profile', () => {
   }
 
   it('keeps the preferred list in the profile of the active network, not in plain storage', async () => {
-    const t = wired(true);
+    const t = wired('unlocked');
     await t.registry.dispatch({ method: 'tokens.add', payload: { denom: FACTORY } });
     expect(t.profile().preferredTokens).toEqual({ mainnet: ['ubze', FACTORY], testnet: ['ubze'] });
     const listed = await t.registry.dispatch({ method: 'tokens.preferred', payload: {} });
@@ -637,7 +648,7 @@ describe('wired to the wallet profile', () => {
   });
 
   it('balances the profile addresses', async () => {
-    const r = await wired(true).registry.dispatch({
+    const r = await wired('unlocked').registry.dispatch({
       method: 'tokens.balances',
       payload: { denom: 'ubze' },
     });
@@ -648,7 +659,7 @@ describe('wired to the wallet profile', () => {
   });
 
   it('shows no tokens and no addresses while the wallet is locked, and refuses to write', async () => {
-    const t = wired(false);
+    const t = wired('locked');
     expect(await t.registry.dispatch({ method: 'tokens.preferred', payload: {} })).toEqual({
       ok: true,
       value: [],
@@ -658,7 +669,24 @@ describe('wired to the wallet profile', () => {
     ).toMatchObject({ ok: true, value: { addresses: [], total: '0' } });
     expect(
       await t.registry.dispatch({ method: 'tokens.add', payload: { denom: FACTORY } }),
-    ).toMatchObject({ ok: false, error: { code: 'internal' } });
+    ).toMatchObject({ ok: false, error: { code: WalletErrorCodes.locked } });
+  });
+
+  it('answers needs-password in weak lock, so the popup can ask for it, and changes nothing', async () => {
+    const t = wired('weak', ['ubze', FACTORY]);
+    expect(
+      await t.registry.dispatch({
+        method: 'tokens.add',
+        payload: { denom: 'factory/bze1abc/silver' },
+      }),
+    ).toMatchObject({ ok: false, error: { code: WalletErrorCodes.needsPassword } });
+    expect(
+      await t.registry.dispatch({ method: 'tokens.remove', payload: { denom: FACTORY } }),
+    ).toMatchObject({ ok: false, error: { code: WalletErrorCodes.needsPassword } });
+    expect(t.profile().preferredTokens).toEqual({ mainnet: ['ubze', FACTORY], testnet: ['ubze'] });
+    // Reading still works in weak lock.
+    const listed = await t.registry.dispatch({ method: 'tokens.preferred', payload: {} });
+    expect(listed).toMatchObject({ ok: true, value: [{ denom: 'ubze' }, { denom: FACTORY }] });
   });
 });
 
@@ -722,7 +750,7 @@ describe('tokens.lookup through the real REST and Scan clients', () => {
       registry,
       { platform, services },
       {
-        preferred: { get: () => Promise.resolve(['ubze']), set: () => Promise.resolve() },
+        preferred: { get: () => Promise.resolve(['ubze']), set: () => Promise.resolve(ok(null)) },
         addresses: { list: () => Promise.resolve([]) },
       },
     );

@@ -22,4 +22,7 @@ export const addtoken = {
   'addtoken.loadFailed': 'The token could not be looked up. Please try again.',
   'addtoken.retry': 'Try again',
   'addtoken.locked': 'Unlock your wallet to add this token.',
+  'addtoken.unlock': 'Unlock and add {symbol}',
+  'addtoken.unlockHint':
+    'Your preferred tokens are saved in your wallet, so BeePocket needs your password.',
 } as const;

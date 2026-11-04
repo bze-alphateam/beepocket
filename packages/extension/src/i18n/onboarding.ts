@@ -96,4 +96,8 @@ export const onboarding = {
   'onboarding.tokens.searchPlaceholder': 'Search by name or symbol',
   'onboarding.link.title': 'Setting up for {symbol}',
   'onboarding.link.from': 'Link from {host}',
+  'onboarding.unlock.title': 'Enter your password',
+  'onboarding.unlock.hint':
+    'BeePocket locked itself while you were away. Enter your password to save your tokens.',
+  'onboarding.unlock.submit': 'Unlock and finish',
 } as const;

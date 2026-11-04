@@ -57,6 +57,8 @@ export const home = {
   'home.switcher.noMatch': 'No token matches "{query}".',
   'home.switcher.none': 'No token with this code on BeeZee',
   'home.switcher.failed': 'Could not load tokens. Try again.',
+  'home.switcher.unlock': 'Enter your password to save the change',
+  'home.switcher.unlockSubmit': 'Unlock and save',
   'home.failed': 'Could not load your wallet. Try again.',
   'home.retry': 'Retry',
 } as const;

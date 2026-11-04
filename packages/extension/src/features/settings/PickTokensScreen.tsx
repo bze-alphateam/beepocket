@@ -1,11 +1,12 @@
 import type { NetworkId } from '@beepocket/core';
-import type { ListedToken } from '../../protocol';
+import { WalletErrorCodes, type ListedToken } from '../../protocol';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import { Layout } from '../../popup/Layout';
 import { useRoute, type RouteBase } from '../../popup/router';
 import { Banner, BottomBar, Button, InlineNote, ScreenHeader } from '../../ui';
+import { PasswordGate } from '../lock/PasswordGate';
 import { homeTarget } from '../lock/targets';
 import { TokenPicker } from '../tokens/TokenPicker';
 import { NetworkPill } from './NetworkPill';
@@ -40,6 +41,8 @@ export function PickTokensScreen() {
   const [found, setFound] = useState<ListedToken[]>([]);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Weak lock: the picks are kept and Save waits for the password.
+  const [needsPassword, setNeedsPassword] = useState(false);
 
   const read = useCallback(async () => {
     const [network, tokens] = await Promise.all([
@@ -69,25 +72,43 @@ export function PickTokensScreen() {
     setSelected((s) => (s.includes(token.denom) ? s : [...s, token.denom]));
   };
 
-  /** Adds the new picks first, so removing never meets the last-token rule halfway. */
+  /**
+   * Adds the new picks first, so removing never meets the last-token rule halfway. The difference
+   * is taken against the list as saved now, so a retry after the password sends only what is
+   * still missing, whatever an interrupted attempt already wrote.
+   */
   const save = async () => {
     if (!start || busy) return;
     setBusy(true);
     setFailed(false);
-    const added = selected.filter((d) => !start.picked.includes(d));
-    const removed = start.picked.filter((d) => !selected.includes(d));
-    // A failed add stops the save before anything is removed: never a half-applied set.
-    let ok = true;
-    for (const denom of added) {
-      ok = (await client.call('tokens.add', { denom })).ok;
-      if (!ok) break;
+    const current = await client.call('tokens.preferred', {});
+    if (!current.ok) {
+      setBusy(false);
+      setFailed(true);
+      return;
     }
-    for (const denom of ok ? removed : []) {
-      ok = (await client.call('tokens.remove', { denom })).ok;
-      if (!ok) break;
+    const saved = current.value.map((x) => x.denom);
+    const added = selected.filter((d) => !saved.includes(d));
+    const removed = saved.filter((d) => !selected.includes(d));
+    // A failed add stops the save before anything is removed: never a half-applied set.
+    let error: string | null = null;
+    for (const denom of added) {
+      const r = await client.call('tokens.add', { denom });
+      if (!r.ok) {
+        error = r.error.code;
+        break;
+      }
+    }
+    for (const denom of error === null ? removed : []) {
+      const r = await client.call('tokens.remove', { denom });
+      if (!r.ok) {
+        error = r.error.code;
+        break;
+      }
     }
     setBusy(false);
-    if (ok) navigate(SETTINGS);
+    if (error === null) navigate(SETTINGS);
+    else if (error === WalletErrorCodes.needsPassword) setNeedsPassword(true);
     else {
       setFailed(true);
       await read();
@@ -135,16 +156,29 @@ export function PickTokensScreen() {
         />
       }
       footer={
-        <BottomBar note={note}>
-          <Button
-            disabled={selected.length === 0 || busy}
-            onClick={() => {
-              void save();
-            }}
-          >
-            {t('settings.tokens.save')}
-          </Button>
-        </BottomBar>
+        needsPassword ? (
+          <div class="bp-bottom">
+            <PasswordGate
+              submitLabel={t('settings.tokens.unlock')}
+              labelIcon="lock"
+              onUnlocked={() => {
+                setNeedsPassword(false);
+                void save();
+              }}
+            />
+          </div>
+        ) : (
+          <BottomBar note={note}>
+            <Button
+              disabled={selected.length === 0 || busy}
+              onClick={() => {
+                void save();
+              }}
+            >
+              {t('settings.tokens.save')}
+            </Button>
+          </BottomBar>
+        )
       }
     >
       <section class="bp-settings-tokens">
@@ -168,7 +202,15 @@ export function PickTokensScreen() {
           onToggle={toggle}
           field={<TokenCodeField key={start.network} onFound={foundByCode} />}
           extra={extra}
-          notice={failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}
+          notice={
+            needsPassword ? (
+              <InlineNote tone="neutral" icon="lock">
+                {t('settings.tokens.unlockHint')}
+              </InlineNote>
+            ) : (
+              failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>
+            )
+          }
         />
       </section>
     </Layout>

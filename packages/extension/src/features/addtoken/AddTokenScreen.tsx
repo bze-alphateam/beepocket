@@ -6,6 +6,7 @@ import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
 import {
   TokenErrorCodes,
+  WalletErrorCodes,
   type AddTokenView,
   type ListedToken,
   type WalletState,
@@ -26,6 +27,7 @@ import { useTokenTheme } from '../dapp/theme';
 import { useHomeEnv } from '../home/env';
 import { tokenColor } from '../home/format';
 import type { HomeRoute } from '../home/Home';
+import { PasswordGate } from '../lock/PasswordGate';
 import { UnlockPanel } from '../lock/UnlockScreen';
 import type { OnboardingRoute } from '../onboarding/routes';
 
@@ -143,6 +145,8 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
   const [lookup, setLookup] = useState<Lookup>({ status: 'loading' });
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Weak lock: adding writes the encrypted profile, so Add waits for the password.
+  const [needsPassword, setNeedsPassword] = useState(false);
   const [copied, setCopied] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [network, setNetwork] = useState<NetworkId | null>(null);
@@ -198,7 +202,8 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
       const res = await client.call('tokens.add', { denom: token.denom });
       if (!res.ok) {
         setBusy(false);
-        setFailed(true);
+        if (res.error.code === WalletErrorCodes.needsPassword) setNeedsPassword(true);
+        else setFailed(true);
         return;
       }
     }
@@ -225,7 +230,18 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
     />
   );
   const footer =
-    found === null ? undefined : (
+    found === null ? undefined : needsPassword ? (
+      <div class="bp-bottom">
+        <PasswordGate
+          submitLabel={t('addtoken.unlock', { symbol: found.token.symbol })}
+          labelIcon="lock"
+          onUnlocked={() => {
+            setNeedsPassword(false);
+            void choose(found.token, found.preferred);
+          }}
+        />
+      </div>
+    ) : (
       <BottomActions row>
         <Button variant="secondary" onClick={finish}>
           {t('addtoken.cancel')}
@@ -308,6 +324,7 @@ function AddCard({ link, close }: { link: Link; close: () => void }) {
               ]}
             />
             {failed && <Banner tone="red">{t('addtoken.failed')}</Banner>}
+            {needsPassword && <p class="bp-dapp-sub">{t('addtoken.unlockHint')}</p>}
           </>
         )}
       </main>
