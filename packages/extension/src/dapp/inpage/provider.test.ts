@@ -286,11 +286,16 @@ describe('liveness: every request ends', () => {
 
   it('ends what was waiting when the page comes back from the back/forward cache', async () => {
     const t = rig();
+    let settled = 0;
     const a = t.provider.getKey('beezee-1').catch((e: unknown) => e);
     const b = t.provider.connect('beezee-1').catch((e: unknown) => e);
+    void Promise.all([a, b].map((p) => p.finally(() => settled++)));
     ack(t, 1);
     // A normal page show is not a restore: nothing ends.
     t.win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(0);
     t.win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
     expect(await a).toMatchObject({ code: 'unavailable' });
     expect(await b).toMatchObject({ code: 'unavailable' });

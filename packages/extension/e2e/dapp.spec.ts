@@ -255,12 +255,17 @@ test('a toolbar popup that never opens still shows the request in a window', asy
   await walletWithAddresses(context, extensionId);
   const { dapp, stop } = await openDapp(context);
   try {
-    const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
-    await worker.evaluate(() => {
-      Object.assign(chrome.action, { openPopup: () => new Promise(() => undefined) });
-    });
+    // Patched on the current worker right before the click: a restarted worker would get the
+    // fixture's rejecting openPopup back, and the window would open without any deadline.
+    for (const worker of context.serviceWorkers()) {
+      await worker.evaluate(() => {
+        Object.assign(chrome.action, { openPopup: () => new Promise(() => undefined) });
+      });
+    }
+    const opened = Date.now();
     // The page got its ack at once; the window follows once the popup's deadline passes.
     const request = await connect(context, dapp);
+    expect(Date.now() - opened).toBeGreaterThanOrEqual(4_000);
     await request.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(dapp.getByRole('status')).toHaveText(/name Main$/);
   } finally {
