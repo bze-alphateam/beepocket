@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
-import { homeTarget } from '../lock/targets';
+import { homeTarget, rootTarget } from '../lock/targets';
 import { tokenColor } from '../home/format';
 import {
   Confirm,
@@ -32,6 +32,7 @@ const blankCells = () => Array.from({ length: IMPORT_CELLS }, () => '');
  * The first-run flow. The recovery phrase (made or typed) lives only in this component's state:
  * it is dropped when the flow goes back to Welcome, as soon as the wallet exists, and with the
  * component when it unmounts. Nothing of it is written to storage, the URL or the console.
+ * Over an existing wallet nothing is replaced without the confirmation of the password step.
  */
 export function Onboarding({ route }: { route: OnboardingRoute }) {
   const client = useClient();
@@ -47,6 +48,21 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const [importRejected, setImportRejected] = useState(false);
   // A token code that found a token makes the token step unnecessary.
   const [codeFound, setCodeFound] = useState(false);
+  // Onboarding is also reached over a wallet ("Forgot it?" on the lock screen): then the way
+  // back leads to the state routing (unlock), not to a first-run Welcome. Unknown counts as one.
+  const [walletExists, setWalletExists] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void client.call('wallet.state', {}).then((res) => {
+      if (live) setWalletExists(!res.ok || res.value.state !== 'uninitialised');
+    });
+    return () => {
+      live = false;
+    };
+  }, [client]);
+  const leave = () => {
+    navigate(rootTarget);
+  };
 
   // The token behind a link, for the Welcome card; the card falls back to the host alone.
   const [linkToken, setLinkToken] = useState<{
@@ -96,9 +112,14 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   };
   const back = () => {
     const prev = flow[index - 1];
+    if (prev !== undefined) {
+      setStep(prev);
+      return;
+    }
     // Leaving the first step drops whatever phrase was shown or typed.
-    if (prev === undefined) forget();
-    setStep(prev ?? 'welcome');
+    forget();
+    if (walletExists === false) setStep('welcome');
+    else leave();
   };
   const frame = (withBack = true): StepFrame => ({
     index,
@@ -135,6 +156,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
       return (
         <Welcome
           link={link}
+          onBack={walletExists === true ? leave : undefined}
           onCreate={() => {
             setPath('create');
             setStep('phrase');

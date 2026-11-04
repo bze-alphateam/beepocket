@@ -31,12 +31,13 @@ const withPassword = (name: string) =>
     typeof p.password === 'string' ? { password: p.password } : null,
   );
 
+/** `replace` is optional but, when sent, a boolean: anything else is a malformed request. */
 const withPhrase = (name: string) =>
-  fields<'wallet.createWallet'>(name, (p) =>
-    typeof p.password === 'string' && typeof p.mnemonic === 'string'
-      ? { password: p.password, mnemonic: p.mnemonic }
-      : null,
-  );
+  fields<'wallet.createWallet'>(name, (p) => {
+    if (typeof p.password !== 'string' || typeof p.mnemonic !== 'string') return null;
+    if (p.replace !== undefined && typeof p.replace !== 'boolean') return null;
+    return { password: p.password, mnemonic: p.mnemonic, replace: p.replace === true };
+  });
 
 /** Thin protocol layer: validates payloads and delegates to the service. */
 export function registerWalletHandlers(registry: HandlerRegistry, wallet: WalletService): void {
@@ -54,11 +55,11 @@ export function registerWalletHandlers(registry: HandlerRegistry, wallet: Wallet
   });
   reg('wallet.createWallet', {
     validate: withPhrase('wallet.createWallet'),
-    handle: (r) => wallet.createWallet(r.password, r.mnemonic),
+    handle: (r) => wallet.createWallet(r.password, r.mnemonic, { replace: r.replace === true }),
   });
   reg('wallet.importWallet', {
     validate: withPhrase('wallet.importWallet'),
-    handle: (r) => wallet.importWallet(r.password, r.mnemonic),
+    handle: (r) => wallet.importWallet(r.password, r.mnemonic, { replace: r.replace === true }),
   });
   reg('wallet.unlock', {
     validate: withPassword('wallet.unlock'),

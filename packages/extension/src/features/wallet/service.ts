@@ -62,6 +62,11 @@ export interface WalletDeps {
   onStateChange?(state: { state: WalletState; retryAt: number | null }): void;
 }
 
+/** `replace`: the user confirmed deleting the wallet stored in this browser. */
+export interface ReplaceOptions {
+  replace?: boolean;
+}
+
 type Rejection = Extract<PasswordOutcome, { status: 'wrong-password' | 'throttled' }>;
 interface Opened {
   key: Uint8Array;
@@ -147,16 +152,20 @@ export class WalletService {
 
   // ---- create / import ----
 
+  /**
+   * Over an existing vault both answer `alreadyInitialised` and touch nothing, unless
+   * `replace` is set: the user confirmed that the wallet in this browser is deleted.
+   */
   createWallet(
     password: string,
     mnemonic: string,
+    options: ReplaceOptions = {},
   ): Promise<Result<{ addresses: WalletAddress[] }>> {
     return this.exclusive(async () => {
       const checked = this.checkNew(password, mnemonic, true);
       if (!checked.ok) return checked;
-      if ((await this.deps.storage.get(VAULT_KEY)) !== undefined) {
-        return fail(Codes.alreadyInitialised, 'A wallet already exists. Import to replace it.');
-      }
+      const guard = await this.replaceGuard(options);
+      if (!guard.ok) return guard;
       const profile = newProfile([this.profileAddress(checked.value, 0)]);
       return this.install(password, checked.value, profile);
     });
@@ -165,13 +174,26 @@ export class WalletService {
   importWallet(
     password: string,
     mnemonic: string,
+    options: ReplaceOptions = {},
   ): Promise<Result<{ addresses: WalletAddress[] }>> {
     return this.exclusive(async () => {
       const checked = this.checkNew(password, mnemonic, false);
       if (!checked.ok) return checked;
+      // Before the address scan: a refused import does no network work either.
+      const guard = await this.replaceGuard(options);
+      if (!guard.ok) return guard;
       const addresses = await this.detectAddresses(checked.value);
       return this.install(password, checked.value, newProfile(addresses));
     });
+  }
+
+  private async replaceGuard(options: ReplaceOptions): Promise<Result<null>> {
+    if (options.replace === true) return ok(null);
+    if ((await this.deps.storage.get(VAULT_KEY)) === undefined) return ok(null);
+    return fail(
+      Codes.alreadyInitialised,
+      'A wallet already exists. Replacing it needs the user to confirm.',
+    );
   }
 
   // ---- unlock / lock ----
@@ -599,7 +621,7 @@ export class WalletService {
     return candidates.filter((_, i) => used[i]);
   }
 
-  /** Replaces whatever was stored and leaves the wallet unlocked. */
+  /** Replaces whatever was stored and leaves the wallet unlocked; callers pass `replaceGuard` first. */
   private async install(
     password: string,
     mnemonic: string,

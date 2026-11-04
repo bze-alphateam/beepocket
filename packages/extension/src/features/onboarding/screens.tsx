@@ -29,6 +29,7 @@ import {
   PasswordField,
   PhraseReveal,
   RadioCardGroup,
+  RiskBox,
   Segmented,
   Spinner,
   StrengthMeter,
@@ -112,10 +113,17 @@ export function Welcome(props: {
   onImport: () => void;
   /** Set when an add-a-token link started the flow. */
   link?: WelcomeLink | undefined;
+  /** ← back to the wallet; only when one exists in this browser. */
+  onBack?: (() => void) | undefined;
 }) {
   return (
     <Layout glow="tall" corner={<AppearanceToggle />}>
       <section class="ob-welcome">
+        {props.onBack !== undefined && (
+          <span class="ob-welcome-back">
+            <Button variant="icon" icon="arrow-left" label={t('app.back')} onClick={props.onBack} />
+          </span>
+        )}
         <div class="ob-welcome-hero">
           <h1 class="bp-sr-only">{t('onboarding.welcome.title')}</h1>
           <span class="ob-welcome-mark">
@@ -452,29 +460,88 @@ export function PasswordStep(props: {
   const [repeat, setRepeat] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The worker refused because a wallet exists: it is replaced only once the user ticks the box.
+  const [replacing, setReplacing] = useState(false);
+  const [understood, setUnderstood] = useState(false);
   const short = password.length > 0 && password.length < MIN_PASSWORD_LENGTH;
   const mismatch = repeat.length > 0 && repeat !== password;
   const ready = password.length >= MIN_PASSWORD_LENGTH && repeat === password;
   const strength = STRENGTH[strengthOf(password)];
-  const submit = async (e: Event) => {
-    e.preventDefault();
+  const send = async (replace: boolean) => {
     if (!ready || busy) return;
     setBusy(true);
     setError(null);
     const method = props.mode === 'create' ? 'wallet.createWallet' : 'wallet.importWallet';
-    const res = await client.call(method, { password, mnemonic: props.mnemonic });
+    const req = { password, mnemonic: props.mnemonic, ...(replace ? { replace: true } : {}) };
+    const res = await client.call(method, req);
     if (res.ok) {
       props.onCreated();
       return;
     }
     setBusy(false);
+    if (res.error.code === WalletErrorCodes.alreadyInitialised && !replace) {
+      setUnderstood(false);
+      setReplacing(true);
+      return;
+    }
+    setReplacing(false);
     if (res.error.code === WalletErrorCodes.invalidMnemonic) props.onBadPhrase();
-    else if (res.error.code === WalletErrorCodes.alreadyInitialised)
-      setError(t('onboarding.password.exists'));
     else if (res.error.code === WalletErrorCodes.passwordTooShort)
       setError(t('onboarding.password.tooShort', { min: MIN_PASSWORD_LENGTH }));
     else setError(t('app.error.generic'));
   };
+  const submit = (e: Event) => {
+    e.preventDefault();
+    void send(false);
+  };
+  if (replacing) {
+    return (
+      <Step
+        {...props.frame}
+        gap={14}
+        title={t('onboarding.replace.title')}
+        footer={
+          <BottomActions row>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                setReplacing(false);
+              }}
+            >
+              {t('onboarding.replace.cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              disabled={!understood || busy}
+              onClick={() => {
+                if (understood) void send(true);
+              }}
+            >
+              {t('onboarding.replace.confirm')}
+            </Button>
+          </BottomActions>
+        }
+      >
+        <RiskBox
+          tone="red"
+          title={t('onboarding.replace.warning')}
+          action={
+            <Check checked={understood} disabled={busy} onChange={setUnderstood}>
+              {t('onboarding.replace.understand')}
+            </Check>
+          }
+        >
+          <p>{t('onboarding.replace.text')}</p>
+        </RiskBox>
+        {busy && (
+          <p class="ob-wait" role="status">
+            <Spinner /> {t('onboarding.password.working')}
+          </p>
+        )}
+      </Step>
+    );
+  }
   return (
     <Step
       {...props.frame}
@@ -489,7 +556,7 @@ export function PasswordStep(props: {
         </BottomActions>
       }
     >
-      <form id={PASSWORD_FORM} class="ob-form" onSubmit={(e) => void submit(e)}>
+      <form id={PASSWORD_FORM} class="ob-form" onSubmit={submit}>
         <PasswordField
           label={t('onboarding.password.label')}
           showPasswordLabel={t('onboarding.password.show')}

@@ -6,7 +6,13 @@ import { WalletService, type WalletDeps } from './service';
 
 export { registerWalletHandlers } from './handlers';
 export { ChromeAlarms, type AlarmEventLike, type AlarmsLike, type Alarms } from './alarms';
-export { SESSION_KEY, SESSION_PROFILE, WalletService, type WalletDeps } from './service';
+export {
+  SESSION_KEY,
+  SESSION_PROFILE,
+  WalletService,
+  type ReplaceOptions,
+  type WalletDeps,
+} from './service';
 export type {
   ConnectedSite,
   Profile,
