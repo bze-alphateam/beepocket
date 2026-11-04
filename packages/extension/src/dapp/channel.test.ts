@@ -745,6 +745,7 @@ describe('request queue', () => {
     expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: a.id, count: 3 });
     expect(await t.dapp.queue()).toEqual({
       head: at(1),
+      headId: a.id,
       count: 3,
       origins: [at(1), at(2), at(3)],
     });
@@ -954,7 +955,12 @@ describe('request queue', () => {
     await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
     const b = await t.ask('connect', chainId(), t.site(at(2), 2, 'd2'));
     await t.dapp.onTabRemoved(1);
-    expect(await t.dapp.queue()).toEqual({ head: at(2), count: 1, origins: [at(2)] });
+    expect(await t.dapp.queue()).toEqual({
+      head: at(2),
+      headId: b.id,
+      count: 1,
+      origins: [at(2)],
+    });
     expect(await t.dapp.current()).toMatchObject({ id: b.id });
   });
 
