@@ -337,6 +337,23 @@ describe('the sign screen', () => {
     expect(t.call).toHaveBeenCalledWith('dapp.answer', expect.objectContaining({ approve: true }));
   });
 
+  it('shows a huge raw message cut until Show all', async () => {
+    const huge = `{"typeUrl":"/x.v1.MsgBig","value":"${'A'.repeat(30_000)}"}`;
+    const t = signRig({ ...SIGN, messageJson: [huge], rawJson: `[${huge}]` });
+    await settle();
+    fireEvent(detailsRow(t.host), 'click');
+    await settle();
+    const pre = () => detailsSheet(t.host)?.querySelector('pre')?.textContent ?? '';
+    expect(pre().length).toBe(20_001);
+    expect(pre().endsWith('…')).toBe(true);
+    const showAll = button(t.host, 'Show all (30 KB)');
+    expect(showAll).toBeDefined();
+    fireEvent(showAll, 'click');
+    await settle();
+    expect(pre()).toBe(huge);
+    expect(button(t.host, 'Show all (30 KB)')).toBeUndefined();
+  });
+
   it('answers Reject with approve false and no fee', async () => {
     const t = signRig(SIGN);
     await settle();
@@ -387,7 +404,10 @@ async function signView(
     ...SIGN,
     summary,
     rawJson: rawJson(messages),
-    messageJson: messages.map((m) => rawJson([m])),
+    // One message each, as the worker sends it: the object, not a one-item array.
+    messageJson: messages.map((m) =>
+      JSON.stringify((JSON.parse(rawJson([m])) as unknown[])[0], null, 2),
+    ),
     locked: options.locked ?? false,
   };
 }
@@ -414,6 +434,11 @@ describe('the sign screen: risk levels', () => {
     const sheet = detailsSheet(t.host);
     expect(sheet?.querySelector('dd.bp-mono')?.textContent).toBe('/test.v1.MsgNothing');
     expect(sheet?.querySelector('pre')?.textContent).toContain('/test.v1.MsgNothing');
+    // Four bytes the wallet has no decoder for: said on the screen and in Details.
+    expect(t.host.querySelector('.bp-sign-hero')?.textContent).toContain('Not decoded · 4 bytes');
+    expect([...(sheet?.querySelectorAll('dd') ?? [])].map((d) => d.textContent)).toContain(
+      'Not decoded · 4 bytes',
+    );
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
     expect(disabled(t.host, 'Approve')).toBe(false);
     expect(t.host.querySelector('[role=checkbox]')).toBeNull();
@@ -424,6 +449,11 @@ describe('the sign screen: risk levels', () => {
     await settle();
     expect(t.host.querySelectorAll('[role=alert]')).toHaveLength(1);
     expect(t.host.querySelector('[role=alert]')?.textContent).toContain('power over your address');
+    const view = await signView([grant()]);
+    const danger = view.summary.dangers[0];
+    expect(danger?.text.length).toBeGreaterThan(0);
+    // The risk sentence itself, not only the title, is in the red box.
+    expect(t.host.querySelector('[role=alert]')?.textContent).toContain(danger?.text);
     expect(ticked(t.host)).toBe(false);
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
     expect(disabled(t.host, 'Approve')).toBe(true);
@@ -514,7 +544,9 @@ describe('the sign screen: risk levels', () => {
     expect(rows[0]?.className).toContain('bp-sign-row-normal');
     expect(rows[1]?.className).toContain('bp-sign-row-unknown');
     expect(rows[1]?.textContent).toContain('MsgNothing');
-    expect(rows[1]?.textContent).toContain(en['dapp.sign.unknown']);
+    expect(rows[1]?.textContent).toContain(en['dapp.sign.unknownShort']);
+    expect(rows[1]?.textContent).toContain('Not decoded · 4 bytes');
+    expect(rows[0]?.textContent).not.toContain('Not decoded');
     // One line each: no rows and no raw message on the screen itself.
     expect(t.host.querySelector('dt')).toBeNull();
     expect(t.host.querySelector('pre')).toBeNull();

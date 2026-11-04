@@ -51,8 +51,34 @@ const ICONS: Record<MsgIcon, IconName> = {
 /** A type BeePocket has no summary for at all (not a known type that failed a check). */
 const unreadable = (m: MsgSummary): boolean => m.level === 'unknown' && m.icon === 'unknown';
 
+/** The raw view shows this many characters until "Show all": a huge payload stays cheap. */
+const RAW_CAP = 20_000;
+
+/**
+ * The byte count of a message BeePocket has no decoder for, read from its raw JSON
+ * (`{ typeUrl, unknown: true, value: <base64> }`), or `null` for a decoded message.
+ */
+function undecodedBytes(json: string | undefined): number | null {
+  if (json === undefined) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const { unknown, value } = parsed as { unknown?: unknown; value?: unknown };
+  if (unknown !== true || typeof value !== 'string') return null;
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((value.length * 3) / 4) - padding);
+}
+
+const notDecoded = (bytes: number): string =>
+  t('dapp.sign.notDecoded', { bytes: bytes.toLocaleString('en-US') });
+
 /** The one hero of a single-message request: icon, what it is, the amount, one note. */
-function Hero({ message: m }: { message: MsgSummary }) {
+function Hero({ message: m, json }: { message: MsgSummary; json: string | undefined }) {
+  const bytes = undecodedBytes(json);
   const tone = m.level === 'dangerous' ? 'bad' : m.level === 'unknown' ? 'warn' : null;
   return (
     <div class="bp-sign-hero">
@@ -62,6 +88,7 @@ function Hero({ message: m }: { message: MsgSummary }) {
       {unreadable(m) ? (
         <>
           <h2 class="bp-sign-big">{m.title}</h2>
+          {bytes !== null && <p class="bp-sign-sub">{notDecoded(bytes)}</p>}
           <p class="bp-sign-note bp-sign-note-warn" role="note">
             {t('dapp.sign.unknown')}
           </p>
@@ -83,10 +110,13 @@ function Hero({ message: m }: { message: MsgSummary }) {
 }
 
 /** One message of several: its icon and one line; a tap opens its details. */
-function MessageRow(props: { message: MsgSummary; onOpen: () => void }) {
+function MessageRow(props: { message: MsgSummary; json: string | undefined; onOpen: () => void }) {
   const { message: m } = props;
+  const bytes = undecodedBytes(props.json);
   const line = unreadable(m)
-    ? t('dapp.sign.unknown')
+    ? bytes === null
+      ? t('dapp.sign.unknownShort')
+      : `${t('dapp.sign.unknownShort')} · ${notDecoded(bytes)}`
     : m.level === 'unknown'
       ? t('dapp.sign.unchecked')
       : m.line;
@@ -121,10 +151,13 @@ function Details(props: { view: SignView; index: number | null }) {
   const { summary } = view;
   const env = useHomeEnv();
   const [copied, setCopied] = useState(false);
+  const [all, setAll] = useState(false);
   const one = index ?? (summary.messages.length === 1 ? 0 : null);
   const message = one === null ? undefined : summary.messages[one];
   const rows = message?.rows ?? [];
   const raw = one === null ? view.rawJson : (view.messageJson[one] ?? '');
+  const bytes = one === null ? null : undecodedBytes(view.messageJson[one]);
+  const cut = !all && raw.length > RAW_CAP;
   return (
     <div class="bp-sign-details">
       <dl class="bp-sign-kv">
@@ -149,6 +182,12 @@ function Details(props: { view: SignView; index: number | null }) {
             <dd class={kind === 'mono' ? 'bp-mono' : undefined}>{value}</dd>
           </div>
         ))}
+        {bytes !== null && (
+          <div>
+            <dt>{t('dapp.sign.raw')}</dt>
+            <dd>{notDecoded(bytes)}</dd>
+          </div>
+        )}
         {index === null && summary.memo !== null && (
           <div>
             <dt>{t('dapp.sign.memo')}</dt>
@@ -157,8 +196,18 @@ function Details(props: { view: SignView; index: number | null }) {
         )}
       </dl>
       <pre class="bp-dapp-json" tabIndex={0} aria-label={t('dapp.sign.raw')}>
-        {raw}
+        {cut ? `${raw.slice(0, RAW_CAP)}…` : raw}
       </pre>
+      {cut && (
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setAll(true);
+          }}
+        >
+          {t('dapp.sign.showAll', { size: `${String(Math.ceil(raw.length / 1024))} KB` })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -324,6 +373,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
                 <MessageRow
                   key={i}
                   message={m}
+                  json={view.messageJson[i]}
                   onOpen={() => {
                     setDetails(i);
                   }}
@@ -332,7 +382,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
             </ol>
           </>
         ) : (
-          <Hero message={only} />
+          <Hero message={only} json={view.messageJson[0]} />
         )}
         {dangerous && (
           <RiskBox
@@ -344,8 +394,11 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
               </Check>
             }
           >
-            {summary.dangers.slice(1).map((d, i) => (
-              <p key={i}>{d.title}</p>
+            {summary.dangers.map((d, i) => (
+              <p key={i}>
+                {i > 0 && <strong>{d.title}. </strong>}
+                {d.text}
+              </p>
             ))}
           </RiskBox>
         )}
