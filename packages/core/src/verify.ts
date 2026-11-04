@@ -1,3 +1,4 @@
+import { GOVERNANCE_ONLY } from './governance';
 import { decodeAny } from './decode';
 import type { Network } from './net';
 import { BinaryReader, WireType } from './proto/binary';
@@ -182,6 +183,9 @@ export function verifySignRequest(input: VerifyInput): VerifyResult {
 
   const messageSigners: (string[] | null)[] = [];
   for (const msg of messages) {
+    // Signed by the gov module only: a wallet user never signs one, whatever it decodes to.
+    if (GOVERNANCE_ONLY.has(msg.typeUrl))
+      return fail('multi-signer', 'A message can only be signed by governance');
     try {
       messageSigners.push(signersOf(msg));
     } catch {

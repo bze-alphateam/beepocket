@@ -1,3 +1,4 @@
+import { GOVERNANCE_ONLY } from './governance';
 import { base64 } from '@scure/base';
 import { formatAmount, displayPrice } from './amounts';
 import { decodeAny } from './decode';
@@ -338,7 +339,9 @@ async function routePath(
   const consistent =
     msg.routes.length > 0 &&
     msg.routes.length <= MAX_ROUTE_HOPS &&
-    (current === null || current === msg.minOutput.denom);
+    // An unknown pool leaves the route unproven: the swap is not what it says until checked.
+    current !== null &&
+    current === msg.minOutput.denom;
   if (current === null || current !== msg.minOutput.denom) path.push(out);
   return { path, consistent };
 }
@@ -770,20 +773,6 @@ function product(a: string, b: string): bigint | null {
   return x === null || y === null ? null : x * y;
 }
 
-/** Each module's governance-only messages: signed by the gov module, never by a wallet user. */
-const GOVERNANCE = new Map<string, string>([
-  ['/bze.burner.MsgUpdateParams', 'Update burner settings'],
-  ['/bze.cointrunk.MsgUpdateParams', 'Update CoinTrunk settings'],
-  ['/bze.rewards.MsgUpdateParams', 'Update rewards settings'],
-  ['/bze.tokenfactory.MsgUpdateParams', 'Update token factory settings'],
-  ['/bze.tradebin.MsgUpdateParams', 'Update tradebin settings'],
-  ['/bze.txfeecollector.MsgUpdateParams', 'Update fee collector settings'],
-  ['/bze.tradebin.MsgHaltDenoms', 'Halt trading of tokens'],
-  ['/bze.tradebin.MsgUnhaltDenoms', 'Resume trading of tokens'],
-  ['/bze.cointrunk.MsgAcceptDomain', 'Change an accepted news domain'],
-  ['/bze.cointrunk.MsgSavePublisher', 'Save a CoinTrunk publisher'],
-]);
-
 function governanceParts(typeUrl: string, action: string): Parts {
   return {
     level: 'normal',
@@ -897,7 +886,7 @@ async function createStakingRewardParts(l: Lookups, msg: MsgCreateStakingReward)
       ['Staked token', staked.symbol],
       ['Minimum stake', minStake],
       ['Lock after unstaking', daysText(msg.lock)],
-      ['You pay', totalText ?? 'Prize per day × duration'],
+      ['You pay', `${totalText ?? 'Prize per day × duration'} + the chain's creation fee`],
     ],
   };
 }
@@ -956,7 +945,7 @@ async function createTradingRewardParts(l: Lookups, msg: MsgCreateTradingReward)
       ['Prize per winner', perSlot],
       ['Winners', safeText(msg.slots, 40)],
       ['Duration', days],
-      ['You pay', totalText ?? 'Prize per winner × winners'],
+      ['You pay', `${totalText ?? 'Prize per winner × winners'} + the chain's creation fee`],
     ],
   };
 }
@@ -1004,7 +993,7 @@ async function createScheduleParts(l: Lookups, msg: MsgCreateDenomRewardSchedule
       ['Holders of', holders.symbol],
       ['Per day', perDay],
       ['Duration', days],
-      ['You pay', totalText ?? 'Per day × duration'],
+      ['You pay', `${totalText ?? 'Per day × duration'} + the chain's creation fee`],
     ],
   };
 }
@@ -1085,16 +1074,22 @@ async function changeAdminParts(l: Lookups, msg: MsgChangeAdmin): Promise<Parts>
       ],
     };
   }
+  const who = l.who(msg.newAdmin);
   return {
-    level: 'normal',
+    // The new admin can mint and change the token, and nothing gives it back.
+    level: 'dangerous',
     icon: 'admin',
     title: 'Hand over admin',
     hero: symbol,
-    sub: `to ${l.who(msg.newAdmin)}`,
+    sub: `to ${who}`,
     rows: [
       ['Token', symbol],
       ['New admin', safeText(msg.newAdmin, 80), 'mono'],
     ],
+    danger: {
+      title: `This gives ${who} control of ${symbol}`,
+      text: `They can mint and change ${symbol}. You can't undo this.`,
+    },
   };
 }
 
@@ -1263,8 +1258,8 @@ function setWithdrawAddressParts(l: Lookups, msg: MsgSetWithdrawAddress): Parts 
     level: 'normal',
     icon: 'rewards',
     title: 'Change rewards address',
-    hero: l.who(msg.withdrawAddress),
-    sub: 'staking rewards go there from now on',
+    hero: safeText(msg.withdrawAddress, 80),
+    sub: 'Your future staking rewards go there',
     rows: [['Rewards address', safeText(msg.withdrawAddress, 80), 'mono']],
   };
 }
@@ -1296,13 +1291,13 @@ async function transferParts(l: Lookups, msg: MsgTransfer): Promise<Parts> {
     icon: 'send',
     title: 'Send',
     hero: amount ?? 'Unreadable amount',
-    sub: `to ${l.who(msg.receiver)} via ${channel}`,
+    sub: `to ${l.who(msg.receiver)} on another chain · ${channel}`,
     rows,
   };
 }
 
 async function partsOf(l: Lookups, msg: AnyMsg): Promise<Parts> {
-  const action = GOVERNANCE.get(msg.typeUrl);
+  const action = GOVERNANCE_ONLY.get(msg.typeUrl);
   if (action !== undefined) return governanceParts(msg.typeUrl, action);
   try {
     switch (msg.typeUrl) {

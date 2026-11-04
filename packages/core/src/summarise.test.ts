@@ -192,6 +192,12 @@ describe('Swap', () => {
     expect(s.level).toBe('normal');
   });
 
+  it('marks a route through a pool it cannot find as unknown', async () => {
+    const s = await run([swap(['pool-nowhere'], 'ubze', USDC)]);
+    expect(s.level).toBe('unknown');
+    expect(s.messages[0]?.level).toBe('unknown');
+  });
+
   it('lists every hop of a multi-pool route', async () => {
     const s = await run([swap(['pool-vdl-bze', 'pool-bze-usdc'], VDL, USDC)]);
     expect(s.rows[0]).toEqual(['Route', 'VDL → BZE → USDC']);
@@ -665,7 +671,9 @@ describe('failing lookups', () => {
     ];
     const s = await summarise(all, ctx);
     expect(s.messages).toHaveLength(6);
-    expect(s.level).toBe('normal');
+    // Without its pools the swap's route can't be proven, so the request is not plain normal.
+    expect(s.messages[1]?.level).toBe('unknown');
+    expect(s.level).toBe('unknown');
     expect(s.messages[0]?.line).toContain('1,000,000,000 ubze (base units)');
   });
 
@@ -1105,7 +1113,6 @@ describe('BZE and cosmos message summaries', () => {
     [factory.MsgCreateDenom.typeUrl, 'create', 'Create token · uvdl · you become its admin'],
     [factory.MsgMint.typeUrl, 'create', 'Mint · 10,000.00 VDL · new tokens, as token admin'],
     [factory.MsgBurn.typeUrl, 'burn', 'Burn · 1.00 VDL · as token admin'],
-    [factory.MsgChangeAdmin.typeUrl, 'admin', 'Hand over admin · VDL · to Alex'],
     [
       factory.MsgSetDenomMetadata.typeUrl,
       'edit',
@@ -1145,9 +1152,13 @@ describe('BZE and cosmos message summaries', () => {
     [
       MsgSetWithdrawAddress.typeUrl,
       'rewards',
-      'Change rewards address · Alex · staking rewards go there from now on',
+      `Change rewards address · ${ALEX} · Your future staking rewards go there`,
     ],
-    [MsgTransfer.typeUrl, 'send', `Send · 25.00 USDC · to ${short(NOBLE)} via channel-3`],
+    [
+      MsgTransfer.typeUrl,
+      'send',
+      `Send · 25.00 USDC · to ${short(NOBLE)} on another chain · channel-3`,
+    ],
   ])('summarises %s', async (typeUrl, icon, line) => {
     const s = await run([sample(typeUrl)]);
     expect(headline(s)).toBe(line);
@@ -1175,9 +1186,12 @@ describe('BZE and cosmos message summaries', () => {
       expect(m.icon, typeUrl).not.toBe('unknown');
       expect(m.hero, typeUrl).not.toBe('Unknown message');
       expect(m.title, typeUrl).not.toBe(typeUrl.split('.').pop());
-      expect(m.level, typeUrl).toBe('normal');
+      // Handing a token's admin to another address is the one dangerous type here.
+      expect(m.level, typeUrl).toBe(
+        typeUrl === factory.MsgChangeAdmin.typeUrl ? 'dangerous' : 'normal',
+      );
     }
-    expect(s.level).toBe('normal');
+    expect(s.level).toBe('dangerous');
   });
 
   it('shows what a staking reward costs in total and per day', async () => {
@@ -1188,7 +1202,32 @@ describe('BZE and cosmos message summaries', () => {
       ['Staked token', 'BZE'],
       ['Minimum stake', '0.00 BZE'],
       ['Lock after unstaking', '1 day'],
-      ['You pay', '30.00 VDL'],
+      ['You pay', "30.00 VDL + the chain's creation fee"],
+    ]);
+  });
+
+  it("never shows a reward total without the chain's creation fee", async () => {
+    for (const typeUrl of [
+      rewards.MsgCreateStakingReward.typeUrl,
+      rewards.MsgCreateTradingReward.typeUrl,
+      rewards.MsgCreateDenomRewardSchedule.typeUrl,
+    ]) {
+      const s = await run([sample(typeUrl)]);
+      const pay = s.rows.find(([label]) => label === 'You pay');
+      expect(pay?.[1], typeUrl).toMatch(/ \+ the chain's creation fee$/);
+    }
+  });
+
+  it("makes handing a token's admin to another address dangerous", async () => {
+    const s = await run([sample(factory.MsgChangeAdmin.typeUrl)]);
+    expect(headline(s)).toBe('Hand over admin · VDL · to Alex');
+    expect(s.level).toBe('dangerous');
+    expect(s.messages[0]?.icon).toBe('admin');
+    expect(s.dangers).toEqual([
+      {
+        title: 'This gives Alex control of VDL',
+        text: "They can mint and change VDL. You can't undo this.",
+      },
     ]);
   });
 

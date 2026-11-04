@@ -195,6 +195,19 @@ describe('verifySignRequest', () => {
     expect(code(request({}, [send('')]))).toBe('multi-signer');
   });
 
+  it.each([
+    '/bze.txfeecollector.MsgUpdateParams',
+    '/bze.tradebin.MsgUpdateParams',
+    '/bze.tradebin.MsgHaltDenoms',
+    '/bze.cointrunk.MsgSavePublisher',
+  ])('multi-signer: %s is signed by governance only, never by the wallet', (typeUrl) => {
+    // Some of these have no decoder, so their signer would otherwise go unchecked.
+    expect(code(request({}, [{ typeUrl, value: new Uint8Array([10, 1, 65]) }]))).toBe(
+      'multi-signer',
+    );
+    expect(code(request({}, [send(), { typeUrl, value: new Uint8Array() }]))).toBe('multi-signer');
+  });
+
   it('lets a message type the wallet cannot decode through (the chain checks its signer)', () => {
     const unknown: AnyMsg = {
       typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
