@@ -49,29 +49,40 @@ export function FromSheet(props: {
 }
 
 /** `W-Fee`: every token this address can pay the fee with. Choosing one re-prices the send. */
+/**
+ * Which fee option a choice is: its denom for the wallet's own options, set apart for the one a
+ * site set, which can be in the same token.
+ */
+export const feeKey = (o: FeeChoice): string =>
+  o.setBy === undefined ? o.denom : `site:${o.denom}`;
+
+/** The fee options; `selected` and `onPick` speak `feeKey`. */
 export function FeeSheet(props: {
   open: boolean;
   options: FeeChoice[];
   selected: string;
-  onPick: (denom: string) => void;
+  onPick: (key: string) => void;
   onClose: () => void;
 }) {
   return (
     <Sheet open={props.open} title={t('send.fee.title')} onClose={props.onClose}>
       <div class="bp-send-options">
         {props.options.map((o) => {
-          const on = o.denom === props.selected;
+          const key = feeKey(o);
+          const on = key === props.selected;
           const fee = `≈ ${exact(o.amount, o.decimals)} ${o.symbol}`;
           return (
             <ListRow
-              key={o.denom}
+              key={key}
               size="option"
               title={o.symbol}
               plainSubtitle
               subtitle={
-                o.balance === undefined
-                  ? undefined
-                  : t('send.fee.balance', { amount: exact(o.balance, o.decimals) })
+                o.setBy !== undefined
+                  ? t('send.fee.setBy', { site: o.setBy })
+                  : o.balance === undefined
+                    ? undefined
+                    : t('send.fee.balance', { amount: exact(o.balance, o.decimals) })
               }
               leading={<Avatar label={o.symbol} src={o.logo} size={30} />}
               value={fee}
@@ -79,7 +90,7 @@ export function FeeSheet(props: {
               selected={on}
               label={t('send.fee.option', { symbol: o.symbol, fee })}
               onClick={() => {
-                props.onPick(o.denom);
+                props.onPick(key);
               }}
             />
           );

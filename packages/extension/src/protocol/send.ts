@@ -46,6 +46,8 @@ export interface FeeChoice {
   logo?: string | null;
   /** Base units of `denom` the paying address holds; set on send quotes (the fee sheet shows it). */
   balance?: string;
+  /** The origin of the site that set this fee; absent on the wallet's own options. */
+  setBy?: string;
 }
 
 /** What the review screen shows. Everything here is exactly what `send.submit` signs. */

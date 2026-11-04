@@ -98,6 +98,21 @@ function foreignFee(gas: bigint, nativePrice: Rate, rate: Rate): bigint {
   );
 }
 
+/**
+ * The least fee the chain takes in `denom` for `gasLimit`, with no margin: `ceil(gasLimit x
+ * minimum gas price)` in the native token, and that native fee converted at the pool's spot
+ * ratio (rounded up) in another token. `null` when `denom` cannot pay the fee at all.
+ */
+export function minimumFee(data: FeeData, denom: string, gasLimit: bigint): bigint | null {
+  const rate = data.rates.get(denom);
+  const nativePrice = data.rates.get(data.nativeDenom);
+  if (!rate || !nativePrice) return null;
+  const native = ceilDiv(gasLimit * nativePrice.num, nativePrice.den);
+  if (denom === data.nativeDenom) return native;
+  if (nativePrice.num === 0n) return 0n;
+  return ceilDiv(native * rate.num * nativePrice.den, rate.den * nativePrice.num);
+}
+
 /** The pool pairing the native denom with `denom`, whichever side each is on. */
 function nativeReserves(
   pool: Pool,
