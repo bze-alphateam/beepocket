@@ -6,7 +6,7 @@ import type { Scheduler } from '../home/env';
 /**
  * What the first-run flow needs from the browser. The clipboard is read only from a user gesture
  * (a Paste button), asking for `clipboardRead` when it is not held (a refusal rejects); the timer
- * debounces the token-code lookup.
+ * debounces the token-denom lookup.
  */
 export interface OnboardingEnv {
   clipboard: { readText(): Promise<string>; writeText(text: string): Promise<void> };

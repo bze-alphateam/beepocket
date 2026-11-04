@@ -255,9 +255,9 @@ function unresolved(denom: string): ListedToken {
 }
 
 function noSuchToken(): Result<never> {
-  return fail(TokenErrorCodes.noSuchToken, 'No token with this code on BeeZee');
+  return fail(TokenErrorCodes.noSuchToken, 'No token with this denom on BeeZee');
 }
 
 function invalidCode(): Result<never> {
-  return fail(TokenErrorCodes.invalidCode, 'This is not a valid token code.');
+  return fail(TokenErrorCodes.invalidCode, 'This is not a valid token denom.');
 }

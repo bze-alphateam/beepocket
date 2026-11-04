@@ -61,8 +61,8 @@ test('onboarding: create, check, password, start, tokens', async ({ context, ext
   await createToStart(page, true);
   await shot(page, 'ob-start');
 
-  const code = page.getByLabel('Token code', { exact: true });
-  await page.getByRole('radio', { name: 'I have a token code' }).click();
+  const code = page.getByLabel('Token denom', { exact: true });
+  await page.getByRole('radio', { name: 'I have a token denom' }).click();
   await code.fill(PAGE);
   await page.getByRole('button', { name: 'Open wallet with PAGE' }).waitFor();
   await shot(page, 'ob-start-code');

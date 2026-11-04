@@ -217,12 +217,12 @@ describe('the Add a token screen', () => {
       'tokens.lookup': () => ok(found),
       'tokens.preferred': () => ok(held),
     });
-    expect(t.host.textContent).toContain('different code');
+    expect(t.host.textContent).toContain('different denom');
   });
 
   it('does not warn about lookalikes for an ordinary token', async () => {
     const t = await mounted(link());
-    expect(t.host.textContent).not.toContain('different code');
+    expect(t.host.textContent).not.toContain('different denom');
   });
 
   it('says "A link" when there is no referrer', async () => {
@@ -259,7 +259,7 @@ describe('the Add a token screen', () => {
 
   it('shows an unknown code with only Close', async () => {
     const t = await mounted(link(), { 'tokens.lookup': () => fail('no-such-token', 'x') });
-    expect(t.host.textContent).toContain('No token with this code on BeeZee');
+    expect(t.host.textContent).toContain('No token with this denom on BeeZee');
     expect(button(t.host, 'Add')).toBeUndefined();
     expect(button(t.host, en['addtoken.cancel'])).toBeUndefined();
     fireEvent(button(t.host, en['addtoken.close']), 'click');

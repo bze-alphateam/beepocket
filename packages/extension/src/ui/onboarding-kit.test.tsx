@@ -252,7 +252,12 @@ describe('RadioCardGroup with a card body', () => {
         value="code"
         onChange={onChange}
         options={[
-          { value: 'code', icon: 'ticket', title: 'Code', body: <input aria-label="Token code" /> },
+          {
+            value: 'code',
+            icon: 'ticket',
+            title: 'Code',
+            body: <input aria-label="Token denom" />,
+          },
           { value: 'manual', icon: 'grid', title: 'Manual' },
         ]}
       />,

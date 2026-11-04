@@ -56,6 +56,6 @@ test('tokens.lookup answers null branding on a 404 and no-such-token for zero su
   );
   expect(unknown).toEqual({
     ok: false,
-    error: { code: 'no-such-token', message: 'No token with this code on BeeZee' },
+    error: { code: 'no-such-token', message: 'No token with this denom on BeeZee' },
   });
 });

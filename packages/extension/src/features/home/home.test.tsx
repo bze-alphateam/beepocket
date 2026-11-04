@@ -696,7 +696,7 @@ describe('token switcher', () => {
     if (input) input.value = 'factory/bze1x/none';
     fireEvent(input, 'input');
     await s.tick();
-    expect(text(s.host)).toContain('No token with this code on BeeZee');
+    expect(text(s.host)).toContain('No token with this denom on BeeZee');
   });
 
   it('un-stars a token but never the last preferred one, and says why', async () => {

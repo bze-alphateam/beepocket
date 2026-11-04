@@ -78,7 +78,7 @@ export class AddTokenService {
     if (typeof message !== 'object' || message === null) return refuse('Malformed link.');
     const { code, referrer } = message as Record<string, unknown>;
     const valid = validCode(code);
-    if (valid === null) return refuse('Not a token code.');
+    if (valid === null) return refuse('Not a token denom.');
     if ((await this.deps.session.get(DOCUMENT_KEY)) === from.documentId) return { accepted: true };
     await this.show(
       { code: valid, referrer: httpsOrigin(referrer) ?? '', source: 'link' },

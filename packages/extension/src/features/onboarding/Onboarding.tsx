@@ -57,7 +57,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   // Import opens on 12 cells, as on the board; the length control switches to 24.
   const [importLength, setImportLength] = useState<12 | 24>(12);
   const [importRejected, setImportRejected] = useState(false);
-  // A token code that found a token makes the token step unnecessary.
+  // A token denom that found a token makes the token step unnecessary.
   const [codeFound, setCodeFound] = useState(false);
   // The picks a weak lock stopped; saved again once the password is in.
   const [pending, setPending] = useState<string[]>([]);

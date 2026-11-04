@@ -131,7 +131,7 @@ type Lookup =
       brandThemes: boolean;
     };
 
-/** The same symbol as the native token or a token already held, under a different code. */
+/** The same symbol as the native token or a token already held, under a different denom. */
 function looksLikeAnother(token: ListedToken, held: ListedToken[]): boolean {
   const symbol = token.symbol.toUpperCase();
   if (token.kind !== 'native' && symbol === NATIVE_SYMBOL) return true;

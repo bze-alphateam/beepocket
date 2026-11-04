@@ -582,10 +582,10 @@ describe('Toggle, Check, RadioCardGroup', () => {
         options={[
           {
             value: 'code',
-            title: 'I have a token code',
+            title: 'I have a token denom',
             subtitle: 'One step',
             icon: 'ticket',
-            body: <input aria-label="Token code" />,
+            body: <input aria-label="Token denom" />,
           },
           { value: 'manual', title: "I'll choose my tokens", icon: 'grid', iconTone: 'inset' },
           { value: 'later', title: 'Later', icon: 'x' },
@@ -611,7 +611,7 @@ describe('Toggle, Check, RadioCardGroup', () => {
     fireEvent(radios(host)[0], 'click');
     expect(onChange).toHaveBeenCalledWith('code');
     expect(checked(host)).toEqual([true, false, false]);
-    expect(host.querySelector('[aria-label="Token code"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Token denom"]')).not.toBeNull();
     expect(host.querySelector('.bp-radio-card-on .bp-radio-on')).not.toBeNull();
   });
 

@@ -5,7 +5,7 @@ export const LINK_ORIGIN = 'https://getbze.com';
 export const LINK_PATH = '/wallet/add/';
 export const LINK_PATTERN = `${LINK_ORIGIN}${LINK_PATH}*`;
 
-/** A token code as the link carries it, or `null` when missing or not a denom. */
+/** A token denom as the link carries it, or `null` when missing or not a denom. */
 export function validCode(value: unknown): string | null {
   return typeof value === 'string' && DENOM.test(value) ? value : null;
 }

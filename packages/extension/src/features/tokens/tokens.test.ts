@@ -256,7 +256,7 @@ describe('tokens.lookup', () => {
     const r = await setup().call('tokens.lookup', { code: 'factory/bze1abc/ghost' });
     expect(r).toEqual({
       ok: false,
-      error: { code: 'no-such-token', message: 'No token with this code on BeeZee' },
+      error: { code: 'no-such-token', message: 'No token with this denom on BeeZee' },
     });
   });
 

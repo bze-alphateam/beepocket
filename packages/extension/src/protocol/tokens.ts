@@ -4,7 +4,7 @@ import type { DenomBranding, TokenInfo } from '@beepocket/core';
 export const TokenErrorCodes = {
   /** The code is not a denom a chain could hold. */
   invalidCode: 'invalid-code',
-  /** Zero supply on chain. UI text: "No token with this code on BeeZee". */
+  /** Zero supply on chain. UI text: "No token with this denom on BeeZee". */
   noSuchToken: 'no-such-token',
   /** `tokens.remove` on the only preferred token. */
   lastToken: 'last-token',

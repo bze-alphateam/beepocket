@@ -6,7 +6,7 @@ import { chromeManifest, type ManifestSource } from './manifest';
 
 /**
  * What Settings needs from the browser: the version for the footer, the clipboard for Copy and
- * the token code's Paste (read only on that tap, asking for `clipboardRead` when it is not held;
+ * the token denom's Paste (read only on that tap, asking for `clipboardRead` when it is not held;
  * a refusal rejects), the timer that debounces the code lookup.
  */
 export interface SettingsEnv {

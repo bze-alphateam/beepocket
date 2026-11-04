@@ -80,12 +80,12 @@ test('settings sheet, lock timers, address book, recovery phrase', async ({
 
   // A token the wallet does not hold, found by its code; then a code that is not one.
   await page
-    .getByRole('textbox', { name: 'Token code' })
+    .getByRole('textbox', { name: 'Token denom' })
     .fill(`${PAGE.slice(0, PAGE.lastIndexOf('/'))}/ugold`);
   await expect(page.getByRole('checkbox', { name: /UGOLD/ })).toBeVisible();
   await shot(page, 'settings-tokens-code');
-  await page.getByRole('textbox', { name: 'Token code' }).fill('not a code');
-  await expect(page.getByText("That isn't a valid token code.")).toBeVisible();
+  await page.getByRole('textbox', { name: 'Token denom' }).fill('not a code');
+  await expect(page.getByText("That isn't a valid token denom.")).toBeVisible();
   await shot(page, 'settings-tokens-code-error');
 });
 

@@ -28,7 +28,7 @@ export interface TokenPickerProps {
   onToggle: (denom: string) => void;
   /** Between the search field and the list: a failed-save banner, a note. */
   notice?: ComponentChildren;
-  /** Right under the search field: another way to find a token (Settings' token code). */
+  /** Right under the search field: another way to find a token (Settings' token denom). */
   field?: ComponentChildren;
   /**
    * Tokens the search cannot find, listed ahead of its answer when they match the query: the picks

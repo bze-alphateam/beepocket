@@ -15,7 +15,7 @@ test.beforeEach(async ({ context }) => {
   });
 });
 
-test('create a wallet, confirm words, set a password and start with a token code', async ({
+test('create a wallet, confirm words, set a password and start with a token denom', async ({
   context,
   extensionId,
 }) => {
@@ -42,9 +42,9 @@ test('create a wallet, confirm words, set a password and start with a token code
   await page.getByLabel('Repeat password').fill('correct horse');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  await page.getByRole('radio', { name: 'I have a token code' }).click();
-  await page.getByLabel('Token code', { exact: true }).fill(mockFactoryDenom);
-  await page.getByLabel('Token code', { exact: true }).press('Enter');
+  await page.getByRole('radio', { name: 'I have a token denom' }).click();
+  await page.getByLabel('Token denom', { exact: true }).fill(mockFactoryDenom);
+  await page.getByLabel('Token denom', { exact: true }).press('Enter');
   await expect(page.getByText('Gold Coin')).toBeVisible();
   await page.getByRole('button', { name: 'Open wallet with GOLD' }).click();
   await expect(page.getByRole('button', { name: 'Open wallet with GOLD' })).toBeHidden();

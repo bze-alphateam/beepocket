@@ -20,7 +20,7 @@ const LOOKUP_DELAY_MS = 400;
 const MAX_CODE_LENGTH = 128;
 
 /**
- * The token code entry of Preferred tokens: finds a token the wallet does not hold, the way
+ * The token denom entry of Preferred tokens: finds a token the wallet does not hold, the way
  * onboarding's fast track does. A found token goes to `onFound`; anything else stays an inline
  * message under the field.
  */
@@ -99,7 +99,7 @@ export function TokenCodeField(props: { onFound: (token: ListedToken) => void })
               ? `${t('onboarding.start.noSuchToken')} ${t('onboarding.start.noSuchTokenHint')}`
               : t(CODE_ERRORS[error])
         }
-        hint={refused ? t('app.pasteHint') : undefined}
+        hint={refused ? t('app.pasteHint') : t('onboarding.start.codeHint')}
         onInput={typed}
         trailing={
           <Button variant="ghost" label={t('onboarding.start.pasteLabel')} onClick={paste}>
