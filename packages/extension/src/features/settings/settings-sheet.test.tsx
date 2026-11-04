@@ -773,7 +773,7 @@ describe('Preferred tokens', () => {
     expect(host.textContent).toContain('The change could not be saved.');
   });
 
-  describe('token code', () => {
+  describe('token denom', () => {
     it('a found code lists the token ticked once, and Save adds it', async () => {
       const client = new FakeClient();
       client.preferred.mainnet = ['ubze'];
@@ -815,7 +815,7 @@ describe('Preferred tokens', () => {
       client.preferred.mainnet = ['ubze'];
       const host = await openPick(client);
       clipboard = `  ${GOLD.denom} `;
-      fireEvent(button(host, 'Paste token code'), 'click');
+      fireEvent(button(host, 'Paste token denom'), 'click');
       await flush();
       expect(codeField(host).value).toBe(GOLD.denom);
       expect(row(host, 'GOLD').getAttribute('aria-checked')).toBe('true');
@@ -824,19 +824,23 @@ describe('Preferred tokens', () => {
     it.each([
       [
         fail(TokenErrorCodes.noSuchToken, 'x'),
-        'No token uses this code. Check it with whoever shared it.',
+        'No token uses this denom. Check it with whoever shared it.',
       ],
-      [fail(TokenErrorCodes.invalidCode, 'x'), "That isn't a valid token code."],
-      [fail('unexpected', 'x'), "We couldn't check this code. Try again."],
+      [fail(TokenErrorCodes.invalidCode, 'x'), "That isn't a valid token denom."],
+      [fail('unexpected', 'x'), "We couldn't check this denom. Try again."],
     ])('an unknown code says so under the field and adds nothing (%#)', async (answer, text) => {
       const client = new FakeClient();
       client.preferred.mainnet = ['ubze'];
       client.lookup = () => Promise.resolve(answer);
       const host = await openPick(client);
+      const hint = 'The unique identifier of each token';
+      expect(must(host.querySelector('.ob-code')).textContent).toContain(hint);
       typeCode(host, 'factory/bze1x/nope');
       scheduler.run();
       await flush();
       expect(must(host.querySelector('.ob-code')).textContent).toContain(text);
+      // The error takes the hint's line.
+      expect(must(host.querySelector('.ob-code')).textContent).not.toContain(hint);
       expect(symbols(host)).toEqual(['BZE', 'PAGE']);
       expect(host.textContent).toContain('1 selected');
       fireEvent(row(host, 'PAGE'), 'click');
@@ -850,7 +854,7 @@ describe('Preferred tokens', () => {
       client.preferred.mainnet = ['ubze'];
       const host = await openPick(client);
       clipboard = GOLD.denom;
-      fireEvent(button(host, 'Paste token code'), 'click');
+      fireEvent(button(host, 'Paste token denom'), 'click');
       // Same tick as the click, before any promise has settled: the user gesture still holds.
       expect(permissions.request).toHaveBeenCalledExactlyOnceWith({
         permissions: ['clipboardRead'],
@@ -874,7 +878,7 @@ describe('Preferred tokens', () => {
       const host = await openPick(client);
       clipboard = GOLD.denom;
       refuse();
-      fireEvent(button(host, 'Paste token code'), 'click');
+      fireEvent(button(host, 'Paste token denom'), 'click');
       await flush();
       expect(client.saw('tokens.lookup')).toEqual([]);
       expect(codeField(host).value).toBe('');
@@ -897,7 +901,7 @@ describe('Preferred tokens', () => {
         Promise.resolve(code === IBC ? ok(sherpa) : fail(TokenErrorCodes.noSuchToken, 'none'));
       const host = await openPick(client);
       clipboard = `${IBC}\n`;
-      fireEvent(button(host, 'Paste token code'), 'click');
+      fireEvent(button(host, 'Paste token denom'), 'click');
       await flush();
       expect(client.saw('tokens.lookup')).toEqual([{ code: IBC }]);
       expect(row(host, 'SHERPA').getAttribute('aria-checked')).toBe('true');
@@ -912,7 +916,7 @@ describe('Preferred tokens', () => {
         new Promise((resolve) => {
           release = resolve;
         });
-      fireEvent(button(host, 'Paste token code'), 'click');
+      fireEvent(button(host, 'Paste token denom'), 'click');
       fireEvent(button(host, 'Back'), 'click');
       expect(host.textContent).toBe('at:settings.main');
       release(GOLD.denom);
@@ -929,7 +933,7 @@ describe('Preferred tokens', () => {
       await flush();
       expect(client.saw('tokens.lookup')).toEqual([]);
       expect(must(host.querySelector('.ob-code')).textContent).toContain(
-        "That isn't a valid token code.",
+        "That isn't a valid token denom.",
       );
       // 128 characters is still a code.
       typeCode(host, `factory/${'a'.repeat(120)}`);
@@ -961,7 +965,7 @@ describe('Preferred tokens', () => {
       must(answers.get(GOLD.denom))(ok(GOLD));
       await flush();
       expect(host.textContent).not.toContain('GOLD');
-      expect(host.textContent).toContain('No token uses this code.');
+      expect(host.textContent).toContain('No token uses this denom.');
     });
 
     it('a new keystroke cancels the pending lookup', async () => {

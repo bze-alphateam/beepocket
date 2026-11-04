@@ -769,7 +769,7 @@ describe('over an existing wallet', () => {
   });
 });
 
-describe('start with a token code', () => {
+describe('start with a token denom', () => {
   async function look(host: HTMLElement, code: string) {
     await click(host, en['onboarding.start.haveCode']);
     type(field(host, en['onboarding.start.codeLabel']), code);
@@ -801,7 +801,7 @@ describe('start with a token code', () => {
     const { host } = await createdWallet(mockClient(baseHandlers));
     await look(host, 'factory/bze1x/ghost');
     expect(host.querySelector('[role="alert"]')?.textContent).toBe(
-      'No token uses this code. Check it with whoever shared it.',
+      'No token uses this denom. Check it with whoever shared it.',
     );
     expect(button(host, 'Open wallet')).toBeUndefined();
     expect(button(host, 'Continue')?.disabled).toBe(true);
@@ -857,7 +857,7 @@ describe('start with a token code', () => {
     expect(button(host, 'Open wallet with GOLD')).toBeDefined();
   });
 
-  it('a declined token-code Paste focuses the field, hints, and looks nothing up', async () => {
+  it('a declined token-denom Paste focuses the field, hints, and looks nothing up', async () => {
     const permissions = {
       request: vi.fn(() => Promise.resolve(false)),
     };
@@ -874,15 +874,17 @@ describe('start with a token code', () => {
     expect(input.value).toBe('');
     expect(document.activeElement).toBe(input);
     expect(host.textContent).toContain(en['app.pasteHint']);
+    expect(host.textContent).not.toContain(en['onboarding.start.codeHint']);
     // Ctrl+V / ⌘V arrives as input and is looked up like typing.
     type(input, GOLD.denom);
     await flush();
     await flush();
     expect(host.textContent).not.toContain(en['app.pasteHint']);
+    expect(host.textContent).toContain('The unique identifier of each token');
     expect(button(host, 'Open wallet with GOLD')).toBeDefined();
   });
 
-  it('a granted token-code Paste asks for clipboardRead in the tap, then looks it up', async () => {
+  it('a granted token-denom Paste asks for clipboardRead in the tap, then looks it up', async () => {
     const permissions = {
       request: vi.fn(() => Promise.resolve(true)),
     };

@@ -46,7 +46,7 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   // Import opens on 12 cells, as on the board; the length control switches to 24.
   const [importLength, setImportLength] = useState<12 | 24>(12);
   const [importRejected, setImportRejected] = useState(false);
-  // A token code that found a token makes the token step unnecessary.
+  // A token denom that found a token makes the token step unnecessary.
   const [codeFound, setCodeFound] = useState(false);
   // Onboarding is also reached over a wallet ("Forgot it?" on the lock screen): then the way
   // back leads to the state routing (unlock), not to a first-run Welcome. Unknown counts as one.
