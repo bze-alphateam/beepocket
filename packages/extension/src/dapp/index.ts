@@ -6,7 +6,7 @@ import { createTokenResolver } from '../features/tokens/resolver';
 import type { WalletService } from '../features/wallet';
 import { AccountChanges } from './account-changes';
 import { DocumentLog } from './documents';
-import { SitesService } from './sites';
+import { SitesService, type ActiveTabsLike } from './sites';
 import { Deliverer, type TabsLike } from './deliver';
 import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
@@ -19,14 +19,14 @@ export { dappSender, type SenderLike } from './sender';
 export { DappService, type Ack } from './service';
 export { registerDappPopupHandlers } from './popup-handlers';
 export { registerSitesHandlers } from './sites-handlers';
-export type { TabsLike, WindowsLike };
+export type { ActiveTabsLike, TabsLike, WindowsLike };
 
 /** Composition root of the dapp channel: real stores and chrome adapters over the platform. */
 export function createDappService(
   platform: Platform,
   services: Services,
   wallet: WalletService,
-  chrome: { tabs: TabsLike; windows: WindowsLike; alarms: Alarms },
+  chrome: { tabs: TabsLike & ActiveTabsLike; windows: WindowsLike; alarms: Alarms },
 ): DappService {
   const registry = new DappRegistry();
   // Built per request over the active network's clients, like the send flow's service.
@@ -51,7 +51,7 @@ export function createDappService(
     deliverer,
     documents,
     changes,
-    sites: new SitesService({ wallet, services, changes }),
+    sites: new SitesService({ wallet, services, changes, tabs: chrome.tabs }),
     services,
     clock: platform.clock,
   });

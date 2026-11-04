@@ -87,6 +87,14 @@ export interface SitesProtocol {
     req: Record<string, never>;
     res: { network: NetworkId; sites: ConnectedSiteView[]; addresses: WalletAddress[] };
   };
+  /**
+   * The connected site (active network) in the tab the toolbar popup was opened over, or null:
+   * not connected, not a web page, or no access to the tab. Plus the addresses it can be moved to.
+   */
+  'sites.current': {
+    req: Record<string, never>;
+    res: { site: ConnectedSiteView | null; addresses: WalletAddress[] };
+  };
   /** Gives the site another address and tells its open pages. Needs the wallet unlocked. */
   'sites.change': { req: { origin: string; index: number }; res: Record<string, never> };
   /** Forgets the site and tells its open pages. Needs the wallet unlocked. */

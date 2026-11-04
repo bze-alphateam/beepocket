@@ -11,10 +11,27 @@ import type { Services } from '../background/services';
 import type { WalletService } from '../features/wallet';
 import type { AccountChanges } from './account-changes';
 
+/** The slice of `chrome.tabs` that finds the tab the user opened the popup over. */
+export interface ActiveTabsLike {
+  query(info: { active: true; lastFocusedWindow: true }): Promise<{ url?: string | undefined }[]>;
+}
+
 export interface SitesDeps {
   wallet: Pick<WalletService, 'getProfile' | 'updateProfile'>;
   services: Pick<Services, 'activeNetwork'>;
   changes: Pick<AccountChanges, 'notify'>;
+  tabs: ActiveTabsLike;
+}
+
+/** The web origin of a tab's URL; null for anything but http(s) or a URL we may not read. */
+function webOrigin(url: string | undefined): string | null {
+  if (url === undefined) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -50,6 +67,26 @@ export class SitesService {
       })
       .sort((a, b) => b.connectedAt - a.connectedAt);
     return ok({ network, sites, addresses });
+  }
+
+  /**
+   * The site in the tab the popup was opened over, when it is connected on the active network.
+   * The URL comes from the browser (readable thanks to `activeTab`), never from the page; without
+   * it, or on a non-web tab, there is no site.
+   */
+  async current(): Promise<Result<{ site: ConnectedSiteView | null; addresses: WalletAddress[] }>> {
+    let origin: string | null = null;
+    try {
+      const [tab] = await this.deps.tabs.query({ active: true, lastFocusedWindow: true });
+      origin = webOrigin(tab?.url);
+    } catch {
+      // no tab to look at
+    }
+    const listed = await this.list();
+    if (!listed.ok) return listed;
+    const site =
+      origin === null ? null : (listed.value.sites.find((s) => s.origin === origin) ?? null);
+    return ok({ site, addresses: listed.value.addresses });
   }
 
   async change(origin: string, index: number): Promise<Result<Record<string, never>>> {

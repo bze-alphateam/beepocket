@@ -9,6 +9,7 @@ import {
   WalletErrorCodes,
   type ConnectedSiteView,
   type ResponseOf,
+  type WalletAddress,
 } from '../../protocol';
 import {
   Banner,
@@ -36,10 +37,10 @@ export function siteName(origin: string): string {
   }
 }
 
-/** `W-Sites-Change`: the address a site sees, one Save. */
-function ChangeSheet(props: {
+/** `W-Sites-Change`: the address a site sees, one Save. Home's current-site strip opens it too. */
+export function ChangeSheet(props: {
   site: ConnectedSiteView;
-  addresses: Listing['addresses'];
+  addresses: WalletAddress[];
   busy: boolean;
   /** A failed save, shown in the sheet: the screen's banner would sit behind it. */
   error: string | null;

@@ -1120,7 +1120,7 @@ describe('the browser clipboard behind Paste', () => {
     const manifest = JSON.parse(
       readFileSync(join(import.meta.dirname, '../../../public/manifest.json'), 'utf8'),
     ) as { permissions: string[]; optional_permissions?: string[] };
-    expect(manifest.permissions).toEqual(['storage', 'alarms']);
+    expect(manifest.permissions).toEqual(['storage', 'alarms', 'activeTab']);
     expect(manifest.optional_permissions).toEqual(['clipboardRead']);
   });
 });

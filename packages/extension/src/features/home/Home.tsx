@@ -23,6 +23,7 @@ import {
 import { SettingsSheet } from '../settings/SettingsSheet';
 import { AddAddressSheet } from './AddAddressSheet';
 import { AddressesTab } from './AddressesTab';
+import { CurrentSite } from './CurrentSite';
 import { useBalances } from './data';
 import { useHomeEnv } from './env';
 import { amountText, subline, tokenColor } from './format';
@@ -332,6 +333,8 @@ export function Home() {
   return (
     <Layout header={header} footer={toasts}>
       <main class="bp-home">
+        {/* Remounted per network: a site is connected on one network only. */}
+        <CurrentSite key={loaded.network} />
         <Card variant="edge">
           <section
             class="bp-home-balance"
