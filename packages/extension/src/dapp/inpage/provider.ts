@@ -1,6 +1,7 @@
 import { REQUEST_TTL_MS } from '../requests';
 import {
   ACK_FIELD,
+  ACK_TIMEOUT_MS,
   bigintToWire,
   bytesFromWire,
   bytesToWire,
@@ -16,15 +17,10 @@ import {
 export const PROVIDER_VERSION = '1.0.0';
 
 /**
- * How long a request may go without the wallet's ack before it ends with `unavailable`. Waking
- * a suspended worker can take several seconds on a slow PC.
- */
-export const ACK_TIMEOUT_MS = 10_000;
-/**
  * How long an acked request may wait for its answer: the wallet's own 10-minute expiry plus a
  * minute. Past it the answer was lost on the way, and the request ends with `unavailable`.
  */
-export const ANSWER_TIMEOUT_MS = REQUEST_TTL_MS + 60_000;
+const ANSWER_TIMEOUT_MS = REQUEST_TTL_MS + 60_000;
 
 /** What a dapp gets from `connect` and `getKey`. */
 export interface BeePocketKey {
@@ -100,6 +96,8 @@ export interface PageTimers {
 export interface ProviderDeps {
   win: PageWindow;
   timers: PageTimers;
+  /** The page's clock (`Date.now()`), stamped on each request as `sentAt`. */
+  now(): number;
   /** Fills `bytes` with random values (`crypto.getRandomValues`). */
   randomBytes(bytes: Uint8Array): void;
 }
@@ -155,7 +153,10 @@ export function createProvider(deps: ProviderDeps): BeePocketProvider {
     timers.clear(pending.timer);
     end(pending);
   };
+  /** Gives up on a request: the wallet is told to drop it, the caller gets `unavailable`. */
   const unavailable = (id: string, message: string): void => {
+    if (!waiting.has(id)) return;
+    win.postMessage({ channel: PAGE_CHANNEL, id, cancel: true }, win.location.origin);
     settle(id, (p) => {
       p.reject(new BeePocketError(DappErrorCodes.unavailable, message));
     });
@@ -170,7 +171,10 @@ export function createProvider(deps: ProviderDeps): BeePocketProvider {
         unavailable(id, NOT_RESPONDING_MESSAGE);
       }, ACK_TIMEOUT_MS);
       waiting.set(id, { resolve, reject, timer });
-      win.postMessage({ channel: PAGE_CHANNEL, id, method, params }, win.location.origin);
+      win.postMessage(
+        { channel: PAGE_CHANNEL, id, method, params, sentAt: deps.now() },
+        win.location.origin,
+      );
     });
 
   const acked = (id: string): void => {

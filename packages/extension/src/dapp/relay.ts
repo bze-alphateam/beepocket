@@ -1,6 +1,7 @@
 import {
   ACK_FIELD,
   DappErrorCodes,
+  NOT_AVAILABLE_MESSAGE,
   NOT_RESPONDING_MESSAGE,
   PAGE_CHANNEL,
   UPDATED_MESSAGE,
@@ -43,17 +44,29 @@ export function startRelay(win: RelayWindow, runtime: RelayRuntime): void {
   win.addEventListener('message', (event) => {
     const data = event.data;
     if (event.source !== win || typeof data !== 'object' || data === null) return;
-    const { channel, id, method, params } = data as Record<string, unknown>;
+    const { channel, id, method, params, sentAt, cancel } = data as Record<string, unknown>;
     if (channel !== PAGE_CHANNEL) return;
+    // The page gave up on a request: the worker drops it. Nothing comes back for a cancel.
+    if (cancel === true) {
+      try {
+        if (runtime.id !== undefined) {
+          runtime.sendMessage({ dapp: { id, cancel: true } }).catch(() => undefined);
+        }
+      } catch {
+        // the worker is out of reach: there is nothing to drop
+      }
+      return;
+    }
     const unavailable = (message: string): void => {
       toPage({ id, error: { code: DappErrorCodes.unavailable, message } });
     };
     let sent: Promise<unknown>;
     try {
       if (runtime.id === undefined) throw new Error('Extension context invalidated.');
-      sent = runtime.sendMessage({ dapp: { id, method, params } });
+      sent = runtime.sendMessage({ dapp: { id, method, params, sentAt } });
     } catch {
-      unavailable(UPDATED_MESSAGE);
+      // Only a script whose extension was reloaded or updated has lost its runtime id.
+      unavailable(runtime.id === undefined ? UPDATED_MESSAGE : NOT_AVAILABLE_MESSAGE);
       return;
     }
     sent.then(

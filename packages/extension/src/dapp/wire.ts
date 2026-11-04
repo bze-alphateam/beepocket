@@ -20,6 +20,20 @@ export const DappErrorCodes = {
 export const UPDATED_MESSAGE = 'BeePocket was updated. Reload this page.';
 /** What the page is told when the wallet does not take a request. */
 export const NOT_RESPONDING_MESSAGE = 'BeePocket is not responding. Reload this page.';
+/** What the page is told when its content script cannot send a request for another reason. */
+export const NOT_AVAILABLE_MESSAGE = 'BeePocket is not available.';
+
+/**
+ * How long the page waits for the wallet to take a request (its ack) before it gives up with
+ * `unavailable`. Waking a suspended worker can take several seconds on a slow PC.
+ */
+export const ACK_TIMEOUT_MS = 10_000;
+/**
+ * A request that reaches the worker this long after the page sent it (`sentAt`, the page's
+ * clock) is refused without acting: its ack could arrive after the page gave up, and the page
+ * would never learn of a window or a broadcast it started. The margin covers the ack's way back.
+ */
+export const STALE_AFTER_MS = ACK_TIMEOUT_MS - 2_000;
 
 export interface WireError {
   code: string;
@@ -41,11 +55,16 @@ export const INITIALIZED_EVENT = 'beepocket#initialized';
  */
 export const ACK_FIELD = 'ack';
 
-/** A request from the page, as it goes through the relay to the worker. */
+/**
+ * A request from the page, as it goes through the relay to the worker. `sentAt` is the page's
+ * `Date.now()` when it posted the request. A page that gave up on a request sends
+ * `{ id, cancel: true }` instead.
+ */
 export interface WireRequest {
   id: string;
   method: string;
   params: unknown;
+  sentAt?: number;
 }
 
 /** What `getKey` and `connect` answer, JSON form (`pubKey` is base64). */

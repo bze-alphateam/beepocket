@@ -14,7 +14,8 @@ import { DappRegistry } from './registry';
 import { RequestStore } from './requests';
 import { DappService } from './service';
 import type { ToolbarPopup } from '../platform/toolbar-popup';
-import { RequestWindow, type Sleeper, type WindowsLike } from './window';
+import { RequestWindow, type WindowsLike } from './window';
+import { Cancellations } from './cancellations';
 
 export { dappSender, type SenderLike } from './sender';
 export { DappService, type Ack } from './service';
@@ -32,8 +33,6 @@ export function createDappService(
     windows: WindowsLike;
     alarms: Alarms;
     popup?: ToolbarPopup;
-    /** Bounds every browser call the request window makes; see `RequestWindow`. */
-    timer?: Sleeper;
   },
 ): DappService {
   const registry = new DappRegistry();
@@ -48,19 +47,27 @@ export function createDappService(
     });
     return { network, chain, fees, tokens };
   };
-  registerDappHandlers(registry, { wallet, services, clock: platform.clock, env });
+  const cancellations = new Cancellations();
+  registerDappHandlers(registry, {
+    wallet,
+    services,
+    clock: platform.clock,
+    env,
+    cancelled: cancellations,
+  });
   const deliverer = new Deliverer(chrome.tabs);
   const documents = new DocumentLog(platform.session);
   const changes = new AccountChanges({ documents, deliverer });
   return new DappService({
     registry,
     requests: new RequestStore(platform.session, chrome.alarms, platform.clock),
-    window: new RequestWindow(chrome.windows, platform.session, chrome.popup, chrome.timer),
+    window: new RequestWindow(chrome.windows, platform.session, chrome.popup),
     deliverer,
     documents,
     changes,
     sites: new SitesService({ wallet, services, changes, tabs: chrome.tabs }),
     services,
+    cancellations,
     clock: platform.clock,
   });
 }

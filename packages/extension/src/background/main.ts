@@ -204,7 +204,6 @@ async function createRegistry(env: BackgroundEnv): Promise<Started> {
     windows: env.chrome.windows,
     alarms: new ChromeAlarms(env.chrome.alarms),
     popup,
-    timer: platform.clock,
   });
   const addToken = new AddTokenService({
     session: platform.session,

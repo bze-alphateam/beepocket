@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
-import type { CurrentRequest } from '../../protocol';
+import type { CurrentRequest, QueueView } from '../../protocol';
 import { Banner, Button, DetailCard, ResultLayout, SiteCard, Spinner } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
 import { useHomeEnv } from '../home/env';
@@ -78,6 +78,15 @@ function Answered({ answer, waiting }: { answer: Answer | null; waiting: number 
   );
 }
 
+/** Whether the request on screen is no longer the head of the queue. */
+function headLeft(shown: CurrentRequest | null, queue: QueueView): boolean {
+  if (shown === null || shown.status === 'none') return false;
+  if (shown.status === 'connect' || shown.status === 'sign') {
+    return queue.headId !== undefined && queue.headId !== shown.id;
+  }
+  return queue.head !== shown.origin;
+}
+
 type Load =
   { status: 'loading' } | { status: 'failed' } | { status: 'ready'; view: CurrentRequest };
 
@@ -141,6 +150,8 @@ export function RequestScreen({ close }: RequestScreenProps) {
   }, [events, refresh]);
 
   const ready = load.status === 'ready' ? load.view : null;
+  const shown = useRef<CurrentRequest | null>(null);
+  shown.current = ready;
   const expiresAt = ready?.expiresAt;
   // An expired request leaves the view by itself; the worker answers it `expired`.
   useEffect(() => {
@@ -161,7 +172,8 @@ export function RequestScreen({ close }: RequestScreenProps) {
       scheduler.every(POLL_MS, () => {
         void client.call('dapp.queue', {}).then((res) => {
           if (!res.ok) return;
-          if (res.value.count === 0) void refresh();
+          // The request on screen left the queue (its page gave up on it): show the next one.
+          if (res.value.count === 0 || headLeft(shown.current, res.value)) void refresh();
           else setLive(res.value.count);
         });
       }),

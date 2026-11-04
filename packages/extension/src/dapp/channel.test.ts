@@ -859,6 +859,76 @@ describe('request queue', () => {
     expect(one(t.delivered)).toMatchObject({ tabId: 1, documentId: 'doc-1' });
   });
 
+  it('does nothing for a request that arrives after the page gave up on it', async () => {
+    const t = await rig();
+    const late = await t.dapp.receive(t.site(), {
+      id: 'c'.repeat(32),
+      method: 'connect',
+      params: chainId(),
+      sentAt: t.clock.now() - 10_000,
+    });
+    expect(late.ack).toEqual({
+      error: { code: 'unavailable', message: 'BeePocket is not responding. Reload this page.' },
+    });
+    await late.after();
+    expect((await t.dapp.queue()).count).toBe(0);
+    expect(t.created).toHaveLength(0);
+    // Sent just now, the same request is taken.
+    const fresh = await t.dapp.receive(t.site(), {
+      id: 'd'.repeat(32),
+      method: 'connect',
+      params: chainId(),
+      sentAt: t.clock.now(),
+    });
+    expect(fresh.ack).toEqual({ accepted: true });
+  });
+
+  it('refuses a send time that is not a number', async () => {
+    const t = await rig();
+    const received = await t.dapp.receive(t.site(), {
+      id: 'c'.repeat(32),
+      method: 'connect',
+      params: chainId(),
+      sentAt: 'now',
+    });
+    expect(received.ack).toMatchObject({ error: { code: 'invalid-request' } });
+  });
+
+  it('drops a queued request its page cancels, and the queue head moves on', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId());
+    const b = await t.ask('connect', chainId());
+    expect(await t.dapp.queue()).toMatchObject({ count: 2, headId: a.id });
+    const cancel = await t.dapp.receive(t.site(), { id: a.id, cancel: true });
+    await cancel.after();
+    expect(await t.dapp.queue()).toMatchObject({ count: 1, headId: b.id });
+    expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: b.id });
+    // The page stopped waiting: it is told nothing.
+    expect(t.answersFor(a.id)).toEqual([]);
+  });
+
+  it('ignores a cancel from another document for a request it did not send', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId());
+    for (const other of [t.site(ORIGIN, 1, 'doc-2'), t.site(ORIGIN, 2, 'doc-1')]) {
+      const cancel = await t.dapp.receive(other, { id: a.id, cancel: true });
+      await cancel.after();
+    }
+    expect(await t.dapp.queue()).toMatchObject({ count: 1, headId: a.id });
+  });
+
+  it('never queues a request cancelled while it was being handled', async () => {
+    const t = await rig();
+    const id = 'c'.repeat(32);
+    const received = await t.dapp.receive(t.site(), { id, method: 'connect', params: chainId() });
+    const cancel = await t.dapp.receive(t.site(), { id, cancel: true });
+    await cancel.after();
+    await received.after();
+    expect((await t.dapp.queue()).count).toBe(0);
+    expect(t.created).toHaveLength(0);
+    expect(t.answersFor(id)).toEqual([]);
+  });
+
   it('does not queue what needs no window', async () => {
     const t = await rig();
     for (let i = 0; i < 25; i++) await t.ask('getKey', chainId(), t.site(at(1), 1, 'd1'));

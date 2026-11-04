@@ -12,12 +12,13 @@ import type { Services } from '../background/services';
 import type { Deliverer } from './deliver';
 import type { AccountChanges } from './account-changes';
 import type { SitesService } from './sites';
+import type { Cancellations } from './cancellations';
 import type { DocumentLog } from './documents';
 import type { Decision, DappHandler, DappRegistry, UserAnswer } from './registry';
 import { REQUEST_TTL_MS, type RequestStore } from './requests';
 import { refuse, type DappSender, type Outcome, type PendingRequest } from './types';
 import type { RequestWindow } from './window';
-import { DappErrorCodes, type WireError } from './wire';
+import { DappErrorCodes, NOT_RESPONDING_MESSAGE, STALE_AFTER_MS, type WireError } from './wire';
 
 /** The immediate reply to the content script: taken, or refused right away. */
 export type Ack = { accepted: true } | { error: WireError };
@@ -37,6 +38,8 @@ export interface DappServiceDeps {
   changes: Pick<AccountChanges, 'notify'>;
   sites: Pick<SitesService, 'list' | 'current' | 'change' | 'disconnect'>;
   services: Pick<Services, 'activeNetwork'>;
+  /** Requests their page gave up on; shared with the handlers (`sendTx` checks it). */
+  cancellations: Cancellations;
   clock: { now(): number };
 }
 
@@ -74,9 +77,21 @@ export class DappService {
       after: nothing,
     });
     if (typeof message !== 'object' || message === null) return bad('Malformed request.');
-    const { id, method, params } = message as Record<string, unknown>;
-    if (typeof id !== 'string' || !ID.test(id) || typeof method !== 'string') {
+    const { id, method, params, sentAt, cancel } = message as Record<string, unknown>;
+    if (typeof id !== 'string' || !ID.test(id)) return bad('Malformed request.');
+    if (cancel === true) {
+      return { ack: { accepted: true }, after: () => this.cancel(from, id) };
+    }
+    if (typeof method !== 'string') return bad('Malformed request.');
+    if (sentAt !== undefined && (typeof sentAt !== 'number' || !Number.isFinite(sentAt))) {
       return bad('Malformed request.');
+    }
+    // Too late: the page gives up before this ack could reach it, so nothing is done for it.
+    if (sentAt !== undefined && this.deps.clock.now() - sentAt >= STALE_AFTER_MS) {
+      return {
+        ack: { error: { code: DappErrorCodes.unavailable, message: NOT_RESPONDING_MESSAGE } },
+        after: nothing,
+      };
     }
     const handler = this.deps.registry.get(method);
     if (!handler) return bad('Unknown method.');
@@ -87,6 +102,16 @@ export class DappService {
     // window): the page's liveness timer only waits a few seconds for it.
     const pending = { id, method, params: valid.value };
     return { ack: { accepted: true }, after: () => this.settle(from, handler, pending) };
+  }
+
+  /**
+   * The page gave up on a request: it is dropped wherever it is. Still being handled, it is never
+   * queued (and `sendTx` does not broadcast it); queued, it leaves the queue, and the window moves
+   * on to the next one. Nothing is answered: the page already stopped waiting.
+   */
+  private async cancel(from: DappSender, id: string): Promise<void> {
+    this.deps.cancellations.add(from, id);
+    await this.deps.requests.cancel(id, from.tabId, from.documentId);
   }
 
   /**
@@ -117,6 +142,8 @@ export class DappService {
         network: network.id,
       });
       const decision = await handler.decide(request);
+      // Given up on while it was being decided: nobody waits for a window or an answer.
+      if (this.deps.cancellations.has(request)) return;
       if (decision.kind === 'answer') {
         await this.deliver(request, decision.outcome);
         return;
@@ -138,6 +165,11 @@ export class DappService {
           added.evicted,
           refuse(DappErrorCodes.invalidRequest, 'Too many requests waiting'),
         );
+      }
+      // A cancel that arrived while the request was being added found nothing to take out.
+      if (this.deps.cancellations.has(request)) {
+        await this.deps.requests.cancel(request.id, request.tabId, request.documentId);
+        return;
       }
     } catch {
       await this.deps.deliverer.answer(
@@ -181,12 +213,14 @@ export class DappService {
     }
   }
 
-  /** Who is waiting, for the unlock screen. Reveals no request details. */
+  /** Who is waiting, for the unlock screen and the window's poll. Reveals no request details. */
   async queue(): Promise<QueueView> {
     await this.expireDue();
     const queue = await this.deps.requests.list();
+    const head = queue[0];
     return {
-      head: queue[0]?.origin ?? null,
+      head: head?.origin ?? null,
+      ...(head ? { headId: head.id } : {}),
       count: queue.length,
       origins: [...new Set(queue.map((r) => r.origin))],
     };

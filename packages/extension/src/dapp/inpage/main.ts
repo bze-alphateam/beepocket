@@ -3,6 +3,7 @@ import { installProvider } from './provider';
 /** Content script, MAIN world: puts `window.beepocket` on the page. */
 installProvider({
   win: window,
+  now: () => Date.now(),
   timers: {
     set: (callback, ms) => window.setTimeout(callback, ms),
     clear: (handle) => {

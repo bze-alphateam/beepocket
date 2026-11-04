@@ -117,23 +117,60 @@ describe('the relay', () => {
   });
 
   it('answers unavailable at once when the extension was updated under the page', () => {
-    // An orphaned content script: the browser's sendMessage throws synchronously.
-    const thrown = rig(() => {
-      throw new Error('Extension context invalidated.');
-    });
-    thrown.page(request);
-    // Its runtime id is gone too: nothing is sent at all.
+    // An orphaned content script has lost its runtime id: nothing is sent at all.
     const orphan = rig(() => Promise.resolve({ accepted: true }), { orphaned: true });
     orphan.page(request);
     expect(orphan.sendMessage).not.toHaveBeenCalled();
-    for (const t of [thrown, orphan]) {
-      expect(t.posted.map((p) => p.message)).toEqual([
-        {
-          id: 'a',
-          error: { code: 'unavailable', message: 'BeePocket was updated. Reload this page.' },
-          channel: WALLET_CHANNEL,
-        },
-      ]);
-    }
+    expect(orphan.posted.map((p) => p.message)).toEqual([
+      {
+        id: 'a',
+        error: { code: 'unavailable', message: 'BeePocket was updated. Reload this page.' },
+        channel: WALLET_CHANNEL,
+      },
+    ]);
+  });
+
+  it('answers a generic unavailable when sending throws for another reason', () => {
+    const thrown = rig(() => {
+      throw new Error('Could not clone the message.');
+    });
+    thrown.page(request);
+    expect(thrown.posted.map((p) => p.message)).toEqual([
+      {
+        id: 'a',
+        error: { code: 'unavailable', message: 'BeePocket is not available.' },
+        channel: WALLET_CHANNEL,
+      },
+    ]);
+  });
+
+  it('passes the page send time on with the request', () => {
+    const t = rig(() => Promise.resolve({ accepted: true }));
+    t.page({ ...request, sentAt: 1234 });
+    expect(t.sendMessage).toHaveBeenCalledWith({
+      dapp: { id: 'a', method: 'connect', params: { chainId: 'x' }, sentAt: 1234 },
+    });
+  });
+
+  it('forwards a cancel to the worker and posts nothing back', async () => {
+    const t = rig(() => Promise.resolve({ accepted: true }));
+    t.page({ channel: PAGE_CHANNEL, id: 'a', cancel: true });
+    expect(t.sendMessage).toHaveBeenCalledExactlyOnceWith({ dapp: { id: 'a', cancel: true } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(t.posted).toEqual([]);
+
+    // A worker out of reach, or a script orphaned by an update, drops a cancel quietly.
+    const down = rig(() => Promise.reject(new Error('gone')));
+    down.page({ channel: PAGE_CHANNEL, id: 'a', cancel: true });
+    const thrown = rig(() => {
+      throw new Error('Extension context invalidated.');
+    });
+    thrown.page({ channel: PAGE_CHANNEL, id: 'a', cancel: true });
+    const orphan = rig(() => Promise.resolve({ accepted: true }), { orphaned: true });
+    orphan.page({ channel: PAGE_CHANNEL, id: 'a', cancel: true });
+    expect(orphan.sendMessage).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect([...down.posted, ...thrown.posted, ...orphan.posted]).toEqual([]);
   });
 });

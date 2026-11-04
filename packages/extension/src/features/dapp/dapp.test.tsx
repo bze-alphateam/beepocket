@@ -121,6 +121,59 @@ const feeRow = (host: HTMLElement) =>
   );
 
 describe('the request window', () => {
+  it('moves on when the request on screen leaves the queue (its page gave up)', async () => {
+    const other = { ...CONNECT, id: 'r2', origin: 'https://other.example' };
+    const views: RequestView[] = [CONNECT, other];
+    const polls: (() => void)[] = [];
+    const t = rig(
+      {
+        ...base,
+        'dapp.current': () => ok(views.length > 1 ? (views.shift() ?? other) : other),
+        'dapp.queue': () =>
+          ok({ head: other.origin, headId: 'r2', count: 1, origins: [other.origin] }),
+      },
+      undefined,
+      (_ms, fn) => {
+        polls.push(fn);
+        return () => undefined;
+      },
+    );
+    await settle();
+    expect(t.host.textContent).toContain('dex.getbze.com');
+    await act(() => {
+      for (const poll of polls) poll();
+    });
+    await settle();
+    await settle();
+    expect(t.host.textContent).toContain('other.example');
+    expect(t.host.textContent).not.toContain('dex.getbze.com');
+    expect(t.close).not.toHaveBeenCalled();
+  });
+
+  it('stays on the request on screen while it is still the head', async () => {
+    const polls: (() => void)[] = [];
+    const t = rig(
+      {
+        ...base,
+        'dapp.current': () => ok(CONNECT),
+        'dapp.queue': () =>
+          ok({ head: CONNECT.origin, headId: 'r1', count: 2, origins: [CONNECT.origin] }),
+      },
+      undefined,
+      (_ms, fn) => {
+        polls.push(fn);
+        return () => undefined;
+      },
+    );
+    await settle();
+    const current = t.call.mock.calls.filter(([m]) => m === 'dapp.current').length;
+    await act(() => {
+      for (const poll of polls) poll();
+    });
+    await settle();
+    expect(t.call.mock.calls.filter(([m]) => m === 'dapp.current')).toHaveLength(current);
+  });
+
   it('shows the site and one address to pick, and answers with the picked index', async () => {
     let views: RequestView[] = [CONNECT];
     const t = rig({

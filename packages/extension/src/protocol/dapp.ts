@@ -43,6 +43,8 @@ export type CurrentRequest = RequestView & {
 export interface QueueView {
   /** The origin of the request at the head, or null when nothing waits. */
   head: string | null;
+  /** The id of the request at the head; the window moves on when it changes. */
+  headId?: string;
   count: number;
   /** Distinct origins, oldest request first. */
   origins: string[];
