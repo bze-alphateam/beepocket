@@ -13,6 +13,7 @@ import type { ChainEnv } from './handlers/env';
 import { DappRegistry } from './registry';
 import { RequestStore } from './requests';
 import { DappService } from './service';
+import type { ToolbarPopup } from '../platform/toolbar-popup';
 import { RequestWindow, type WindowsLike } from './window';
 
 export { dappSender, type SenderLike } from './sender';
@@ -26,7 +27,7 @@ export function createDappService(
   platform: Platform,
   services: Services,
   wallet: WalletService,
-  chrome: { tabs: TabsLike; windows: WindowsLike; alarms: Alarms },
+  chrome: { tabs: TabsLike; windows: WindowsLike; alarms: Alarms; popup?: ToolbarPopup },
 ): DappService {
   const registry = new DappRegistry();
   // Built per request over the active network's clients, like the send flow's service.
@@ -47,7 +48,7 @@ export function createDappService(
   return new DappService({
     registry,
     requests: new RequestStore(platform.session, chrome.alarms, platform.clock),
-    window: new RequestWindow(chrome.windows, platform.session),
+    window: new RequestWindow(chrome.windows, platform.session, chrome.popup),
     deliverer,
     documents,
     changes,

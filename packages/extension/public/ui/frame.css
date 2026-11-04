@@ -58,6 +58,15 @@
   flex: none;
 }
 
+/* A wallet window (dapp request, add-a-token link) fills whatever inner area the OS leaves it:
+   the body scrolls and the footer stays pinned on screen. */
+:root[data-window] body,
+:root[data-window] #root,
+:root[data-window] .bp-frame {
+  width: 100vw;
+  height: 100vh;
+}
+
 /* A sheet opened from the body covers the whole frame, the header and the pinned footer too. */
 .bp-body:has(> .bp-sheet-root) {
   position: static;

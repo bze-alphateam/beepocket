@@ -50,6 +50,11 @@ export function isAddTokenWindow(search: string): boolean {
   return window === 'add-token' || window === 'onboarding';
 }
 
+/** Any of the wallet's own windows, which size to their viewport instead of the 360 × 600 popup. */
+export function isWalletWindow(search: string): boolean {
+  return isRequestWindow(search) || isAddTokenWindow(search);
+}
+
 export function initialRouteFor(search: string): AppRoute {
   if (isRequestWindow(search)) return { name: 'dapp.request' };
   return isAddTokenWindow(search) ? { name: 'addtoken.main' } : initialRoute;

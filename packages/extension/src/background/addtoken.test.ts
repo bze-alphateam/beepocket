@@ -49,6 +49,7 @@ function start(tabs: { url: string; lastAccessed: number }[] = []) {
           return Promise.resolve({ id: 1 });
         },
         get: () => Promise.resolve({}),
+        getLastFocused: () => Promise.resolve({}),
         update: () => Promise.resolve({}),
       },
       alarms: {
