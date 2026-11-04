@@ -57,6 +57,8 @@ const SIGNER_FIELDS = [
   'depositor',
   'sender',
   'delegatorAddress',
+  'publisher',
+  'signer',
 ] as const;
 /**
  * Types the wallet has no decoder for but whose signer is a plain string field at a fixed

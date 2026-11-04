@@ -342,6 +342,16 @@ describe('verifySignRequest signers of types without a decoder', () => {
   });
 });
 
+describe('verifySignRequest signers of decoded types', () => {
+  it.each([
+    ['/bze.cointrunk.MsgAddArticle', 1],
+    ['/ibc.applications.transfer.v1.MsgUpdateParams', 1],
+  ])('%s: the signer field is the connected address or the request is refused', (url, no) => {
+    expect(code(request({}, [stringMsg(url, no, ME)]))).toBe('ok');
+    expect(code(request({}, [stringMsg(url, no, OTHER)]))).toBe('multi-signer');
+  });
+});
+
 describe('withWalletFee', () => {
   const walletFee = { amount: [{ denom: 'ubze', amount: '777' }], gasLimit: 999n };
 
