@@ -40,13 +40,20 @@ export interface WalletProtocol {
   };
   /** A fresh 24-word phrase for the one-time display; nothing is stored. */
   'wallet.generateMnemonic': { req: Record<string, never>; res: { mnemonic: string } };
+  /**
+   * Makes the wallet. Over an existing one it answers `wallet_already_initialised` and touches
+   * nothing, unless `replace` is true: the user confirmed deleting the wallet in this browser.
+   */
   'wallet.createWallet': {
-    req: { password: string; mnemonic: string };
+    req: { password: string; mnemonic: string; replace?: boolean };
     res: { addresses: WalletAddress[] };
   };
-  /** Replaces an existing vault (the "forgot password" path) and resets the throttle. */
+  /**
+   * Restores a wallet from its phrase and resets the throttle. Replacing an existing vault (the
+   * "forgot password" path) needs `replace: true`, as for `wallet.createWallet`.
+   */
   'wallet.importWallet': {
-    req: { password: string; mnemonic: string };
+    req: { password: string; mnemonic: string; replace?: boolean };
     res: { addresses: WalletAddress[] };
   };
   'wallet.unlock': { req: { password: string }; res: PasswordOutcome };

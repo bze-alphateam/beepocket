@@ -42,7 +42,13 @@ export const onboarding = {
   'onboarding.password.strength.fair': 'Fair',
   'onboarding.password.strength.strong': 'Strong',
   'onboarding.password.working': 'Securing your wallet',
-  'onboarding.password.exists': 'This browser already has a wallet.',
+  'onboarding.replace.title': 'Replace your wallet?',
+  'onboarding.replace.warning': 'This browser already has a wallet',
+  'onboarding.replace.text':
+    'This deletes the wallet stored in this browser. Only its recovery phrase can bring it back.',
+  'onboarding.replace.understand': 'I understand my current wallet will be deleted',
+  'onboarding.replace.confirm': 'Delete and replace',
+  'onboarding.replace.cancel': 'Cancel',
   'onboarding.start.title': 'How do you want to start?',
   'onboarding.start.hint':
     'Got a token code from a community? Enter it and the wallet is ready for that token.',

@@ -60,13 +60,16 @@ class FakeChain {
   funded = new Set<string>();
   accounts = new Set<string>();
   failing = new Set<string>();
+  lookups = 0;
   asClient(): ChainClient {
     return {
       balances: (a: string) => {
+        this.lookups++;
         if (this.failing.has(a)) return Promise.reject(new Error('down'));
         return Promise.resolve(new Map(this.funded.has(a) ? [['ubze', 5n]] : []));
       },
       account: (a: string) => {
+        this.lookups++;
         if (this.failing.has(a)) return Promise.reject(new Error('down'));
         return Promise.resolve(
           this.accounts.has(a)
@@ -230,15 +233,127 @@ describe('import', () => {
     );
   });
 
-  it('replaces an existing vault and resets the throttle', async () => {
+  it('replaces an existing vault only with replace: true, and resets the throttle', async () => {
     const t = await created();
     await t.call('wallet.lock', {});
     for (let i = 0; i < 5; i++) await t.call('wallet.unlock', { password: 'wrong password' });
     expect(value(await t.call('wallet.state', {})).retryAt).not.toBeNull();
-    value(await t.call('wallet.importWallet', { password: 'brand new pass', mnemonic: PHRASE_12 }));
+    value(
+      await t.call('wallet.importWallet', {
+        password: 'brand new pass',
+        mnemonic: PHRASE_12,
+        replace: true,
+      }),
+    );
     expect(value(await t.call('wallet.state', {}))).toEqual({ state: 'unlocked', retryAt: null });
     await t.call('wallet.lock', {});
     expect(value(await t.call('wallet.unlock', { password: 'brand new pass' })).status).toBe('ok');
+  });
+});
+
+/** Everything the worker keeps, copied, so a refused call can be checked to have touched nothing. */
+function snapshot(t: Awaited<ReturnType<typeof rig>>) {
+  return {
+    local: structuredClone(Object.fromEntries(t.local.data)),
+    session: structuredClone(Object.fromEntries(t.sessionArea.data)),
+    alarms: Object.fromEntries(t.alarms.active),
+  };
+}
+
+describe('replacing an existing wallet', () => {
+  // The lock screen's "Forgot it?" leads into onboarding over a live vault: an import (or a
+  // create) from there must never replace the wallet unless the user confirmed it.
+  it('a locked wallet survives an import without replace: refused, nothing touched', async () => {
+    const t = await created();
+    await t.call('wallet.lock', {});
+    const before = snapshot(t);
+    const pushed = t.pushed.length;
+    const r = await t.call('wallet.importWallet', {
+      password: 'brand new pass',
+      mnemonic: PHRASE_12,
+    });
+    expect(code(r)).toBe('wallet_already_initialised');
+    expect(snapshot(t)).toEqual(before);
+    expect(t.chain.lookups).toBe(0);
+    expect(t.pushed.length).toBe(pushed);
+    expect(value(await t.call('wallet.unlock', { password: PASSWORD })).status).toBe('ok');
+    expect(value(await t.call('wallet.addresses', {})).addresses[0]?.address).toBe(addr(0));
+  });
+
+  it('an unlocked wallet survives too, and replace: false counts as no replace', async () => {
+    const t = await created();
+    const before = snapshot(t);
+    for (const method of ['wallet.importWallet', 'wallet.createWallet'] as const) {
+      const r = await t.call(method, {
+        password: 'brand new pass',
+        mnemonic: PHRASE,
+        replace: false,
+      });
+      expect(code(r)).toBe('wallet_already_initialised');
+    }
+    expect(snapshot(t)).toEqual(before);
+    expect(value(await t.call('wallet.state', {})).state).toBe('unlocked');
+  });
+
+  it('a bad phrase is still reported as such over an existing wallet', async () => {
+    const t = await created();
+    const bad = PHRASE_12.replace(/about$/, 'abandon');
+    expect(code(await t.call('wallet.importWallet', { password: PASSWORD, mnemonic: bad }))).toBe(
+      'invalid_mnemonic',
+    );
+  });
+
+  it('create with replace: true replaces the wallet with the new phrase', async () => {
+    const t = await created();
+    await t.call('wallet.lock', {});
+    const { mnemonic } = value(await t.call('wallet.generateMnemonic', {}));
+    const { addresses } = value(
+      await t.call('wallet.createWallet', { password: 'brand new pass', mnemonic, replace: true }),
+    );
+    expect(addresses).toEqual([
+      { index: 0, label: 'Main', address: deriveAccount(mnemonic, 0).address },
+    ]);
+    expect(value(await t.call('wallet.state', {})).state).toBe('unlocked');
+    await t.call('wallet.lock', {});
+    expect(value(await t.call('wallet.unlock', { password: PASSWORD })).status).toBe(
+      'wrong-password',
+    );
+  });
+
+  it('import with replace: true replaces the wallet, and needs no wallet to exist', async () => {
+    const t = await created();
+    const { addresses } = value(
+      await t.call('wallet.importWallet', {
+        password: 'brand new pass',
+        mnemonic: PHRASE_12,
+        replace: true,
+      }),
+    );
+    expect(addresses[0]?.address).toBe(deriveAccount(PHRASE_12, 0).address);
+    const fresh = await rig();
+    value(
+      await fresh.call('wallet.createWallet', {
+        password: PASSWORD,
+        mnemonic: PHRASE,
+        replace: true,
+      }),
+    );
+  });
+
+  it('a replace that is not a boolean is a bad request', async () => {
+    const t = await created();
+    const before = snapshot(t);
+    for (const replace of ['true', 1, null]) {
+      for (const method of ['wallet.importWallet', 'wallet.createWallet'] as const) {
+        const r = await t.call(method, {
+          password: PASSWORD,
+          mnemonic: PHRASE,
+          replace,
+        } as never);
+        expect(code(r)).toBe('bad_request');
+      }
+    }
+    expect(snapshot(t)).toEqual(before);
   });
 });
 
@@ -615,7 +730,9 @@ describe('storage safety', () => {
       return original(items);
     };
     value(await t.call('wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE }));
-    value(await t.call('wallet.importWallet', { password: PASSWORD, mnemonic: PHRASE }));
+    value(
+      await t.call('wallet.importWallet', { password: PASSWORD, mnemonic: PHRASE, replace: true }),
+    );
     const withVault = calls.filter((keys) => keys.includes('vault'));
     expect(withVault).toHaveLength(2);
     for (const keys of withVault) expect(keys).toContain('profile');
