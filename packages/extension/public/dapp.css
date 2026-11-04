@@ -43,58 +43,239 @@
   border-radius: 10px;
   background: var(--bp-inset);
   color: var(--bp-text-soft);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--bp-font-mono);
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.55;
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
-.bp-dapp-raw {
-  flex: none;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.bp-dapp-cards {
+/* Sign: few words, details one tap away. */
+.bp-sign {
   display: flex;
   flex-direction: column;
+  gap: 18px;
+  min-height: 100%;
+  padding: 4px 16px 12px;
+}
+
+.bp-sign-site {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.bp-sign-site > .bp-avatar {
+  flex: none;
+}
+
+/* The whole domain, always: it wraps, it is never cut. */
+.bp-sign-domain {
+  flex: 1;
+  min-width: 0;
+  padding-top: 3px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.bp-sign-who {
+  flex: none;
+  color: var(--bp-muted);
+  line-height: 24px;
+}
+
+.bp-sign-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 6px;
+  padding: 10px 0 2px;
+  text-align: center;
+}
+
+.bp-sign-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 4px;
+  border-radius: 15px;
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+}
+
+.bp-sign-tile-warn {
+  background: var(--bp-warn-soft);
+  color: var(--bp-warn-text);
+}
+
+.bp-sign-tile-bad {
+  background: var(--bp-bad-soft);
+  color: var(--bp-bad-text);
+}
+
+.bp-sign-kind {
+  color: var(--bp-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bp-sign-big {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.bp-sign-sub {
+  color: var(--bp-muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.bp-sign-note {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bp-sign-note-warn {
+  color: var(--bp-warn-text);
+}
+
+.bp-sign-card {
   margin: 0;
   padding: 0;
   list-style: none;
+  border: 1px solid var(--bp-line);
+  border-radius: 14px;
+  background: var(--bp-card);
+  overflow: hidden;
 }
 
-/* A message's own rows, inside its card. */
-.bp-dapp-cards .bp-detail-card {
+.bp-sign-card > li + li,
+.bp-sign-card > * + .bp-sign-row {
+  border-top: 1px solid var(--bp-line);
+}
+
+.bp-sign-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 14px;
   border: 0;
-  background: var(--bp-inset);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
 }
 
-/* Message details: the type, the raw JSON, what it is, Back. */
-.bp-dapp-rawsheet {
+.bp-sign-row:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: -2px;
+}
+
+.bp-sign-row-label {
+  color: var(--bp-muted);
+}
+
+.bp-sign-row > .bp-icon:last-child {
+  margin-left: auto;
+  color: var(--bp-muted);
+}
+
+.bp-sign-row-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+}
+
+.bp-sign-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bp-sign-row-text > strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.bp-sign-row-text > span {
+  color: var(--bp-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.bp-sign-row-unknown .bp-sign-row-icon {
+  background: var(--bp-warn-soft);
+  color: var(--bp-warn-text);
+}
+
+.bp-sign-row-unknown .bp-sign-row-text > span {
+  color: var(--bp-warn-text);
+}
+
+.bp-sign-row-dangerous .bp-sign-row-icon {
+  background: var(--bp-bad-soft);
+  color: var(--bp-bad-text);
+}
+
+.bp-sign-row-dangerous .bp-sign-row-text > span {
+  color: var(--bp-bad-text);
+}
+
+/* Details: what the type is, the memo, the raw message. */
+.bp-sign-details {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.bp-dapp-rawtype {
+.bp-sign-kv {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.bp-sign-kv > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--bp-line);
+  font-size: 12.5px;
+}
+
+.bp-sign-kv dt {
+  flex: none;
+  width: 92px;
   color: var(--bp-muted);
-  font-size: 12px;
-  word-break: break-all;
 }
 
-.bp-dapp-rawsheet .bp-dapp-json {
-  max-height: 330px;
-  overflow-y: auto;
-  padding: 12px;
-  border-radius: 12px;
-  line-height: 1.55;
+.bp-sign-kv dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
-.bp-dapp-rawnote {
-  color: var(--bp-faint);
-  font-size: 12px;
+.bp-sign-kv dd.bp-mono {
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 
 /* "Next request · N waiting" in place of the result's button. */
@@ -110,88 +291,24 @@
   font-weight: 600;
 }
 
+/* Settings › Connected sites: one compact card, one row per site. */
 .bp-sites {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-height: 100%;
-  padding: 0 16px 12px;
-}
-
-.bp-sites-count {
-  color: var(--bp-muted);
-  font-size: 13px;
-}
-
-.bp-sites-sub {
-  color: var(--bp-muted);
-  font-size: 12px;
+  padding: 4px 16px 12px;
 }
 
 .bp-sites > .bp-empty {
   flex: 1;
 }
 
-.bp-sites-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.bp-sites-item {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--bp-line);
-  border-radius: 16px;
-  background: var(--bp-card);
-}
-
-.bp-sites-disconnect {
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--bp-bad-line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--bp-bad-text);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.bp-sites-sees {
+.bp-sites-net {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 8px 0 12px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--bp-inset);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.bp-sites-disconnect:focus-visible,
-.bp-sites-sees:focus-visible {
-  outline: 2px solid var(--bp-primary);
-  outline-offset: 2px;
-}
-
-.bp-sites-disconnect:disabled,
-.bp-sites-sees:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.bp-sites-sees-caption {
+  gap: 6px;
+  padding: 6px 2px 0;
   color: var(--bp-faint);
   font-size: 11px;
   font-weight: 700;
@@ -199,37 +316,103 @@
   text-transform: uppercase;
 }
 
-.bp-sites-sees-who {
+.bp-sites-net::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bp-ok);
+}
+
+.bp-sites-net-testnet::before {
+  background: var(--bp-warn-text);
+}
+
+.bp-sites-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--bp-line);
+  border-radius: 14px;
+  background: var(--bp-card);
+}
+
+.bp-sites-list > li + li {
+  border-top: 1px solid var(--bp-line);
+}
+
+/* One site: icon, whole domain, label · address, Change and Disconnect. Home's strip too. */
+.bp-site-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 7px 4px 7px 12px;
+}
+
+.bp-site-row-strip {
+  border-radius: 12px;
+  background: var(--bp-inset);
+}
+
+.bp-site-row > .bp-avatar {
+  flex: none;
+  border-radius: 5px;
+}
+
+.bp-site-row-text {
   display: flex;
   flex: 1;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
+}
+
+.bp-site-row-domain {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.bp-site-row-who {
   overflow: hidden;
+  color: var(--bp-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.bp-sites-sees-label {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.bp-sites-sees-who > .bp-mono {
-  color: var(--bp-muted);
+.bp-site-row-who > .bp-mono {
   font-size: 11px;
 }
 
-.bp-sites-sees-change,
-.bp-sites-sees > .bp-icon {
+.bp-site-row-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
   color: var(--bp-accent-text);
-  font-size: 12px;
-  font-weight: 600;
+  cursor: pointer;
 }
 
-.bp-sites-since {
-  padding: 0 2px;
-  color: var(--bp-faint);
-  font-size: 11px;
+.bp-site-row-x {
+  color: var(--bp-bad-text);
+}
+
+.bp-site-row-btn:focus-visible {
+  outline: 2px solid var(--bp-primary);
+  outline-offset: -2px;
+}
+
+.bp-site-row-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .bp-sites-note {

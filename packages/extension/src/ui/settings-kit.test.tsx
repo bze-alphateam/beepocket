@@ -61,6 +61,19 @@ describe('SettingsRow', () => {
 });
 
 describe('Sheet', () => {
+  it('docked, it rises from the top of whatever holds it instead of covering the frame', () => {
+    const { host } = render(
+      <footer>
+        <Sheet open docked title="Details" onClose={() => undefined}>
+          body
+        </Sheet>
+      </footer>,
+    );
+    expect(host.querySelector('footer > .bp-sheet-root')?.className).toBe(
+      'bp-sheet-root bp-sheet-docked',
+    );
+  });
+
   it('always has a × in the title row that closes it, and no handle', () => {
     const onClose = vi.fn();
     const { host } = render(

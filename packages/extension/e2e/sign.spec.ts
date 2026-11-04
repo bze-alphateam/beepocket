@@ -128,7 +128,7 @@ test('signs and sends 1 BZE: sign screen, Approve, then the hash from the node',
       context.waitForEvent('page'),
       dapp.getByRole('button', { name: 'Send 1 BZE' }).click(),
     ]);
-    await expect(sign.getByRole('heading', { name: 'Approve transaction' })).toBeVisible();
+    await expect(sign.getByRole('heading', { name: 'Approve', exact: true })).toBeVisible();
     await expect(sign.getByText(/1\.00 BZE/).first()).toBeVisible();
     await sign.getByRole('button', { name: 'Approve' }).click();
     await expect(dapp.getByRole('status')).toHaveText(`hash ${HASH.toLowerCase()}`);
@@ -217,7 +217,7 @@ test('a MsgGrant shows the red sign screen and Approve waits for the tick', asyn
   }
 });
 
-test('a send plus an unknown message shows two cards, the second with its raw JSON', async ({
+test('a send plus an unknown message: one row each, Details over a footer that stays usable', async ({
   context,
   extensionId,
 }) => {
@@ -229,14 +229,25 @@ test('a send plus an unknown message shows two cards, the second with its raw JS
       context.waitForEvent('page'),
       dapp.getByRole('button', { name: 'Send + unknown message' }).click(),
     ]);
-    await expect(sign.getByText('Both happen, or neither does')).toBeVisible();
-    const cards = sign.locator('.bp-dapp-card');
-    await expect(cards).toHaveCount(2);
-    await expect(cards.nth(0)).toContainText('1 of 2');
-    await expect(cards.nth(1)).toContainText('2 of 2');
-    await expect(cards.nth(1)).toContainText("can't put this message in plain words");
-    await expect(cards.nth(1).locator('.bp-dapp-raw')).toContainText('/test.v1.MsgNothing');
-    await sign.getByRole('button', { name: 'Reject' }).click();
+    await expect(sign.getByRole('heading', { name: '2 actions' })).toBeVisible();
+    await expect(sign.getByText('Both happen, or neither')).toBeVisible();
+    const rows = sign.locator('ol .bp-sign-row');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(1)).toHaveClass(/bp-sign-row-unknown/);
+    await expect(rows.nth(1)).toContainText('MsgNothing');
+    await expect(rows.nth(1)).toContainText("Can't read this message");
+    // The raw message is one tap away, not on the screen.
+    await expect(sign.locator('pre')).toHaveCount(0);
+    await rows.nth(1).click();
+    const details = sign.getByRole('dialog', { name: 'Details' });
+    await expect(details.locator('pre')).toContainText('/test.v1.MsgNothing');
+    // The sheet ends above the footer: Reject is still visible and works while it is open.
+    const reject = sign.getByRole('button', { name: 'Reject' });
+    await expect(reject).toBeVisible();
+    const sheetBox = await details.boundingBox();
+    const rejectBox = await reject.boundingBox();
+    expect((sheetBox?.y ?? 0) + (sheetBox?.height ?? 0)).toBeLessThanOrEqual(rejectBox?.y ?? 0);
+    await reject.click();
     await expect(dapp.getByRole('status')).toHaveText('error rejected');
   } finally {
     stop();
@@ -259,7 +270,7 @@ test('two sign requests share one window: 1 of 2, Next request, then the second'
     await expect(sign.getByText('1 of 2')).toBeVisible();
     await sign.getByRole('button', { name: 'Approve' }).click();
     await expect(sign.getByText('Next request · 1 waiting')).toBeVisible();
-    await expect(sign.getByRole('heading', { name: 'Approve transaction' })).toBeVisible();
+    await expect(sign.getByRole('heading', { name: 'Approve', exact: true })).toBeVisible();
     await expect(sign.getByText('1 of 2')).toHaveCount(0);
     await sign.getByRole('button', { name: 'Reject' }).click();
     await expect(dapp.locator('#log li')).toHaveText([

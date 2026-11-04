@@ -949,6 +949,16 @@ describe('current site strip', () => {
     ).not.toBeNull();
   });
 
+  it('shows a long domain whole, the same row as Connected sites', async () => {
+    const origin = 'https://testnet-dex.getbze.com.claim-rewards-airdrop.example.app';
+    const s = setup({ site: { ...SITE, origin } });
+    await s.tick();
+    const row = strip(s.host)?.querySelector('.bp-site-row.bp-site-row-strip');
+    expect(row?.querySelector('.bp-site-row-domain')?.textContent).toBe(
+      'testnet-dex.getbze.com.claim-rewards-airdrop.example.app',
+    );
+  });
+
   it('shows nothing when the tab is not a connected site', async () => {
     const s = setup({ site: null });
     await s.tick();

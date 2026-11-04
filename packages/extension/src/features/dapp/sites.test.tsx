@@ -6,6 +6,7 @@ import { fail, ok, WalletErrorCodes, type Method, type Result } from '../../prot
 import type { Client } from '../../protocol/client';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { ConnectedSitesScreen } from './ConnectedSitesScreen';
+import { browserSiteIcons, SiteIconsProvider, type SiteIcons } from './site-icons';
 
 afterEach(cleanup);
 
@@ -22,17 +23,20 @@ const SITE = {
 
 type Handler = (req: unknown) => Result<unknown>;
 
-function rig(handlers: Partial<Record<Method, Handler>>) {
+function rig(handlers: Partial<Record<Method, Handler>>, icons?: SiteIcons) {
   const call = vi.fn((method: Method, req: unknown) => {
     const handler = handlers[method];
     return Promise.resolve(handler ? handler(req) : fail('unexpected', method));
   });
+  const screen = (
+    <Router
+      table={{ here: ConnectedSitesScreen, 'settings.main': () => <p>settings</p> }}
+      initial={{ name: 'here' }}
+    />
+  );
   const { host } = render(
     <ClientProvider client={{ call } as unknown as Client}>
-      <Router
-        table={{ here: ConnectedSitesScreen, 'settings.main': () => <p>settings</p> }}
-        initial={{ name: 'here' }}
-      />
+      {icons ? <SiteIconsProvider icons={icons}>{screen}</SiteIconsProvider> : screen}
     </ClientProvider>,
   );
   return { host, call };
@@ -51,26 +55,59 @@ const listing = (sites: unknown[], network = 'mainnet') =>
   ok({ network, sites, addresses: ADDRESSES });
 
 describe('Connected sites', () => {
-  it('lists each site with its host and port, the address it sees and the date', async () => {
+  it('lists each site in one row: domain with port, label and short address, two actions', async () => {
     const t = rig({ 'sites.list': () => listing([SITE]) });
     await settle();
-    expect(t.host.textContent).toContain('http://localhost:5173');
-    expect(t.host.querySelector('.bp-sites-sees')?.textContent).toContain('SeesSavings');
-    expect(t.host.textContent).toContain('Connected ');
-    expect(t.host.textContent).toContain('Each site sees one address.');
-    expect(button(t.host, 'Change')).toBeDefined();
-    expect(button(t.host, 'Disconnect')).toBeDefined();
+    const row = t.host.querySelector('.bp-sites-list .bp-site-row');
+    expect(row?.querySelector('.bp-site-row-domain')?.textContent).toBe('http://localhost:5173');
+    expect(row?.querySelector('.bp-site-row-who')?.textContent).toBe('Savings · bze1pppp…pppppp');
+    expect(t.host.querySelector('.bp-sites-net')?.textContent).toBe('Mainnet · 1');
+    expect(button(t.host, 'Change the address http://localhost:5173 sees')).toBeDefined();
+    expect(button(t.host, 'Disconnect http://localhost:5173')).toBeDefined();
+    // No intro paragraph, no date, no "Sees" caption: the row says it all.
+    expect(t.host.textContent).not.toContain('Each site sees');
+    expect(t.host.textContent).not.toMatch(/Connected (\d|[A-Z][a-z]{2} )/);
   });
 
-  it('shows the empty state', async () => {
+  it('shows a long domain whole, never cut', async () => {
+    const origin = 'https://dex.getbze.com.claim-rewards-airdrop.example-dapp.xyz:8443';
+    const t = rig({ 'sites.list': () => listing([{ ...SITE, origin }]) });
+    await settle();
+    expect(t.host.querySelector('.bp-site-row-domain')?.textContent).toBe(
+      'dex.getbze.com.claim-rewards-airdrop.example-dapp.xyz:8443',
+    );
+  });
+
+  it('shows the icon the browser has for each site, and the letter without one', async () => {
+    const icons: SiteIcons = {
+      url: (origin) => (origin === SITE.origin ? null : `icon:${origin}`),
+    };
+    const other = { ...SITE, origin: 'https://dex.getbze.com' };
+    const t = rig({ 'sites.list': () => listing([SITE, other]) }, icons);
+    await settle();
+    const avatars = [...t.host.querySelectorAll('.bp-site-row .bp-avatar')];
+    expect(avatars[0]?.querySelector('img')).toBeNull();
+    expect(avatars[0]?.textContent).toBe('L');
+    expect(avatars[1]?.querySelector('img')?.getAttribute('src')).toBe(
+      'icon:https://dex.getbze.com',
+    );
+  });
+
+  it('names the network in the empty state', async () => {
     const t = rig({ 'sites.list': () => listing([], 'testnet') });
     await settle();
-    expect(t.host.textContent).toContain('No connected sites');
-    expect(t.host.textContent).toContain('you pick one address for it');
-    expect(button(t.host, 'Disconnect all sites')).toBeUndefined();
+    expect(t.host.textContent).toContain('No sites on Testnet');
+    expect(t.host.querySelector('.bp-sites-list')).toBeNull();
+    expect(button(t.host, 'Disconnect all')).toBeUndefined();
   });
 
-  it('counts the sites in the header and disconnects them all, one by one', async () => {
+  it('labels the testnet list', async () => {
+    const t = rig({ 'sites.list': () => listing([SITE], 'testnet') });
+    await settle();
+    expect(t.host.querySelector('.bp-sites-net-testnet')?.textContent).toBe('Testnet · 1');
+  });
+
+  it('counts the sites and disconnects them all, one by one', async () => {
     const other = { ...SITE, origin: 'https://dex.getbze.com' };
     let sites = [SITE, other];
     const t = rig({
@@ -81,12 +118,12 @@ describe('Connected sites', () => {
       },
     });
     await settle();
-    expect(t.host.querySelector('.bp-sites-count')?.textContent).toBe('2');
-    fireEvent(button(t.host, 'Disconnect all sites'), 'click');
+    expect(t.host.querySelector('.bp-sites-net')?.textContent).toBe('Mainnet · 2');
+    fireEvent(button(t.host, 'Disconnect all'), 'click');
     await settle();
     expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: SITE.origin });
     expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: other.origin });
-    expect(t.host.textContent).toContain('No connected sites');
+    expect(t.host.textContent).toContain('No sites on Mainnet');
   });
 
   it('Disconnect calls the worker at once, without a confirmation', async () => {
@@ -102,7 +139,7 @@ describe('Connected sites', () => {
     fireEvent(button(t.host, 'Disconnect'), 'click');
     await settle();
     expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: SITE.origin });
-    expect(t.host.textContent).toContain('No connected sites');
+    expect(t.host.textContent).toContain('No sites on Mainnet');
   });
 
   it('Change opens a sheet with the current address preselected and saves the pick', async () => {
@@ -148,5 +185,14 @@ describe('Connected sites', () => {
     await settle();
     expect(t.host.textContent).toContain('Unlock the wallet');
     expect(t.host.textContent).toContain('http://localhost:5173');
+  });
+});
+
+describe('browserSiteIcons', () => {
+  it('asks the browser cache for the icon of the origin, never the site itself', () => {
+    const icons = browserSiteIcons({ getURL: (path) => `chrome-extension://abc${path}` });
+    expect(icons.url('https://dex.getbze.com:8443')).toBe(
+      'chrome-extension://abc/_favicon/?pageUrl=https%3A%2F%2Fdex.getbze.com%3A8443&size=32',
+    );
   });
 });
