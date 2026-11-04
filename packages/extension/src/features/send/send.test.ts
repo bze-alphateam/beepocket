@@ -333,8 +333,11 @@ describe('send.prepare', () => {
     const quote = await quoteOf(s, { amount: '', max: true, feeDenom: FACTORY });
     expect(quote.amount).toBe('5000000');
     expect(quote.fee.denom).toBe(FACTORY);
-    // The whole BZE balance leaves nothing for a 1 ubze fee coin: only the VDL fee is priced.
-    expect(quote.options.map((o) => o.denom)).toEqual([FACTORY]);
+    // The whole BZE balance leaves nothing for a 1 ubze fee coin: BZE is simulated with no fee
+    // (picking it sends max less the fee, simulated again), VDL with 1 uvdl.
+    expect(quote.options.map((o) => o.denom)).toEqual(['ubze', FACTORY]);
+    expect(s.simulatedFees.at(-2)).toEqual([]);
+    expect(s.simulatedFees.at(-1)).toEqual([`${FACTORY}:1`]);
     expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
   });
 
@@ -370,11 +373,11 @@ describe('send.prepare', () => {
     expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
   });
 
-  it('asks to leave room for the fee on a max send of a single unit', async () => {
+  it('says the fee cannot be paid on a max send of a single unit, not the node error', async () => {
     const s = setup({ balances: { ubze: 1n } });
     expect(await s.call('send.prepare', prepareReq({ amount: '', max: true }))).toMatchObject({
       ok: false,
-      error: { code: 'amount-leaves-no-fee' },
+      error: { code: 'cannot-pay-fee' },
     });
   });
 
