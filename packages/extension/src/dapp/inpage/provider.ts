@@ -1,16 +1,27 @@
+import { REQUEST_TTL_MS } from '../requests';
 import {
+  ACK_FIELD,
   bigintToWire,
   bytesFromWire,
   bytesToWire,
   DappErrorCodes,
   INITIALIZED_EVENT,
   KEYSTORE_EVENT,
+  NOT_RESPONDING_MESSAGE,
   PAGE_CHANNEL,
   WALLET_CHANNEL,
   type WireKey,
 } from '../wire';
 
 export const PROVIDER_VERSION = '1.0.0';
+
+/** How long a request may go without the wallet's ack before it ends with `unavailable`. */
+export const ACK_TIMEOUT_MS = 5_000;
+/**
+ * How long an acked request may wait for its answer: the wallet's own 10-minute expiry plus a
+ * minute. Past it the answer was lost on the way, and the request ends with `unavailable`.
+ */
+export const ANSWER_TIMEOUT_MS = REQUEST_TTL_MS + 60_000;
 
 /** What a dapp gets from `connect` and `getKey`. */
 export interface BeePocketKey {
@@ -72,11 +83,20 @@ export interface PageWindow {
     type: 'message',
     listener: (event: { source: unknown; origin: string; data: unknown }) => void,
   ): void;
+  /** `persisted` is true when the page comes back from the back/forward cache. */
+  addEventListener(type: 'pageshow', listener: (event: { persisted: boolean }) => void): void;
   dispatchEvent(event: Event): boolean;
+}
+
+/** The page's timers (`setTimeout` / `clearTimeout`); injected so a test can drive them. */
+export interface PageTimers {
+  set(callback: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
 }
 
 export interface ProviderDeps {
   win: PageWindow;
+  timers: PageTimers;
   /** Fills `bytes` with random values (`crypto.getRandomValues`). */
   randomBytes(bytes: Uint8Array): void;
 }
@@ -84,6 +104,8 @@ export interface ProviderDeps {
 interface Waiting {
   resolve(value: unknown): void;
   reject(error: Error): void;
+  /** The ack timer until the wallet took the request, then the answer timer. */
+  timer: unknown;
 }
 
 function newId(deps: ProviderDeps): string {
@@ -118,16 +140,53 @@ function isObject(x: unknown): x is Record<string, unknown> {
  * It holds no secrets and no authority: the worker decides everything.
  */
 export function createProvider(deps: ProviderDeps): BeePocketProvider {
-  const { win } = deps;
+  const { win, timers } = deps;
   const waiting = new Map<string, Waiting>();
   const listeners = new Set<() => void>();
 
+  /** Ends a waiting request; nothing when it is not waiting (answered, or never asked). */
+  const settle = (id: string, end: (pending: Waiting) => void): void => {
+    const pending = waiting.get(id);
+    if (!pending) return;
+    waiting.delete(id);
+    timers.clear(pending.timer);
+    end(pending);
+  };
+  const unavailable = (id: string, message: string): void => {
+    settle(id, (p) => {
+      p.reject(new BeePocketError(DappErrorCodes.unavailable, message));
+    });
+  };
+
+  // Every request ends: no ack in time means nothing reached the wallet, and an acked request
+  // whose answer never comes ends after the wallet's own expiry.
   const request = (method: string, params: unknown): Promise<unknown> =>
     new Promise((resolve, reject) => {
       const id = newId(deps);
-      waiting.set(id, { resolve, reject });
+      const timer = timers.set(() => {
+        unavailable(id, NOT_RESPONDING_MESSAGE);
+      }, ACK_TIMEOUT_MS);
+      waiting.set(id, { resolve, reject, timer });
       win.postMessage({ channel: PAGE_CHANNEL, id, method, params }, win.location.origin);
     });
+
+  const acked = (id: string): void => {
+    const pending = waiting.get(id);
+    if (!pending) return;
+    timers.clear(pending.timer);
+    pending.timer = timers.set(() => {
+      unavailable(id, 'BeePocket did not answer. Reload this page.');
+    }, ANSWER_TIMEOUT_MS);
+  };
+
+  // An answer sent while the page sat in the back/forward cache is dropped by the browser, so
+  // nothing that was waiting then can still be trusted to arrive.
+  win.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    for (const id of [...waiting.keys()]) {
+      unavailable(id, 'The page was restored from the browser cache. Try again.');
+    }
+  });
 
   win.addEventListener('message', (event) => {
     if (event.source !== win || !isObject(event.data) || event.data.channel !== WALLET_CHANNEL) {
@@ -146,20 +205,23 @@ export function createProvider(deps: ProviderDeps): BeePocketProvider {
       return;
     }
     if (typeof id !== 'string') return;
-    const pending = waiting.get(id);
-    if (!pending) return;
-    waiting.delete(id);
-    if (isObject(error)) {
-      const { code, message } = error;
-      pending.reject(
-        new BeePocketError(
-          typeof code === 'string' ? code : DappErrorCodes.invalidRequest,
-          typeof message === 'string' ? message : 'The request failed.',
-        ),
-      );
+    if (event.data[ACK_FIELD] === true) {
+      acked(id);
       return;
     }
-    pending.resolve(result);
+    settle(id, (pending) => {
+      if (isObject(error)) {
+        const { code, message } = error;
+        pending.reject(
+          new BeePocketError(
+            typeof code === 'string' ? code : DappErrorCodes.invalidRequest,
+            typeof message === 'string' ? message : 'The request failed.',
+          ),
+        );
+        return;
+      }
+      pending.resolve(result);
+    });
   });
 
   const key = async (method: 'connect' | 'getKey', chainId: string): Promise<BeePocketKey> =>

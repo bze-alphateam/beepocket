@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   bytesToWire,
   KEYSTORE_EVENT,
@@ -7,12 +7,23 @@ import {
   WALLET_CHANNEL,
 } from '../wire';
 import {
+  ACK_TIMEOUT_MS,
+  ANSWER_TIMEOUT_MS,
   BeePocketError,
   createProvider,
   installProvider,
   type BeePocketProvider,
+  type PageTimers,
   type PageWindow,
 } from './provider';
+
+/** The page's timers; `vi.useFakeTimers()` drives them in the liveness tests. */
+const timers: PageTimers = {
+  set: (callback, ms) => setTimeout(callback, ms),
+  clear: (handle) => {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
+};
 
 const KEY = {
   address: 'bze1abc',
@@ -35,6 +46,7 @@ function rig() {
   });
   const provider = createProvider({
     win: win as unknown as PageWindow,
+    timers,
     randomBytes: (bytes) => {
       crypto.getRandomValues(bytes as Uint8Array<ArrayBuffer>);
     },
@@ -213,6 +225,82 @@ describe('the provider', () => {
   });
 });
 
+describe('liveness: every request ends', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const ack = (t: ReturnType<typeof rig>, n = 0) => {
+    t.deliver({ channel: WALLET_CHANNEL, id: t.posted[n]?.id, ack: true });
+  };
+
+  it('rejects unavailable when the wallet does not take the request in time', async () => {
+    vi.useFakeTimers();
+    const t = rig();
+    const promise = t.provider.getKey('beezee-1').catch((e: unknown) => e);
+    vi.advanceTimersByTime(ACK_TIMEOUT_MS);
+    const error = await promise;
+    expect(error).toBeInstanceOf(BeePocketError);
+    expect(error).toMatchObject({
+      code: 'unavailable',
+      message: 'BeePocket is not responding. Reload this page.',
+    });
+    // A late answer changes nothing.
+    t.deliver({ channel: WALLET_CHANNEL, id: t.posted[0]?.id, result: KEY });
+  });
+
+  it('keeps an acked request waiting for its answer, as long as the user takes', async () => {
+    vi.useFakeTimers();
+    const t = rig();
+    let settled = false;
+    const promise = t.provider.connect('beezee-1').finally(() => {
+      settled = true;
+    });
+    vi.advanceTimersByTime(ACK_TIMEOUT_MS - 1);
+    ack(t);
+    vi.advanceTimersByTime(ANSWER_TIMEOUT_MS - 1);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    t.deliver({ channel: WALLET_CHANNEL, id: t.posted[0]?.id, result: KEY });
+    await expect(promise).resolves.toMatchObject({ address: 'bze1abc' });
+  });
+
+  it('rejects unavailable when an acked answer is lost past the wallet expiry', async () => {
+    vi.useFakeTimers();
+    const t = rig();
+    const promise = t.provider.getKey('beezee-1').catch((e: unknown) => e);
+    ack(t);
+    vi.advanceTimersByTime(ANSWER_TIMEOUT_MS);
+    expect(await promise).toMatchObject({ code: 'unavailable' });
+    expect(ANSWER_TIMEOUT_MS).toBeGreaterThan(10 * 60_000);
+  });
+
+  it('ignores an ack for a request it is not waiting for', async () => {
+    vi.useFakeTimers();
+    const t = rig();
+    const promise = t.provider.getKey('beezee-1').catch((e: unknown) => e);
+    t.deliver({ channel: WALLET_CHANNEL, id: 'f'.repeat(32), ack: true });
+    vi.advanceTimersByTime(ACK_TIMEOUT_MS);
+    expect(await promise).toMatchObject({ code: 'unavailable' });
+  });
+
+  it('ends what was waiting when the page comes back from the back/forward cache', async () => {
+    const t = rig();
+    const a = t.provider.getKey('beezee-1').catch((e: unknown) => e);
+    const b = t.provider.connect('beezee-1').catch((e: unknown) => e);
+    ack(t, 1);
+    // A normal page show is not a restore: nothing ends.
+    t.win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }));
+    t.win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+    expect(await a).toMatchObject({ code: 'unavailable' });
+    expect(await b).toMatchObject({ code: 'unavailable' });
+    // A request made after the restore is unaffected.
+    const c = t.provider.getKey('beezee-1');
+    t.deliver({ channel: WALLET_CHANNEL, id: t.posted[2]?.id, result: KEY });
+    await expect(c).resolves.toMatchObject({ name: 'Main' });
+  });
+});
+
 describe('window.beepocket', () => {
   it('is defined once, frozen, not writable and not configurable, and announced', () => {
     const initialized = vi.fn();
@@ -220,6 +308,7 @@ describe('window.beepocket', () => {
     expect(
       installProvider({
         win: window,
+        timers,
         randomBytes: (bytes) => {
           crypto.getRandomValues(bytes as Uint8Array<ArrayBuffer>);
         },
@@ -245,7 +334,7 @@ describe('window.beepocket', () => {
     expect((window as unknown as { beepocket: unknown }).beepocket).toBe(provider);
 
     // A second install cannot replace it and says so.
-    expect(installProvider({ win: window, randomBytes: () => undefined })).toBe(false);
+    expect(installProvider({ win: window, timers, randomBytes: () => undefined })).toBe(false);
     window.removeEventListener(INITIALIZED_EVENT, initialized);
   });
 });

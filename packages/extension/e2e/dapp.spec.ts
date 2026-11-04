@@ -246,3 +246,46 @@ test('a fully locked wallet shows the waiting card in the popup; unlocking there
     stop();
   }
 });
+
+test('a toolbar popup that never opens still shows the request in a window', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const { dapp, stop } = await openDapp(context);
+  try {
+    const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+    await worker.evaluate(() => {
+      Object.assign(chrome.action, { openPopup: () => new Promise(() => undefined) });
+    });
+    // The page got its ack at once; the window follows once the popup's deadline passes.
+    const request = await connect(context, dapp);
+    await request.getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(dapp.getByRole('status')).toHaveText(/name Main$/);
+  } finally {
+    stop();
+  }
+});
+
+test('a page left behind by an extension reload answers unavailable instead of hanging', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const { dapp, stop } = await openDapp(context);
+  try {
+    const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+    // The reload ends the worker under the evaluate call, which may then reject.
+    await worker
+      .evaluate(() => {
+        chrome.runtime.reload();
+      })
+      .catch(() => undefined);
+    await dapp.getByRole('button', { name: 'Get key' }).click();
+    await expect(dapp.getByRole('status')).toHaveText('error unavailable');
+  } finally {
+    stop();
+  }
+});

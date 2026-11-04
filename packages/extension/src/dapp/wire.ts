@@ -12,7 +12,14 @@ export const DappErrorCodes = {
   wrongChain: 'wrong-chain',
   invalidRequest: 'invalid-request',
   expired: 'expired',
+  /** The wallet cannot be reached from this page (updated, reloaded or not answering). */
+  unavailable: 'unavailable',
 } as const;
+
+/** What the page is told when its content script outlived an extension reload or update. */
+export const UPDATED_MESSAGE = 'BeePocket was updated. Reload this page.';
+/** What the page is told when the wallet does not take a request. */
+export const NOT_RESPONDING_MESSAGE = 'BeePocket is not responding. Reload this page.';
 
 export interface WireError {
   code: string;
@@ -26,6 +33,13 @@ export const WALLET_CHANNEL = 'beepocket:wallet';
 /** The page's window event interchain-kit listens to, dispatched on every account change. */
 export const KEYSTORE_EVENT = 'beepocket_keystorechange';
 export const INITIALIZED_EVENT = 'beepocket#initialized';
+
+/**
+ * The relay's word to the page that the worker took a request (`{ id, ack: true }` on
+ * `WALLET_CHANNEL`). The answer follows later; until the ack the page knows nothing reached
+ * the wallet.
+ */
+export const ACK_FIELD = 'ack';
 
 /** A request from the page, as it goes through the relay to the worker. */
 export interface WireRequest {

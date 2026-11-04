@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SessionStorage } from '../platform';
 import type { ToolbarPopup } from '../platform/toolbar-popup';
 import type { WindowBounds } from '../platform/wallet-window';
-import { RequestWindow, type WindowsLike } from './window';
+import { WINDOW_KEY } from './requests';
+import { BROWSER_CALL_DEADLINE_MS, RequestWindow, type Sleeper, type WindowsLike } from './window';
 
 class MemorySession implements SessionStorage {
   readonly data = new Map<string, unknown>();
@@ -23,7 +24,32 @@ class MemorySession implements SessionStorage {
   }
 }
 
-function rig(browser: WindowBounds | null, popup?: ToolbarPopup) {
+/** Deadlines pass only when the test says so. */
+function deadlines() {
+  const waiting: { ms: number; pass: () => void }[] = [];
+  const timer: Sleeper = {
+    sleep: (ms) =>
+      new Promise((resolve) => {
+        waiting.push({ ms, pass: resolve });
+      }),
+  };
+  return {
+    timer,
+    waiting,
+    passAll: () => {
+      for (const w of waiting.splice(0)) w.pass();
+    },
+  };
+}
+
+const never = <T>(): Promise<T> => new Promise<T>(() => undefined);
+
+function rig(
+  browser: WindowBounds | null,
+  popup?: ToolbarPopup,
+  opts: { timer?: Sleeper; get?: WindowsLike['get'] } = {},
+) {
+  const session = new MemorySession();
   const created: unknown[] = [];
   const focused: number[] = [];
   const open = new Set<number>();
@@ -33,7 +59,9 @@ function rig(browser: WindowBounds | null, popup?: ToolbarPopup) {
       open.add(created.length);
       return Promise.resolve({ id: created.length });
     },
-    get: (id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('no window'))),
+    get:
+      opts.get ??
+      ((id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('no window')))),
     getLastFocused: () =>
       browser === null ? Promise.reject(new Error('no window')) : Promise.resolve(browser),
     update: (id) => {
@@ -41,7 +69,12 @@ function rig(browser: WindowBounds | null, popup?: ToolbarPopup) {
       return Promise.resolve({});
     },
   };
-  return { window: new RequestWindow(windows, new MemorySession(), popup), created, focused };
+  return {
+    window: new RequestWindow(windows, session, popup, opts.timer),
+    session,
+    created,
+    focused,
+  };
 }
 
 function toolbar(opts: { open?: boolean; fail?: boolean } = {}) {
@@ -115,5 +148,36 @@ describe('the request window', () => {
     expect(p.opened()).toBe(1);
     expect(t.created).toHaveLength(1);
     expect(t.focused).toEqual([1]);
+  });
+
+  it('falls back to the window when the toolbar popup never opens', async () => {
+    const d = deadlines();
+    const popup: ToolbarPopup = { isOpen: () => Promise.resolve(false), open: never };
+    const t = rig(null, popup, { timer: d.timer });
+    const shown = t.window.show();
+    await vi.waitFor(() => {
+      expect(d.waiting).toHaveLength(1);
+    });
+    expect(d.waiting[0]?.ms).toBe(BROWSER_CALL_DEADLINE_MS);
+    d.passAll();
+    await shown;
+    expect(t.created).toEqual([PLAIN]);
+  });
+
+  it('does not let a hung browser call block the requests behind it', async () => {
+    const d = deadlines();
+    const t = rig(null, undefined, { timer: d.timer, get: never });
+    // A request window is remembered, but asking the browser about it never returns.
+    await t.session.set(WINDOW_KEY, 7);
+    let done = false;
+    void Promise.all([t.window.show(), t.window.show()]).then(() => {
+      done = true;
+    });
+    await vi.waitFor(() => {
+      d.passAll();
+      expect(done).toBe(true);
+    });
+    // Each show gave up on the silent window and opened one of its own.
+    expect(t.created).toEqual([PLAIN, PLAIN]);
   });
 });

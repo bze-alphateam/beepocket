@@ -14,7 +14,7 @@ import { DappRegistry } from './registry';
 import { RequestStore } from './requests';
 import { DappService } from './service';
 import type { ToolbarPopup } from '../platform/toolbar-popup';
-import { RequestWindow, type WindowsLike } from './window';
+import { RequestWindow, type Sleeper, type WindowsLike } from './window';
 
 export { dappSender, type SenderLike } from './sender';
 export { DappService, type Ack } from './service';
@@ -32,6 +32,8 @@ export function createDappService(
     windows: WindowsLike;
     alarms: Alarms;
     popup?: ToolbarPopup;
+    /** Bounds every browser call the request window makes; see `RequestWindow`. */
+    timer?: Sleeper;
   },
 ): DappService {
   const registry = new DappRegistry();
@@ -53,7 +55,7 @@ export function createDappService(
   return new DappService({
     registry,
     requests: new RequestStore(platform.session, chrome.alarms, platform.clock),
-    window: new RequestWindow(chrome.windows, platform.session, chrome.popup),
+    window: new RequestWindow(chrome.windows, platform.session, chrome.popup, chrome.timer),
     deliverer,
     documents,
     changes,

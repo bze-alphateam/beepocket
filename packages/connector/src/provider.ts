@@ -50,9 +50,18 @@ export interface BeePocketProvider {
   off(event: BeePocketEvent, listener: () => void): void;
 }
 
-/** The `code` of an error the provider rejects with. */
+/**
+ * The `code` of an error the provider rejects with. `unavailable`: the page cannot reach the
+ * wallet (the extension was updated or reloaded, or it does not answer); reload the page.
+ */
 export type BeePocketErrorCode =
-  'rejected' | 'locked-timeout' | 'not-connected' | 'wrong-chain' | 'invalid-request' | 'expired';
+  | 'rejected'
+  | 'locked-timeout'
+  | 'not-connected'
+  | 'wrong-chain'
+  | 'invalid-request'
+  | 'expired'
+  | 'unavailable';
 
 /** A rejection from the provider: branch on `error.code`. */
 export interface BeePocketError extends Error {

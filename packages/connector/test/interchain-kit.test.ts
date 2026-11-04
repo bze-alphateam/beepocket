@@ -209,6 +209,45 @@ describe('account and signing', () => {
   });
 });
 
+describe('a wallet the page cannot reach', () => {
+  const unavailable = () =>
+    Object.assign(new Error('BeePocket was updated. Reload this page.'), { code: 'unavailable' });
+
+  it.each(['signDirect', 'sendTx'] as const)(
+    '%s fails with unavailable and announces an account change, so the refresh disconnects',
+    async (method) => {
+      const provider = fakeProvider();
+      const failure = unavailable();
+      provider[method].mockRejectedValue(failure);
+      install(provider);
+      const wallet = newWallet();
+      await wallet.init();
+      const changed = vi.fn();
+      wallet.events.on('accountChanged', changed);
+      const call =
+        method === 'signDirect'
+          ? cosmos(wallet).signDirect('beezee-1', 'bze1abc', SIGN_DOC)
+          : cosmos(wallet).sendTx('beezee-1', Uint8Array.from([1]), BroadcastMode.Sync);
+      await expect(call).rejects.toBe(failure);
+      expect(changed).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('announces nothing for other failures, nor when getAccount fails (no refresh loop)', async () => {
+    const provider = fakeProvider();
+    provider.signDirect.mockRejectedValue(Object.assign(new Error('no'), { code: 'rejected' }));
+    provider.getKey.mockRejectedValue(unavailable());
+    install(provider);
+    const wallet = newWallet();
+    await wallet.init();
+    const changed = vi.fn();
+    wallet.events.on('accountChanged', changed);
+    await expect(cosmos(wallet).signDirect('beezee-1', 'bze1abc', SIGN_DOC)).rejects.toThrow('no');
+    await expect(wallet.getAccount('beezee-1')).rejects.toMatchObject({ code: 'unavailable' });
+    expect(changed).not.toHaveBeenCalled();
+  });
+});
+
 describe('accountChanged', () => {
   it('is emitted when the extension changes the account', async () => {
     install(fakeProvider());

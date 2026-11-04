@@ -13,7 +13,7 @@ import type { Deliverer } from './deliver';
 import type { AccountChanges } from './account-changes';
 import type { SitesService } from './sites';
 import type { DocumentLog } from './documents';
-import type { Decision, DappRegistry, UserAnswer } from './registry';
+import type { Decision, DappHandler, DappRegistry, UserAnswer } from './registry';
 import { REQUEST_TTL_MS, type RequestStore } from './requests';
 import { refuse, type DappSender, type Outcome, type PendingRequest } from './types';
 import type { RequestWindow } from './window';
@@ -24,7 +24,7 @@ export type Ack = { accepted: true } | { error: WireError };
 
 export interface Received {
   ack: Ack;
-  /** Delivers the answer to the page once the ack is out (nothing to do when the user decides). */
+  /** Runs once the ack is out: answers the page, or queues the request and shows the window. */
   after: () => Promise<void>;
 }
 
@@ -44,8 +44,9 @@ const ID = /^[0-9a-f]{32}$/;
 const nothing = (): Promise<void> => Promise.resolve();
 
 /**
- * The dapp channel inside the worker. A request is acked at once; its answer is delivered later
- * to the exact document that asked, so it survives the worker stopping while the user decides.
+ * The dapp channel inside the worker. A well-formed request is acked at once, before any work;
+ * its answer is delivered later to the exact document that asked, so it survives the worker
+ * stopping while the user decides.
  * Nothing is kept in memory: pending requests live in session storage.
  */
 export class DappService {
@@ -62,7 +63,12 @@ export class DappService {
   }
 
   /** `message` is the untrusted `dapp` field of a content-script message; `from` is the browser's word. */
-  async receive(from: DappSender, message: unknown): Promise<Received> {
+  receive(from: DappSender, message: unknown): Promise<Received> {
+    return Promise.resolve(this.check(from, message));
+  }
+
+  /** The synchronous checks that decide the ack. */
+  private check(from: DappSender, message: unknown): Received {
     const bad = (text: string): Received => ({
       ack: { error: { code: DappErrorCodes.invalidRequest, message: text } },
       after: nothing,
@@ -77,38 +83,73 @@ export class DappService {
     const valid = handler.validate(params);
     if (!valid.ok) return bad(valid.error.message);
 
-    // Requests that waited their 10 minutes make room before the caps are checked.
-    await this.expireDue();
-    const network = await this.deps.services.activeNetwork();
-    const request: PendingRequest = {
-      id,
-      origin: from.origin,
-      network: network.id,
-      method,
-      params: valid.value,
-      tabId: from.tabId,
-      documentId: from.documentId,
-      createdAt: this.deps.clock.now(),
-    };
-    await this.deps.documents.record({
-      tabId: from.tabId,
-      documentId: from.documentId,
-      origin: from.origin,
-      network: network.id,
-    });
-    const decision = await handler.decide(request);
-    if (decision.kind === 'answer') return this.answered(request, decision.outcome);
-    const added = await this.deps.requests.add(request);
-    if (added.status === 'duplicate') return bad('Duplicate request.');
-    if (added.status !== 'added') return bad('Too many requests waiting');
-    if (added.evicted) {
-      await this.deliver(
-        added.evicted,
-        refuse(DappErrorCodes.invalidRequest, 'Too many requests waiting'),
+    // The ack goes out now, before anything that can take time (a node call in `decide`, the
+    // window): the page's liveness timer only waits a few seconds for it.
+    const pending = { id, method, params: valid.value };
+    return { ack: { accepted: true }, after: () => this.settle(from, handler, pending) };
+  }
+
+  /**
+   * Everything after the ack. It never throws and never ends without the request either
+   * answered or queued: a failure is delivered to the page instead of leaving it waiting.
+   */
+  private async settle(
+    from: DappSender,
+    handler: DappHandler,
+    pending: { id: string; method: string; params: unknown },
+  ): Promise<void> {
+    try {
+      // Requests that waited their 10 minutes make room before the caps are checked.
+      await this.expireDue();
+      const network = await this.deps.services.activeNetwork();
+      const request: PendingRequest = {
+        ...pending,
+        origin: from.origin,
+        network: network.id,
+        tabId: from.tabId,
+        documentId: from.documentId,
+        createdAt: this.deps.clock.now(),
+      };
+      await this.deps.documents.record({
+        tabId: from.tabId,
+        documentId: from.documentId,
+        origin: from.origin,
+        network: network.id,
+      });
+      const decision = await handler.decide(request);
+      if (decision.kind === 'answer') {
+        await this.deliver(request, decision.outcome);
+        return;
+      }
+      const added = await this.deps.requests.add(request);
+      if (added.status === 'duplicate') {
+        await this.deliver(request, refuse(DappErrorCodes.invalidRequest, 'Duplicate request.'));
+        return;
+      }
+      if (added.status !== 'added') {
+        await this.deliver(
+          request,
+          refuse(DappErrorCodes.invalidRequest, 'Too many requests waiting'),
+        );
+        return;
+      }
+      if (added.evicted) {
+        await this.deliver(
+          added.evicted,
+          refuse(DappErrorCodes.invalidRequest, 'Too many requests waiting'),
+        );
+      }
+    } catch {
+      await this.deps.deliverer.answer(
+        from,
+        pending.id,
+        refuse(DappErrorCodes.invalidRequest, 'The wallet could not handle the request.'),
       );
+      return;
     }
-    await this.deps.window.show();
-    return { ack: { accepted: true }, after: nothing };
+    // The request is safe in the queue: a window that fails to open loses nothing (the toolbar
+    // icon and the expiry still reach it), so its failure is not the page's error.
+    await this.deps.window.show().catch(() => undefined);
   }
 
   /**
@@ -205,10 +246,6 @@ export class DappService {
   /** A closed tab leaves nobody to answer. */
   onTabRemoved(tabId: number): Promise<void> {
     return this.deps.requests.removeTab(tabId).then(() => this.deps.documents.removeTab(tabId));
-  }
-
-  private answered(request: PendingRequest, outcome: Outcome): Received {
-    return { ack: { accepted: true }, after: () => this.deliver(request, outcome) };
   }
 
   private finish(request: PendingRequest, outcome: Outcome): Promise<void> {
