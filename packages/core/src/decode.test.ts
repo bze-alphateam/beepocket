@@ -8,6 +8,12 @@ import * as feegrantMsgs from './proto/cosmos/feegrant/v1beta1/tx';
 import * as govMsgs from './proto/cosmos/gov/v1/tx';
 import * as tradebinMsgs from './proto/bze/tradebin/tx';
 import * as burnerMsgs from './proto/bze/burner/tx';
+import * as rewardsMsgs from './proto/bze/rewards/tx';
+import * as tokenfactoryMsgs from './proto/bze/tokenfactory/tx';
+import * as cointrunkMsgs from './proto/bze/cointrunk/tx';
+import * as stakingMsgs from './proto/cosmos/staking/v1beta1/tx';
+import * as distributionMsgs from './proto/cosmos/distribution/v1beta1/tx';
+import * as transferMsgs from './proto/ibc/applications/transfer/v1/tx';
 import { Any } from './proto/google/protobuf/any';
 import { VoteOption } from './proto/cosmos/gov/v1/gov';
 
@@ -20,9 +26,20 @@ interface MsgCodec {
 const isMsg = (name: string, v: unknown): v is MsgCodec =>
   /^Msg(?!.*Response$)/.test(name) && typeof v === 'object' && v !== null && 'typeUrl' in v;
 
-const allMsgs = [bankMsgs, authzMsgs, feegrantMsgs, govMsgs, tradebinMsgs, burnerMsgs].flatMap(
-  (mod) => Object.entries(mod).filter((e): e is [string, MsgCodec] => isMsg(e[0], e[1])),
-);
+const allMsgs = [
+  bankMsgs,
+  authzMsgs,
+  feegrantMsgs,
+  govMsgs,
+  tradebinMsgs,
+  burnerMsgs,
+  rewardsMsgs,
+  tokenfactoryMsgs,
+  cointrunkMsgs,
+  stakingMsgs,
+  distributionMsgs,
+  transferMsgs,
+].flatMap((mod) => Object.entries(mod).filter((e): e is [string, MsgCodec] => isMsg(e[0], e[1])));
 
 const send = {
   fromAddress: 'bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g',

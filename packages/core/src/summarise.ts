@@ -2,7 +2,10 @@ import { base64 } from '@scure/base';
 import { formatAmount, displayPrice } from './amounts';
 import { decodeAny } from './decode';
 import type { ChainClient, Market, MarketOrder, Pool } from './net';
-import { MsgSend } from './proto/cosmos/bank/v1beta1/tx';
+import { MsgMultiSend, MsgSend } from './proto/cosmos/bank/v1beta1/tx';
+import { MsgBeginRedelegate, MsgDelegate, MsgUndelegate } from './proto/cosmos/staking/v1beta1/tx';
+import { MsgWithdrawDelegatorReward } from './proto/cosmos/distribution/v1beta1/tx';
+import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
 import { SendAuthorization } from './proto/cosmos/bank/v1beta1/authz';
 import { GenericAuthorization, Grant } from './proto/cosmos/authz/v1beta1/authz';
 import { MsgExec, MsgGrant } from './proto/cosmos/authz/v1beta1/tx';
@@ -17,15 +20,41 @@ import {
 } from './proto/cosmos/feegrant/v1beta1/feegrant';
 import { AuthorizationType, StakeAuthorization } from './proto/cosmos/staking/v1beta1/authz';
 import { TransferAuthorization } from './proto/ibc/applications/transfer/v1/authz';
-import { MsgFundBurner, MsgJoinRaffle } from './proto/bze/burner/tx';
+import {
+  MsgFundBurner,
+  MsgJoinRaffle,
+  MsgMoveIbcLockedCoins,
+  MsgStartRaffle,
+} from './proto/bze/burner/tx';
 import {
   MsgAddLiquidity,
   MsgCancelOrder,
+  MsgCreateLiquidityPool,
+  MsgCreateMarket,
   MsgCreateOrder,
   MsgFillOrders,
   MsgMultiSwap,
   MsgRemoveLiquidity,
 } from './proto/bze/tradebin/tx';
+import * as rewards from './proto/bze/rewards/tx';
+import type {
+  MsgCreateDenomRewardSchedule,
+  MsgCreateStakingReward,
+  MsgCreateTradingReward,
+  MsgDistributeDenomRewards,
+  MsgDistributeStakingRewards,
+  MsgJoinDenomReward,
+  MsgJoinStaking,
+  MsgUpdateDenomRewardSchedule,
+  MsgUpdateStakingReward,
+} from './proto/bze/rewards/tx';
+import * as factory from './proto/bze/tokenfactory/tx';
+import type {
+  MsgChangeAdmin,
+  MsgSetDenomBranding,
+  MsgSetDenomMetadata,
+} from './proto/bze/tokenfactory/tx';
+import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
 import { sanitiseText } from './text';
 import { LP_DECIMALS, type TokenInfo } from './tokens';
 import type { AnyMsg } from './tx';
@@ -43,6 +72,13 @@ export type MsgIcon =
   | 'raffle'
   | 'vote'
   | 'grant'
+  | 'stake'
+  | 'rewards'
+  | 'create'
+  | 'admin'
+  | 'edit'
+  | 'article'
+  | 'settings'
   | 'unknown';
 
 /** `[label, value]`, or `[label, value, 'mono']` for text shown in a monospace face. */
@@ -707,7 +743,548 @@ function execParts(l: Lookups, msg: MsgExec): Parts {
   };
 }
 
+const plural = (n: bigint, one: string, many = `${one}s`): string =>
+  `${group(n.toString())} ${n === 1n ? one : many}`;
+
+/** `30 days`, or the raw text when it is not a whole number. */
+function daysText(raw: string): string {
+  const n = toUint(raw);
+  return n === null ? `${safeText(raw, 40)} days` : plural(n, 'day');
+}
+
+const baseUnits = (raw: string): string => `${safeText(raw, 40)} (base units)`;
+const idText = (id: string): string => safeText(id, 40);
+
+/** `a × b` for two unsigned integer strings, or null when either is not one. */
+function product(a: string, b: string): bigint | null {
+  const x = toUint(a);
+  const y = toUint(b);
+  return x === null || y === null ? null : x * y;
+}
+
+/** Each module's governance-only messages: signed by the gov module, never by a wallet user. */
+const GOVERNANCE = new Map<string, string>([
+  ['/bze.burner.MsgUpdateParams', 'Update burner settings'],
+  ['/bze.cointrunk.MsgUpdateParams', 'Update CoinTrunk settings'],
+  ['/bze.rewards.MsgUpdateParams', 'Update rewards settings'],
+  ['/bze.tokenfactory.MsgUpdateParams', 'Update token factory settings'],
+  ['/bze.tradebin.MsgUpdateParams', 'Update tradebin settings'],
+  ['/bze.txfeecollector.MsgUpdateParams', 'Update fee collector settings'],
+  ['/bze.tradebin.MsgHaltDenoms', 'Halt trading of tokens'],
+  ['/bze.tradebin.MsgUnhaltDenoms', 'Resume trading of tokens'],
+  ['/bze.cointrunk.MsgAcceptDomain', 'Change an accepted news domain'],
+  ['/bze.cointrunk.MsgSavePublisher', 'Save a CoinTrunk publisher'],
+]);
+
+function governanceParts(typeUrl: string, action: string): Parts {
+  return {
+    level: 'normal',
+    icon: 'settings',
+    title: 'Governance',
+    hero: action,
+    sub: 'governance',
+    rows: [
+      ['Action', action],
+      ['Type', safeText(typeUrl), 'mono'],
+    ],
+  };
+}
+
+// ---- tradebin: markets and pools ----
+
+async function createMarketParts(l: Lookups, msg: MsgCreateMarket): Promise<Parts> {
+  const pair = await l.pair(msg.base, msg.quote);
+  return {
+    level: 'normal',
+    icon: 'create',
+    title: 'Create market',
+    hero: pair,
+    sub: 'a new order book',
+    rows: [
+      ['Market', pair],
+      ['Base', safeText(msg.base, 80), 'mono'],
+      ['Quote', safeText(msg.quote, 80), 'mono'],
+    ],
+  };
+}
+
+async function createPoolParts(l: Lookups, msg: MsgCreateLiquidityPool): Promise<Parts> {
+  const [pair, base, quote] = await Promise.all([
+    l.pair(msg.base, msg.quote),
+    l.money(msg.base, msg.initialBase),
+    l.money(msg.quote, msg.initialQuote),
+  ]);
+  const valid = toUint(msg.initialBase) !== null && toUint(msg.initialQuote) !== null;
+  return {
+    level: valid ? 'normal' : 'unknown',
+    icon: 'liquidity',
+    title: 'Create pool',
+    hero: pair,
+    sub: `${base} + ${quote}`,
+    rows: [
+      ['Pool', pair],
+      ['You add', `${base} + ${quote}`],
+      ['Swap fee', safeText(msg.fee, 40)],
+      ['Kind', msg.stable ? 'Stable' : 'Standard'],
+    ],
+  };
+}
+
+// ---- rewards: staking rewards ----
+
+function rewardIdParts(
+  icon: MsgIcon,
+  title: string,
+  hero: string,
+  sub: string,
+  id: string,
+  extra: SummaryRow[] = [],
+): Parts {
+  return {
+    level: 'normal',
+    icon,
+    title,
+    hero,
+    sub,
+    rows: [['Reward', idText(id), 'mono'], ...extra],
+  };
+}
+
+function joinStakingParts(msg: MsgJoinStaking): Parts {
+  // The staked token is the reward's, which the message does not name.
+  return {
+    ...rewardIdParts(
+      'stake',
+      'Stake',
+      baseUnits(msg.amount),
+      `in reward ${idText(msg.rewardId)}`,
+      msg.rewardId,
+      [['Amount', `${baseUnits(msg.amount)}, in the reward's staking token`]],
+    ),
+    level: toUint(msg.amount) === null ? 'unknown' : 'normal',
+  };
+}
+
+async function createStakingRewardParts(l: Lookups, msg: MsgCreateStakingReward): Promise<Parts> {
+  const total = product(msg.prizeAmount, msg.duration);
+  const [perDay, totalText, staked, minStake] = await Promise.all([
+    l.money(msg.prizeDenom, msg.prizeAmount),
+    total === null ? Promise.resolve(null) : l.money(msg.prizeDenom, total),
+    l.token(msg.stakingDenom),
+    l.money(msg.stakingDenom, msg.minStake),
+  ]);
+  const days = daysText(msg.duration);
+  return {
+    level:
+      total !== null && toUint(msg.minStake) !== null && toUint(msg.lock) !== null
+        ? 'normal'
+        : 'unknown',
+    icon: 'rewards',
+    title: 'Create staking reward',
+    hero: totalText ?? perDay,
+    sub: `over ${days}, for ${staked.symbol} stakers`,
+    rows: [
+      ['Prize per day', perDay],
+      ['Duration', days],
+      ['Staked token', staked.symbol],
+      ['Minimum stake', minStake],
+      ['Lock after unstaking', daysText(msg.lock)],
+      ['You pay', totalText ?? 'Prize per day × duration'],
+    ],
+  };
+}
+
+function updateStakingRewardParts(msg: MsgUpdateStakingReward): Parts {
+  const days = daysText(msg.duration);
+  return {
+    ...rewardIdParts(
+      'rewards',
+      'Extend staking reward',
+      `Reward ${idText(msg.rewardId)}`,
+      `by ${days}`,
+      msg.rewardId,
+      [
+        ['Extra days', days],
+        ['Cost', `The reward's daily prize × ${days}`],
+      ],
+    ),
+    level: toUint(msg.duration) === null ? 'unknown' : 'normal',
+  };
+}
+
+function distributeStakingRewardsParts(msg: MsgDistributeStakingRewards): Parts {
+  return {
+    ...rewardIdParts(
+      'rewards',
+      'Top up staking reward',
+      baseUnits(msg.amount),
+      `reward ${idText(msg.rewardId)}`,
+      msg.rewardId,
+      [['Amount', `${baseUnits(msg.amount)}, in the reward's prize token`]],
+    ),
+    level: toUint(msg.amount) === null ? 'unknown' : 'normal',
+  };
+}
+
+// ---- rewards: trading rewards ----
+
+async function createTradingRewardParts(l: Lookups, msg: MsgCreateTradingReward): Promise<Parts> {
+  const market = await l.market(msg.marketId);
+  const pair = market ? await l.pair(market.base, market.quote) : safeText(msg.marketId);
+  const total = product(msg.prizeAmount, msg.slots);
+  const [perSlot, totalText] = await Promise.all([
+    l.money(msg.prizeDenom, msg.prizeAmount),
+    total === null ? Promise.resolve(null) : l.money(msg.prizeDenom, total),
+  ]);
+  const days = daysText(msg.duration);
+  return {
+    level: total !== null && toUint(msg.duration) !== null ? 'normal' : 'unknown',
+    icon: 'rewards',
+    title: 'Create trading reward',
+    hero: totalText ?? perSlot,
+    sub: `on ${pair} for ${days}`,
+    rows: [
+      market ? ['Market', pair] : ['Market', pair, 'mono'],
+      ['Prize per winner', perSlot],
+      ['Winners', safeText(msg.slots, 40)],
+      ['Duration', days],
+      ['You pay', totalText ?? 'Prize per winner × winners'],
+    ],
+  };
+}
+
+// ---- rewards: holder (denom) rewards ----
+
+async function holderParts(
+  l: Lookups,
+  icon: MsgIcon,
+  title: string,
+  denom: string,
+  sub: string,
+): Promise<Parts> {
+  const symbol = (await l.token(denom)).symbol;
+  return { level: 'normal', icon, title, hero: symbol, sub, rows: [['Token', symbol]] };
+}
+
+async function joinDenomRewardParts(l: Lookups, msg: MsgJoinDenomReward): Promise<Parts> {
+  const amount = await l.money(msg.denom, msg.amount);
+  return {
+    level: toUint(msg.amount) === null ? 'unknown' : 'normal',
+    icon: 'stake',
+    title: 'Lock',
+    hero: amount,
+    sub: 'for holder rewards',
+    rows: [['Amount', amount]],
+  };
+}
+
+async function createScheduleParts(l: Lookups, msg: MsgCreateDenomRewardSchedule): Promise<Parts> {
+  const total = product(msg.dailyAmount, msg.duration);
+  const [holders, perDay, totalText] = await Promise.all([
+    l.token(msg.denom),
+    l.money(msg.prizeDenom, msg.dailyAmount),
+    total === null ? Promise.resolve(null) : l.money(msg.prizeDenom, total),
+  ]);
+  const days = daysText(msg.duration);
+  return {
+    level: total === null ? 'unknown' : 'normal',
+    icon: 'rewards',
+    title: 'Schedule holder rewards',
+    hero: totalText ?? perDay,
+    sub: `${perDay} a day for ${days}, to ${holders.symbol} holders`,
+    rows: [
+      ['Holders of', holders.symbol],
+      ['Per day', perDay],
+      ['Duration', days],
+      ['You pay', totalText ?? 'Per day × duration'],
+    ],
+  };
+}
+
+async function updateScheduleParts(l: Lookups, msg: MsgUpdateDenomRewardSchedule): Promise<Parts> {
+  const holders = (await l.token(msg.denom)).symbol;
+  const days = daysText(msg.duration);
+  return {
+    level: toUint(msg.duration) === null ? 'unknown' : 'normal',
+    icon: 'rewards',
+    title: 'Extend holder rewards',
+    hero: `Schedule ${idText(msg.scheduleId)}`,
+    sub: `for ${holders} holders, by ${days}`,
+    rows: [
+      ['Holders of', holders],
+      ['Schedule', idText(msg.scheduleId), 'mono'],
+      ['Extra days', days],
+      ['Cost', `The schedule's daily amount × ${days}`],
+    ],
+  };
+}
+
+async function distributeDenomRewardsParts(
+  l: Lookups,
+  msg: MsgDistributeDenomRewards,
+): Promise<Parts> {
+  const [holders, amount] = await Promise.all([
+    l.token(msg.denom),
+    l.money(msg.prizeDenom, msg.amount),
+  ]);
+  return {
+    level: toUint(msg.amount) === null ? 'unknown' : 'normal',
+    icon: 'rewards',
+    title: 'Pay holder rewards',
+    hero: amount,
+    sub: `to ${holders.symbol} holders`,
+    rows: [
+      ['Holders of', holders.symbol],
+      ['Amount', amount],
+    ],
+  };
+}
+
+// ---- tokenfactory ----
+
+async function mintOrBurnParts(
+  l: Lookups,
+  raw: string,
+  icon: MsgIcon,
+  title: string,
+  sub: string,
+): Promise<Parts> {
+  const coins = parseCoinString(raw);
+  const amount = coins ? await l.coins(coins) : safeText(raw, 200);
+  return {
+    level: coins ? 'normal' : 'unknown',
+    icon,
+    title,
+    hero: amount,
+    sub,
+    rows: [['Amount', amount]],
+  };
+}
+
+async function changeAdminParts(l: Lookups, msg: MsgChangeAdmin): Promise<Parts> {
+  const symbol = (await l.token(msg.denom)).symbol;
+  if (msg.newAdmin === '') {
+    // The chain reads an empty admin as giving the token up; a mintable token stops minting.
+    return {
+      level: 'normal',
+      icon: 'admin',
+      title: 'Give up admin',
+      hero: symbol,
+      sub: 'no one can mint it or change it after this',
+      rows: [
+        ['Token', symbol],
+        ['New admin', 'None'],
+      ],
+    };
+  }
+  return {
+    level: 'normal',
+    icon: 'admin',
+    title: 'Hand over admin',
+    hero: symbol,
+    sub: `to ${l.who(msg.newAdmin)}`,
+    rows: [
+      ['Token', symbol],
+      ['New admin', safeText(msg.newAdmin, 80), 'mono'],
+    ],
+  };
+}
+
+async function setMetadataParts(l: Lookups, msg: MsgSetDenomMetadata): Promise<Parts> {
+  const md = msg.metadata;
+  const current = (await l.token(md.base)).symbol;
+  const unit = md.denomUnits.find((u) => u.denom === md.display);
+  const decimals = unit ? String(unit.exponent) : '?';
+  const name = safeText(md.name, 60);
+  const symbol = safeText(md.symbol, 40);
+  return {
+    level: unit ? 'normal' : 'unknown',
+    icon: 'edit',
+    title: 'Set token details',
+    hero: current,
+    sub: `${name}, ${symbol}, ${decimals} decimals`,
+    rows: [
+      ['Token', safeText(md.base, 80), 'mono'],
+      ['Name', name],
+      ['Symbol', symbol],
+      ['Decimals', decimals],
+      ['Description', safeText(md.description, 200)],
+    ],
+  };
+}
+
+async function setBrandingParts(l: Lookups, msg: MsgSetDenomBranding): Promise<Parts> {
+  const symbol = (await l.token(msg.denom)).symbol;
+  const rows: SummaryRow[] = [['Token', symbol]];
+  if (msg.branding?.font) rows.push(['Font', safeText(msg.branding.font, 60)]);
+  return {
+    level: 'normal',
+    icon: 'edit',
+    title: 'Set brand colours',
+    hero: symbol,
+    sub: 'colours and font of the token',
+    rows,
+  };
+}
+
+// ---- burner ----
+
+async function startRaffleParts(l: Lookups, msg: MsgStartRaffle): Promise<Parts> {
+  const [token, pot, price] = await Promise.all([
+    l.token(msg.denom),
+    l.money(msg.denom, msg.pot),
+    l.money(msg.denom, msg.ticketPrice),
+  ]);
+  const valid =
+    toUint(msg.pot) !== null && toUint(msg.ticketPrice) !== null && toUint(msg.duration) !== null;
+  return {
+    level: valid ? 'normal' : 'unknown',
+    icon: 'raffle',
+    title: 'Start raffle',
+    hero: `${token.symbol} raffle`,
+    sub: `ticket price ${price}`,
+    rows: [
+      ['Pot you add', pot],
+      ['Ticket price', price],
+      ['Duration', daysText(msg.duration)],
+      ['Chances', safeText(msg.chances, 40)],
+      ['Ratio', safeText(msg.ratio, 40)],
+    ],
+  };
+}
+
+// ---- cointrunk ----
+
+function addArticleParts(msg: MsgAddArticle): Parts {
+  const title = safeText(msg.title, 80);
+  return {
+    level: 'normal',
+    icon: 'article',
+    title: 'Publish article',
+    hero: title,
+    sub: safeText(msg.url, 80),
+    rows: [
+      ['Title', safeText(msg.title, 200)],
+      ['Link', safeText(msg.url, 200), 'mono'],
+      ...(msg.picture ? ([['Picture', safeText(msg.picture, 200), 'mono']] as SummaryRow[]) : []),
+    ],
+  };
+}
+
+async function payRespectParts(l: Lookups, msg: MsgPayPublisherRespect): Promise<Parts> {
+  const coins = parseCoinString(msg.amount);
+  const amount = coins ? await l.coins(coins) : safeText(msg.amount, 200);
+  return {
+    level: coins?.length === 1 ? 'normal' : 'unknown',
+    icon: 'send',
+    title: 'Pay respect',
+    hero: amount,
+    sub: `to ${l.who(msg.address)}`,
+    rows: [
+      ['Publisher', safeText(msg.address, 80), 'mono'],
+      ['Amount', amount],
+    ],
+  };
+}
+
+// ---- cosmos and ibc ----
+
+const MAX_OUTPUT_ROWS = 10;
+
+async function multiSendParts(l: Lookups, msg: MsgMultiSend): Promise<Parts> {
+  const totals = new Map<string, bigint>();
+  let valid = msg.outputs.length > 0;
+  for (const out of msg.outputs) {
+    for (const c of out.coins) {
+      const n = toUint(c.amount);
+      if (n === null) valid = false;
+      else totals.set(c.denom, (totals.get(c.denom) ?? 0n) + n);
+    }
+  }
+  const [only] = [...totals];
+  const hero =
+    totals.size === 1 && only
+      ? await l.money(only[0], only[1])
+      : totals.size === 0
+        ? 'No tokens'
+        : `${String(totals.size)} tokens`;
+  const rows: SummaryRow[] = [];
+  for (const out of msg.outputs.slice(0, MAX_OUTPUT_ROWS)) {
+    rows.push([l.who(out.address), await l.coins(out.coins)]);
+  }
+  if (msg.outputs.length > MAX_OUTPUT_ROWS) {
+    rows.push(['…', `${String(msg.outputs.length - MAX_OUTPUT_ROWS)} more`]);
+  }
+  const count = BigInt(msg.outputs.length);
+  return {
+    level: valid ? 'normal' : 'unknown',
+    icon: 'send',
+    title: 'Send',
+    hero,
+    sub: `to ${plural(count, 'address', 'addresses')}`,
+    rows,
+  };
+}
+
+/** A coin field of a staking or IBC message, which may be absent. */
+async function coinText(l: Lookups, coin: Coin | undefined): Promise<string | null> {
+  if (!coin || toUint(coin.amount) === null || coin.denom === '') return null;
+  return l.money(coin.denom, coin.amount);
+}
+
+async function stakingParts(
+  l: Lookups,
+  title: string,
+  coin: Coin | undefined,
+  sub: string,
+  rows: SummaryRow[],
+): Promise<Parts> {
+  const amount = await coinText(l, coin);
+  return {
+    level: amount === null ? 'unknown' : 'normal',
+    icon: 'stake',
+    title,
+    hero: amount ?? 'Unreadable amount',
+    sub,
+    rows: [...rows, ['Amount', amount ?? 'Unreadable amount']],
+  };
+}
+
+function withdrawRewardParts(l: Lookups, msg: MsgWithdrawDelegatorReward): Parts {
+  return {
+    level: 'normal',
+    icon: 'rewards',
+    title: 'Claim staking rewards',
+    hero: 'Your rewards',
+    sub: `from ${l.who(msg.validatorAddress)}`,
+    rows: [['Validator', safeText(msg.validatorAddress, 80), 'mono']],
+  };
+}
+
+async function transferParts(l: Lookups, msg: MsgTransfer): Promise<Parts> {
+  const amount = await coinText(l, msg.token);
+  const channel = safeText(msg.sourceChannel, 40);
+  const rows: SummaryRow[] = [
+    ['To', safeText(msg.receiver, 120), 'mono'],
+    ['Amount', amount ?? 'Unreadable amount'],
+    ['Channel', channel, 'mono'],
+  ];
+  // A memo can tell the other chain to forward the coins on: show it.
+  const memo = memoText(msg.memo);
+  if (memo !== null) rows.push(['Memo', memo]);
+  return {
+    level: amount === null ? 'unknown' : 'normal',
+    icon: 'send',
+    title: 'Send',
+    hero: amount ?? 'Unreadable amount',
+    sub: `to ${l.who(msg.receiver)} via ${channel}`,
+    rows,
+  };
+}
+
 async function partsOf(l: Lookups, msg: AnyMsg): Promise<Parts> {
+  const action = GOVERNANCE.get(msg.typeUrl);
+  if (action !== undefined) return governanceParts(msg.typeUrl, action);
   try {
     switch (msg.typeUrl) {
       case MsgSend.typeUrl:
@@ -736,6 +1313,169 @@ async function partsOf(l: Lookups, msg: AnyMsg): Promise<Parts> {
         return await feeGrantParts(l, MsgGrantAllowance.decode(msg.value));
       case MsgExec.typeUrl:
         return execParts(l, MsgExec.decode(msg.value));
+      case MsgCreateMarket.typeUrl:
+        return await createMarketParts(l, MsgCreateMarket.decode(msg.value));
+      case MsgCreateLiquidityPool.typeUrl:
+        return await createPoolParts(l, MsgCreateLiquidityPool.decode(msg.value));
+      case rewards.MsgJoinStaking.typeUrl:
+        return joinStakingParts(rewards.MsgJoinStaking.decode(msg.value));
+      case rewards.MsgExitStaking.typeUrl: {
+        const { rewardId } = rewards.MsgExitStaking.decode(msg.value);
+        return rewardIdParts(
+          'stake',
+          'Unstake',
+          'Your stake',
+          `from reward ${idText(rewardId)}`,
+          rewardId,
+        );
+      }
+      case rewards.MsgClaimStakingRewards.typeUrl: {
+        const { rewardId } = rewards.MsgClaimStakingRewards.decode(msg.value);
+        return rewardIdParts(
+          'rewards',
+          'Claim rewards',
+          'Your rewards',
+          `from reward ${idText(rewardId)}`,
+          rewardId,
+        );
+      }
+      case rewards.MsgCreateStakingReward.typeUrl:
+        return await createStakingRewardParts(l, rewards.MsgCreateStakingReward.decode(msg.value));
+      case rewards.MsgUpdateStakingReward.typeUrl:
+        return updateStakingRewardParts(rewards.MsgUpdateStakingReward.decode(msg.value));
+      case rewards.MsgDeleteStakingReward.typeUrl: {
+        const { rewardId } = rewards.MsgDeleteStakingReward.decode(msg.value);
+        return rewardIdParts(
+          'rewards',
+          'Delete staking reward',
+          `Reward ${idText(rewardId)}`,
+          'a staking reward you created',
+          rewardId,
+        );
+      }
+      case rewards.MsgDistributeStakingRewards.typeUrl:
+        return distributeStakingRewardsParts(rewards.MsgDistributeStakingRewards.decode(msg.value));
+      case rewards.MsgCreateTradingReward.typeUrl:
+        return await createTradingRewardParts(l, rewards.MsgCreateTradingReward.decode(msg.value));
+      case rewards.MsgActivateTradingReward.typeUrl: {
+        const { rewardId } = rewards.MsgActivateTradingReward.decode(msg.value);
+        return rewardIdParts(
+          'rewards',
+          'Activate trading reward',
+          `Reward ${idText(rewardId)}`,
+          'starts the trading reward',
+          rewardId,
+        );
+      }
+      case rewards.MsgCreateDenomReward.typeUrl: {
+        const { denom } = rewards.MsgCreateDenomReward.decode(msg.value);
+        return await holderParts(
+          l,
+          'rewards',
+          'Create holder reward',
+          denom,
+          'rewards for holders who lock it',
+        );
+      }
+      case rewards.MsgJoinDenomReward.typeUrl:
+        return await joinDenomRewardParts(l, rewards.MsgJoinDenomReward.decode(msg.value));
+      case rewards.MsgExitDenomReward.typeUrl: {
+        const { denom } = rewards.MsgExitDenomReward.decode(msg.value);
+        return await holderParts(l, 'stake', 'Unlock', denom, 'from holder rewards');
+      }
+      case rewards.MsgClaimDenomRewards.typeUrl: {
+        const { denom } = rewards.MsgClaimDenomRewards.decode(msg.value);
+        return await holderParts(
+          l,
+          'rewards',
+          'Claim holder rewards',
+          denom,
+          'your rewards for holding it',
+        );
+      }
+      case rewards.MsgCreateDenomRewardSchedule.typeUrl:
+        return await createScheduleParts(l, rewards.MsgCreateDenomRewardSchedule.decode(msg.value));
+      case rewards.MsgUpdateDenomRewardSchedule.typeUrl:
+        return await updateScheduleParts(l, rewards.MsgUpdateDenomRewardSchedule.decode(msg.value));
+      case rewards.MsgDistributeDenomRewards.typeUrl:
+        return await distributeDenomRewardsParts(
+          l,
+          rewards.MsgDistributeDenomRewards.decode(msg.value),
+        );
+      case factory.MsgCreateDenom.typeUrl: {
+        const subdenom = safeText(factory.MsgCreateDenom.decode(msg.value).subdenom, 60);
+        return {
+          level: 'normal',
+          icon: 'create',
+          title: 'Create token',
+          hero: subdenom,
+          sub: 'you become its admin',
+          rows: [['Subdenom', subdenom, 'mono']],
+        };
+      }
+      case factory.MsgMint.typeUrl:
+        return await mintOrBurnParts(
+          l,
+          factory.MsgMint.decode(msg.value).coins,
+          'create',
+          'Mint',
+          'new tokens, as token admin',
+        );
+      case factory.MsgBurn.typeUrl:
+        return await mintOrBurnParts(
+          l,
+          factory.MsgBurn.decode(msg.value).coins,
+          'burn',
+          'Burn',
+          'as token admin',
+        );
+      case factory.MsgChangeAdmin.typeUrl:
+        return await changeAdminParts(l, factory.MsgChangeAdmin.decode(msg.value));
+      case factory.MsgSetDenomMetadata.typeUrl:
+        return await setMetadataParts(l, factory.MsgSetDenomMetadata.decode(msg.value));
+      case factory.MsgSetDenomBranding.typeUrl:
+        return await setBrandingParts(l, factory.MsgSetDenomBranding.decode(msg.value));
+      case MsgStartRaffle.typeUrl:
+        return await startRaffleParts(l, MsgStartRaffle.decode(msg.value));
+      case MsgMoveIbcLockedCoins.typeUrl: {
+        const { denom } = MsgMoveIbcLockedCoins.decode(msg.value);
+        return await holderParts(l, 'burn', 'Move locked IBC coins', denom, 'to the burner');
+      }
+      case MsgAddArticle.typeUrl:
+        return addArticleParts(MsgAddArticle.decode(msg.value));
+      case MsgPayPublisherRespect.typeUrl:
+        return await payRespectParts(l, MsgPayPublisherRespect.decode(msg.value));
+      case MsgMultiSend.typeUrl:
+        return await multiSendParts(l, MsgMultiSend.decode(msg.value));
+      case MsgDelegate.typeUrl: {
+        const m = MsgDelegate.decode(msg.value);
+        return await stakingParts(l, 'Delegate', m.amount, `to ${l.who(m.validatorAddress)}`, [
+          ['Validator', safeText(m.validatorAddress, 80), 'mono'],
+        ]);
+      }
+      case MsgUndelegate.typeUrl: {
+        const m = MsgUndelegate.decode(msg.value);
+        return await stakingParts(l, 'Undelegate', m.amount, `from ${l.who(m.validatorAddress)}`, [
+          ['Validator', safeText(m.validatorAddress, 80), 'mono'],
+        ]);
+      }
+      case MsgBeginRedelegate.typeUrl: {
+        const m = MsgBeginRedelegate.decode(msg.value);
+        return await stakingParts(
+          l,
+          'Move stake',
+          m.amount,
+          `${l.who(m.validatorSrcAddress)} → ${l.who(m.validatorDstAddress)}`,
+          [
+            ['From', safeText(m.validatorSrcAddress, 80), 'mono'],
+            ['To', safeText(m.validatorDstAddress, 80), 'mono'],
+          ],
+        );
+      }
+      case MsgWithdrawDelegatorReward.typeUrl:
+        return withdrawRewardParts(l, MsgWithdrawDelegatorReward.decode(msg.value));
+      case MsgTransfer.typeUrl:
+        return await transferParts(l, MsgTransfer.decode(msg.value));
       default:
         return unknownParts(msg);
     }

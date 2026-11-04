@@ -33,11 +33,23 @@ const FILES = [
   'bze/burner/tx.ts',
   'bze/tradebin/v2/params.ts',
   'bze/tradebin/tx.ts',
+  'bze/rewards/params.ts',
+  'bze/rewards/tx.ts',
+  'bze/tokenfactory/denom_branding.ts',
+  'bze/tokenfactory/tx.ts',
+  'bze/cointrunk/params.ts',
+  'bze/cointrunk/tx.ts',
+  'ibc/core/client/v1/client.ts',
+  'ibc/applications/transfer/v1/tx.ts',
 ];
 // Trimmed on purpose: the full gov v1 files pull in upgrade, distribution, params
 // and cointrunk proposal types. Only MsgVote and the VoteOption enum are kept.
 const GOV_TX = 'cosmos/gov/v1/tx.ts';
 const GOV = 'cosmos/gov/v1/gov.ts';
+// Trimmed too: the full staking and distribution tx files pull in validator, tendermint and
+// pubkey types. Only the delegation messages and the reward withdrawal are kept.
+const STAKING_TX = 'cosmos/staking/v1beta1/tx.ts';
+const DISTRIBUTION_TX = 'cosmos/distribution/v1beta1/tx.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const out = join(root, 'packages/core/src/proto');
@@ -80,6 +92,14 @@ for (const path of FILES) {
       path,
     );
   }
+  if (path === 'bze/cointrunk/params.ts') {
+    text = replaceOnce(
+      text,
+      'import { Decimal } from "@interchainjs/math";',
+      'import { Decimal } from "../../decimal";',
+      path,
+    );
+  }
   write(path, text);
 }
 
@@ -103,4 +123,49 @@ const govTx = [
   ...tx.slice(implStart, implEnd),
 ].join('\n');
 write(GOV_TX, govTx + '\n');
+
+// A slice of a generated tx file: the interfaces from one doc comment up to another, and the
+// implementations from one createBase function up to another. Keeps the `//@ts-nocheck` line.
+const slice = (path, imports, [ifaceFrom, ifaceTo], [implFrom, implTo]) => {
+  const lines = read(path).split('\n');
+  const iStart = lineIndex(lines, ifaceFrom) - 1;
+  const iEnd = lineIndex(lines, ifaceTo, iStart) - 1;
+  const mStart = lineIndex(lines, implFrom);
+  const mEnd = lineIndex(lines, implTo, mStart);
+  if (lines[0] !== '//@ts-nocheck') throw new Error(`${path}: expected //@ts-nocheck first`);
+  const body = [lines[0], ...imports, ...lines.slice(iStart, iEnd), ...lines.slice(mStart, mEnd)];
+  write(path, body.join('\n') + '\n');
+};
+
+// staking: MsgDelegate, MsgBeginRedelegate, MsgUndelegate and their responses.
+slice(
+  STAKING_TX,
+  [
+    'import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";',
+    'import { Timestamp } from "../../../google/protobuf/timestamp";',
+    'import { BinaryReader, BinaryWriter } from "../../../binary";',
+    'import { GlobalDecoderRegistry } from "../../../registry";',
+    'import { toTimestamp, fromTimestamp } from "../../../helpers";',
+  ],
+  [' * MsgDelegate defines a SDK message', ' * MsgCancelUnbondingDelegation defines'],
+  [
+    'function createBaseMsgDelegate(): MsgDelegate {',
+    'function createBaseMsgCancelUnbondingDelegation()',
+  ],
+);
+
+// distribution: MsgWithdrawDelegatorReward and its response.
+slice(
+  DISTRIBUTION_TX,
+  [
+    'import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";',
+    'import { BinaryReader, BinaryWriter } from "../../../binary";',
+    'import { GlobalDecoderRegistry } from "../../../registry";',
+  ],
+  [' * MsgWithdrawDelegatorReward represents', ' * MsgWithdrawValidatorCommission withdraws'],
+  [
+    'function createBaseMsgWithdrawDelegatorReward(): MsgWithdrawDelegatorReward {',
+    'function createBaseMsgWithdrawValidatorCommission()',
+  ],
+);
 console.log(`copied from @bze/bzejs ${version}`);
