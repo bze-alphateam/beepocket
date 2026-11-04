@@ -642,6 +642,22 @@ describe('connected sites', () => {
     expect(current.ok && current.value.site).toBeNull();
   });
 
+  it.each([
+    ['drops the default port', 'https://x.com', 'https://x.com:443/path', true],
+    ['drops userinfo', 'https://x.com', 'https://u:p@x.com/', true],
+    ['lowercases the host', 'https://dex.getbze.com', 'https://DEX.GetBZE.com/trade', true],
+    ['punycodes an IDN host', 'https://xn--bcher-kva.example', 'https://bücher.example/', true],
+    ['keeps a non-default port distinct', 'https://x.com', 'https://x.com:8443/', false],
+    ['keeps the scheme distinct', 'https://x.com', 'http://x.com/', false],
+    ['keeps a local dev port', 'http://localhost:5173', 'http://localhost:5173/x?y=1', true],
+  ])('the tab url %s before matching', async (_, stored: string, url: string, matches: boolean) => {
+    const t = await rig();
+    await connectSite(t, t.site(stored));
+    t.active.tabs = [{ url }];
+    const current = await t.dapp.sites.current();
+    expect(current.ok && current.value.site?.origin).toBe(matches ? stored : undefined);
+  });
+
   it('there is no current site when the tab query fails', async () => {
     const t = await rig();
     await connectSite(t, t.site());
