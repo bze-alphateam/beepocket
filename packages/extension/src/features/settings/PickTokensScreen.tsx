@@ -161,6 +161,7 @@ export function PickTokensScreen() {
             <PasswordGate
               submitLabel={t('settings.tokens.unlock')}
               labelIcon="lock"
+              hold={selected.length === 0}
               onUnlocked={() => {
                 setNeedsPassword(false);
                 void save();
