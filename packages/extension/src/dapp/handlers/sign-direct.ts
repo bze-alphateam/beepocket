@@ -1,11 +1,18 @@
-import { signDocBytes, withWalletFee } from '@beepocket/core';
+import { feePricing, priceGasOverride, signDocBytes, withWalletFee } from '@beepocket/core';
 import { ErrorCodes, fail, ok, WalletErrorCodes } from '../../protocol';
-import { SendErrorCodes } from '../../protocol/send';
+import { SendErrorCodes, type ReviewedFee } from '../../protocol';
+import { multiplierOf } from '../../features/send/override';
 import type { DappRegistry, DappHandler } from '../registry';
 import { answer, refuse } from '../types';
 import { bigintToWire, bytesToWire, DappErrorCodes } from '../wire';
 import type { TxDeps } from './env';
-import { detailsOf, prepareSign, validateSignParams, type SignParams } from './sign-prepare';
+import {
+  detailsOf,
+  prepareSign,
+  validateSignParams,
+  type Prepared,
+  type SignParams,
+} from './sign-prepare';
 
 /**
  * `signDirect(chainId, signer, signDoc)`: a connected site gets one transaction signed after
@@ -50,13 +57,15 @@ export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
       const reviewed = user.fee;
       if (!reviewed) return fail(ErrorCodes.badRequest, 'dapp.answer needs the reviewed fee.');
       // What was reviewed is what gets signed: the site's fee or one of the wallet's, exactly
-      // as shown. Any other fee goes back to the review.
-      const chosen = p.options.find(
-        (o) =>
-          o.denom === reviewed.denom &&
-          o.amount === reviewed.amount &&
-          o.gasLimit === reviewed.gasLimit,
-      );
+      // as shown, or Advanced settings priced again here. Any other fee goes back to the review.
+      const chosen = reviewed.override
+        ? overrideFee(p, reviewed)
+        : p.options.find(
+            (o) =>
+              o.denom === reviewed.denom &&
+              o.amount === reviewed.amount &&
+              o.gasLimit === reviewed.gasLimit,
+          );
       if (!chosen) {
         return fail(SendErrorCodes.reviewChanged, 'The network fee changed. Review it again.');
       }
@@ -94,6 +103,29 @@ export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
       );
     },
   };
+}
+
+/**
+ * The reviewed fee when its Advanced settings still price to exactly it on this preparation's
+ * simulation and prices, inside the bounds and within the balance; null otherwise.
+ */
+function overrideFee(
+  p: Prepared,
+  reviewed: ReviewedFee,
+): { denom: string; amount: string; gasLimit: string } | null {
+  const { override } = reviewed;
+  const pricing = feePricing(p.feeData, reviewed.denom);
+  if (!override || !pricing || override.gasLimit !== reviewed.gasLimit) return null;
+  const priced = priceGasOverride({
+    pricing,
+    gasUsed: p.gasUsed,
+    gasLimit: BigInt(override.gasLimit),
+    gasPrice: multiplierOf(override.gasPrice),
+    spendable: p.balances.get(reviewed.denom) ?? 0n,
+  });
+  if (priced.status !== 'ok' && priced.status !== 'warn') return null;
+  if (priced.amount.toString() !== reviewed.amount) return null;
+  return { denom: reviewed.denom, amount: reviewed.amount, gasLimit: reviewed.gasLimit };
 }
 
 export function registerSignDirect(registry: DappRegistry, deps: TxDeps): void {

@@ -244,6 +244,7 @@ const SIGN: Extract<RequestView, { status: 'sign' }> = {
     { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
     { denom: 'uother', amount: '500', gasLimit: '300000', symbol: 'OTH', decimals: 6 },
   ],
+  gasUsed: '150000',
 };
 
 function signRig(view: RequestView, extra: Partial<Record<Method, Handler>> = {}) {
@@ -312,6 +313,57 @@ describe('the sign screen', () => {
       approve: true,
       // The picked token's own gas limit, not the default fee's.
       fee: { denom: 'uother', amount: '500', gasLimit: '300000' },
+    });
+  });
+
+  it('approves with the Advanced gas limit and price, and shows them as rows', async () => {
+    const PRICING = {
+      native: true,
+      nativePrice: { num: '1', den: '100' },
+      rate: { num: '1', den: '100' },
+    };
+    const own = { ...SIGN.fee, balance: '100000000', pricing: PRICING };
+    const t = signRig({ ...SIGN, fee: own, options: [own] });
+    await settle();
+    fireEvent(feeRow(t.host), 'click');
+    await settle();
+    fireEvent(
+      [...document.querySelectorAll('button')].find((b) =>
+        b.getAttribute('aria-label')?.startsWith('Advanced'),
+      ),
+      'click',
+    );
+    await settle();
+    const label = [...document.querySelectorAll('label')].find(
+      (l) => l.textContent === 'Gas limit',
+    );
+    const input = document.querySelector<HTMLInputElement>(`#${label?.getAttribute('for') ?? ''}`);
+    if (!input) throw new Error('no gas limit field');
+    input.value = '300000';
+    fireEvent(input, 'input');
+    fireEvent(
+      [...document.querySelectorAll('.bp-gas-prices button')].find((b) => b.textContent === '×3'),
+      'click',
+    );
+    fireEvent(button(document.body, 'Done'), 'click');
+    await settle();
+    const text = t.host.textContent;
+    expect(text).toContain('Custom gas');
+    expect(text).toContain('300,000 · custom');
+    expect(text).toContain('0.03 ubze/gas · ×3');
+    // 300,000 gas x 0.03 = 9,000 ubze.
+    expect(text).toContain('0.009 BZE');
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      approve: true,
+      fee: {
+        denom: 'ubze',
+        amount: '9000',
+        gasLimit: '300000',
+        override: { gasLimit: '300000', gasPrice: 3 },
+      },
     });
   });
 

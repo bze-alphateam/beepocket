@@ -34,6 +34,26 @@ export interface SendDraft {
   denom: string;
 }
 
+/** A gas price pick: the chain minimum (1) or that many times it. BZE has no fee market. */
+export type GasPrice = 1 | 2 | 3;
+
+/**
+ * The user's Advanced settings for one transaction, picked on the fee sheet: the gas limit to
+ * sign and the gas price. Never stored; it applies to the fee token it was picked for.
+ */
+export interface FeeOverride {
+  /** Decimal string. */
+  gasLimit: string;
+  gasPrice: GasPrice;
+}
+
+/** How a fee in one token is priced (core `FeePricing`, its fractions as decimal strings). */
+export interface FeePricingWire {
+  native: boolean;
+  nativePrice: { num: string; den: string };
+  rate: { num: string; den: string };
+}
+
 export interface FeeChoice {
   denom: string;
   /** Base units of `denom`, decimal string. */
@@ -48,6 +68,8 @@ export interface FeeChoice {
   balance?: string;
   /** The origin of the site that set this fee; absent on the wallet's own options. */
   setBy?: string;
+  /** How this token prices a fee, so Advanced can show the fee for any gas limit and price. */
+  pricing?: FeePricingWire;
 }
 
 /** What the review screen shows. Everything here is exactly what `send.submit` signs. */
@@ -64,6 +86,15 @@ export interface SendQuote {
   fee: FeeChoice;
   /** Every token the address can pay this send's fee with, native first. Includes `fee`. */
   options: FeeChoice[];
+  /** What the simulation used, decimal string: Advanced's bounds start from it. */
+  gasUsed: string;
+  /** The Advanced settings `fee` was priced with; absent when it is the wallet's estimate. */
+  override?: FeeOverride;
+  /**
+   * The request's Advanced settings were dropped: this send now needs more gas than that limit
+   * (or the limit is above the new maximum), so `fee` is the estimate again.
+   */
+  overrideReset?: true;
 }
 
 export interface SendPrepareRequest extends SendDraft {
@@ -73,6 +104,8 @@ export interface SendPrepareRequest extends SendDraft {
   max?: boolean;
   /** A fee token picked on the fee sheet; the default rule applies when absent. */
   feeDenom?: string;
+  /** Advanced settings for the fee in `feeDenom`, which must be set with it. */
+  override?: FeeOverride;
 }
 
 /** The reviewed quote, handed back to sign. The amounts are base units. */
@@ -81,6 +114,8 @@ export interface SendSubmitRequest extends SendDraft {
   feeDenom: string;
   feeAmount: string;
   gasLimit: string;
+  /** The quote's `override`: the worker prices it again and signs it only if it still matches. */
+  override?: FeeOverride;
 }
 
 export type TxStatus =

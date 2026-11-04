@@ -4,6 +4,7 @@ import type { SendPrepareRequest, SendSubmitRequest } from '../../protocol/send'
 import type { HandlerDeps } from '../../background/handlers';
 import type { HandlerRegistry } from '../../background/registry';
 import { createTokenResolver } from '../tokens/resolver';
+import { validOverride } from './override';
 import { SendService } from './service';
 
 type Payload = Record<string, unknown>;
@@ -29,6 +30,11 @@ function validatePrepare(payload: unknown): Result<SendPrepareRequest> {
   ) {
     return fail(ErrorCodes.badRequest, 'send.prepare got a malformed request.');
   }
+  // Advanced settings belong to one fee token: they never come without it.
+  const override = p.override === undefined ? undefined : validOverride(p.override);
+  if (override === null || (override !== undefined && p.feeDenom === undefined)) {
+    return fail(ErrorCodes.badRequest, 'send.prepare got a malformed request.');
+  }
   return ok({
     fromIndex: p.fromIndex,
     to: p.to,
@@ -36,6 +42,7 @@ function validatePrepare(payload: unknown): Result<SendPrepareRequest> {
     amount: p.amount,
     ...(p.max === undefined ? {} : { max: p.max }),
     ...(p.feeDenom === undefined ? {} : { feeDenom: p.feeDenom }),
+    ...(override === undefined ? {} : { override }),
   });
 }
 
@@ -53,6 +60,10 @@ function validateSubmit(payload: unknown): Result<SendSubmitRequest> {
   ) {
     return fail(ErrorCodes.badRequest, 'send.submit got a malformed request.');
   }
+  const override = p.override === undefined ? undefined : validOverride(p.override);
+  if (override === null) {
+    return fail(ErrorCodes.badRequest, 'send.submit got a malformed request.');
+  }
   return ok({
     fromIndex: p.fromIndex,
     to: p.to,
@@ -61,6 +72,7 @@ function validateSubmit(payload: unknown): Result<SendSubmitRequest> {
     feeDenom: p.feeDenom,
     feeAmount: p.feeAmount,
     gasLimit: p.gasLimit,
+    ...(override === undefined ? {} : { override }),
   });
 }
 

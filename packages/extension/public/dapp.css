@@ -446,3 +446,14 @@
 .bp-sites-error {
   margin-bottom: 10px;
 }
+
+/* A signed Advanced setting under the fee (Gas limit, Gas price): read-only. */
+.bp-sign-row-static {
+  cursor: default;
+}
+
+.bp-sign-row-value {
+  margin-left: auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

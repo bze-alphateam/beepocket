@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { deriveAccount } from '@beepocket/core';
+import { decodeAuthInfo, decodeTxRaw, deriveAccount } from '@beepocket/core';
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { startDappServer } from './mock-server';
@@ -24,8 +24,8 @@ const fixture = (name: string): unknown =>
   ).body;
 
 /** Plays a BZE node: the main address holds 100 BZE (account 7, sequence 0), gas costs 150,000. */
-async function mockNode(context: BrowserContext): Promise<{ broadcasts: number }> {
-  const node = { broadcasts: 0 };
+async function mockNode(context: BrowserContext): Promise<{ broadcasts: number; txs: string[] }> {
+  const node = { broadcasts: 0, txs: [] as string[] };
   await context.route('https://rest.getbze.com/**', (route) => {
     const url = new URL(route.request().url());
     const notFound = { status: 404, json: { code: 5, message: 'not found', details: [] } };
@@ -62,6 +62,7 @@ async function mockNode(context: BrowserContext): Promise<{ broadcasts: number }
         return route.fulfill({ json: { gas_info: { gas_wanted: '0', gas_used: '150000' } } });
       case '/cosmos/tx/v1beta1/txs':
         node.broadcasts++;
+        node.txs.push((route.request().postDataJSON() as { tx_bytes: string }).tx_bytes);
         return route.fulfill({
           json: {
             tx_response: {
@@ -94,7 +95,7 @@ async function call(page: Page, method: string, payload: unknown): Promise<void>
 
 /** A wallet that is connected to the test dapp, with the dapp open. */
 async function connectedDapp(context: BrowserContext, extensionId: string) {
-  await mockNode(context);
+  const node = await mockNode(context);
   const setup = await context.newPage();
   await setup.goto(`chrome-extension://${extensionId}/popup.html`);
   await call(setup, 'wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE });
@@ -110,6 +111,7 @@ async function connectedDapp(context: BrowserContext, extensionId: string) {
   return {
     dapp,
     setup,
+    node,
     stop: () => {
       server.close();
     },
@@ -343,6 +345,49 @@ test('a site fee far above the estimate shows a warning', async ({ context, exte
     await expect(sign.getByText('This site set a fee about 4× higher than needed')).toBeVisible();
     await sign.getByRole('button', { name: 'Reject' }).click();
     await expect(dapp.getByRole('status')).toHaveText('error rejected');
+  } finally {
+    stop();
+  }
+});
+
+test('Advanced gas limit and price are signed and broadcast exactly as shown', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  const { dapp, node, stop } = await connectedDapp(context, extensionId);
+  try {
+    await dapp.getByLabel('Recipient').fill(RECIPIENT);
+    const [sign] = await Promise.all([
+      context.waitForEvent('page'),
+      dapp.getByRole('button', { name: 'Send 1 BZE' }).click(),
+    ]);
+    // 150,000 simulated: Auto is 225,000 gas. 300,000 gas at 3 × 0.01 ubze is 9,000 ubze.
+    await sign.getByRole('button', { name: /Change fee token/ }).click();
+    await sign.getByRole('button', { name: /^Advanced: gas limit and price/ }).click();
+    await expect(sign.getByRole('textbox', { name: 'Gas limit' })).toHaveValue('225,000');
+    await sign.getByRole('textbox', { name: 'Gas limit' }).fill('300000');
+    await sign.getByRole('radio', { name: /^×3/ }).click();
+    await expect(sign.locator('.bp-gas-fee')).toContainText('0.009 BZE');
+    await sign.getByRole('button', { name: 'Done' }).click();
+
+    const feeRow = sign.getByRole('button', { name: /Change fee token/ });
+    await expect(feeRow).toContainText('Custom gas');
+    await expect(feeRow).toContainText('0.009 BZE');
+    await expect(sign.getByText('300,000 · custom')).toBeVisible();
+    await expect(sign.getByText('0.03 ubze/gas · ×3')).toBeVisible();
+    await sign.getByRole('button', { name: 'Approve' }).click();
+    await expect(dapp.getByRole('status')).toHaveText(`hash ${HASH.toLowerCase()}`);
+
+    const [tx] = node.txs;
+    if (tx === undefined) throw new Error('nothing was broadcast');
+    const { authInfoBytes } = decodeTxRaw(Uint8Array.from(Buffer.from(tx, 'base64')));
+    expect(decodeAuthInfo(authInfoBytes).fee).toEqual({
+      amount: [{ denom: 'ubze', amount: '9000' }],
+      gasLimit: '300000',
+      payer: '',
+      granter: '',
+    });
   } finally {
     stop();
   }

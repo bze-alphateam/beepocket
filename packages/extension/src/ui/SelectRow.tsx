@@ -16,6 +16,8 @@ export interface SelectRowProps {
   subtitle?: string | undefined;
   /** `quiet`: the muted text that fills the left ("Network fee"). */
   caption?: string | undefined;
+  /** `quiet`: a small accent badge on its own line under the caption ("Custom gas"). */
+  badge?: string | undefined;
   /** Before the value: a small `Avatar` (the fee token). */
   valueIcon?: ComponentChildren;
   /** Right, bold, tabular: "8,240.10 BZE", "≈ 0.012 BZE". */
@@ -37,7 +39,12 @@ export function SelectRow({ tone = 'field', ...props }: SelectRowProps) {
       disabled={props.disabled}
       onClick={props.onClick}
     >
-      {props.caption !== undefined && <span class="bp-select-row-caption">{props.caption}</span>}
+      {props.caption !== undefined && (
+        <span class="bp-select-row-caption">
+          {props.caption}
+          {props.badge !== undefined && <span class="bp-select-row-badge">{props.badge}</span>}
+        </span>
+      )}
       {(props.title !== undefined || props.subtitle !== undefined) && (
         <span class="bp-select-row-text">
           {props.title !== undefined && <span class="bp-select-row-title">{props.title}</span>}

@@ -176,3 +176,8 @@
 .bp-sheet:has(.bp-sheet-root) {
   position: static;
 }
+
+/* A sheet's second step: the back arrow's 44 px hit area overhangs the 24 px row on the left. */
+.bp-sheet-head > .bp-sheet-back {
+  margin: -10px -6px -10px -12px;
+}

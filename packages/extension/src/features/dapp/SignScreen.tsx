@@ -1,10 +1,10 @@
-import { NETWORKS, type MsgIcon, type MsgSummary } from '@beepocket/core';
+import { NETWORKS, formatAmount, type MsgIcon, type MsgSummary } from '@beepocket/core';
 import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
 import { WalletErrorCodes, type FeeChoice, type SignView } from '../../protocol';
-import { SendErrorCodes } from '../../protocol/send';
+import { SendErrorCodes, type FeeOverride } from '../../protocol/send';
 import {
   Avatar,
   Banner,
@@ -21,6 +21,7 @@ import {
 } from '../../ui';
 import { useHomeEnv } from '../home/env';
 import { PasswordGate } from '../lock/PasswordGate';
+import { applyOverride, pricingOf, priceText, type AppliedFee } from '../send/Advanced';
 import { feeText } from '../send/format';
 import { feeKey, FeeSheet } from '../send/Sheets';
 import { requestBadge, type Answer } from './answers';
@@ -212,13 +213,20 @@ function Details(props: { view: SignView; index: number | null }) {
   );
 }
 
-/** The warning under the fee row: about the site's fee, when that is the one picked. */
-function feeNote(view: SignView, fee: FeeChoice): { tone: 'amber' | 'info'; text: string } | null {
+/**
+ * The warning under the fee row: about the site's fee, when that is the one picked untouched.
+ * Advanced settings replace the site's fee, so its warnings no longer apply.
+ */
+function feeNote(
+  view: SignView,
+  fee: FeeChoice,
+  custom: boolean,
+): { tone: 'amber' | 'info'; text: string; raise?: true } | null {
   const check = view.siteFee;
   if (!check) return null;
   if (check.status === 'unusable') return { tone: 'info', text: t('dapp.sign.fee.unusable') };
-  if (fee.setBy === undefined) return null;
-  if (check.status === 'gas') return { tone: 'amber', text: t('dapp.sign.fee.gas') };
+  if (fee.setBy === undefined || custom) return null;
+  if (check.status === 'gas') return { tone: 'amber', text: t('dapp.sign.fee.gas'), raise: true };
   if (check.status === 'low') return { tone: 'amber', text: t('dapp.sign.fee.low') };
   if (check.status === 'high') {
     const text =
@@ -240,7 +248,11 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
   const client = useClient();
   useFirstToken();
   const [picked, setPicked] = useState(feeKey(view.fee));
+  /** Advanced settings for the picked fee, this request only. */
+  const [override, setOverride] = useState<FeeOverride | null>(null);
   const [feeOpen, setFeeOpen] = useState(false);
+  /** "Raise gas" opens the sheet on Advanced with this gas limit. */
+  const [prefill, setPrefill] = useState<string | undefined>(undefined);
   // `null`: closed; `'all'`: the whole request; a number: that message.
   const [details, setDetails] = useState<number | 'all' | null>(null);
   const [trusted, setTrusted] = useState(false);
@@ -248,8 +260,12 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
   const [error, setError] = useState<string | null>(null);
 
   // A fee token the signer can no longer pay with falls back to the worker's pick.
-  const fee = view.options.find((o) => feeKey(o) === picked) ?? view.fee;
-  const note = feeNote(view, fee);
+  const base = view.options.find((o) => feeKey(o) === picked) ?? view.fee;
+  const gasUsed = BigInt(view.gasUsed);
+  const spendable = (o: FeeChoice): bigint => BigInt(o.balance ?? '0');
+  const applied: AppliedFee = applyOverride(base, gasUsed, override, spendable(base));
+  const fee = applied.fee;
+  const note = feeNote(view, base, override !== null);
   const { summary } = view;
   const dangerous = summary.level === 'dangerous';
   const count = summary.messages.length;
@@ -264,7 +280,16 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
     const res = await client.call('dapp.answer', {
       id: view.id,
       approve,
-      ...(approve ? { fee: { denom: fee.denom, amount: fee.amount, gasLimit: fee.gasLimit } } : {}),
+      ...(approve
+        ? {
+            fee: {
+              denom: fee.denom,
+              amount: fee.amount,
+              gasLimit: fee.gasLimit,
+              ...(override === null ? {} : { override }),
+            },
+          }
+        : {}),
       ...(approve && dangerous ? { trusted: true } : {}),
     });
     setBusy(false);
@@ -341,6 +366,25 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
   );
 
   const danger = summary.dangers[0];
+  // Advanced settings are signed too: shown as rows under the fee.
+  const pricing = pricingOf(base);
+  const estimate = applied.bounds?.estimate;
+  const gasRows: [string, string][] = [];
+  if (applied.customGas) {
+    gasRows.push([
+      t('send.gas.row'),
+      t('send.gas.row.value', { gas: formatAmount(BigInt(fee.gasLimit), 0) }),
+    ]);
+  }
+  if (pricing && applied.gasPrice !== 1) {
+    gasRows.push([
+      t('send.gas.row.price'),
+      t('send.gas.row.price.value', {
+        price: priceText(pricing, applied.gasPrice),
+        times: applied.gasPrice,
+      }),
+    ]);
+  }
   return (
     <Layout
       header={
@@ -407,12 +451,19 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
             tone="quiet"
             label={t('dapp.sign.fee.change', { fee: feeText(fee) })}
             caption={t('dapp.sign.fee')}
+            badge={override === null ? undefined : t('send.fee.custom')}
             valueIcon={<Avatar label={fee.symbol} src={fee.logo} size={18} />}
             value={`≈ ${feeText(fee)}`}
             onClick={() => {
               setFeeOpen(true);
             }}
           />
+          {gasRows.map(([label, value]) => (
+            <div key={label} class="bp-sign-row bp-sign-row-static">
+              <span class="bp-sign-row-label">{label}</span>
+              <span class="bp-sign-row-value">{value}</span>
+            </div>
+          ))}
           <button
             type="button"
             class="bp-sign-row"
@@ -425,20 +476,70 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
             <Icon name="chevron-right" size={14} strokeWidth={2.2} />
           </button>
         </div>
-        {note && <Banner tone={note.tone}>{note.text}</Banner>}
+        {note && (
+          <Banner tone={note.tone}>
+            {note.raise === true && pricing !== null && estimate !== undefined ? (
+              <span class="bp-gas-raise">
+                <span>{note.text}</span>
+                <Button
+                  variant="chip"
+                  onClick={() => {
+                    setPrefill(estimate.toString());
+                    setFeeOpen(true);
+                  }}
+                >
+                  {t('dapp.sign.fee.raise')}
+                </Button>
+              </span>
+            ) : (
+              note.text
+            )}
+          </Banner>
+        )}
+        {override !== null && base.setBy !== undefined && (
+          <Banner tone="info">
+            {t('dapp.sign.fee.replaced', {
+              site: base.setBy,
+              gas: formatAmount(BigInt(base.gasLimit), 0),
+            })}
+          </Banner>
+        )}
+        {override !== null && applied.status === 'warn' && (
+          <Banner tone="amber">
+            {t('send.gas.warn.long', {
+              gas: formatAmount(BigInt(fee.gasLimit), 0),
+              estimate: formatAmount(estimate ?? 0n, 0),
+            })}
+          </Banner>
+        )}
         {error !== null && <Banner tone="red">{error}</Banner>}
       </main>
       <FeeSheet
         open={feeOpen}
         options={view.options}
-        selected={feeKey(fee)}
+        selected={feeKey(base)}
         onPick={(key) => {
           setPicked(key);
+          setOverride(null);
           setTrusted(false);
           setFeeOpen(false);
         }}
         onClose={() => {
           setFeeOpen(false);
+          setPrefill(undefined);
+        }}
+        advanced={{
+          gasUsed,
+          applied: override,
+          spendable,
+          holder: view.signer.label,
+          prefill,
+          onApply: (o) => {
+            setOverride(o);
+            setTrusted(false);
+            setPrefill(undefined);
+            setFeeOpen(false);
+          },
         }}
       />
     </Layout>

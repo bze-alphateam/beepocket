@@ -86,18 +86,152 @@ function parseGasPrice(amount: string): Rate {
   return { num: BigInt(whole + fraction), den: 10n ** BigInt(fraction.length) };
 }
 
+/** A multiple of the chain's minimum gas price. BZE has no fee market, so only these few. */
+export type GasPriceMultiplier = 1n | 2n | 3n;
+
+/** The gas price picks, lowest first: the chain minimum, then twice and three times it. */
+export const GAS_PRICE_MULTIPLIERS: readonly GasPriceMultiplier[] = [1n, 2n, 3n];
+
+export function isGasPriceMultiplier(x: bigint): x is GasPriceMultiplier {
+  return x === 1n || x === 2n || x === 3n;
+}
+
+/** What pricing a fee in one denom takes: the native gas price and that denom's rate. */
+export interface FeePricing {
+  /** The fee is in the native denom (no swap, no slippage margin). */
+  native: boolean;
+  /** The chain's minimum gas price in the native denom. */
+  nativePrice: Rate;
+  /** The minimum gas price in this denom (the native one converted at the spot ratio). */
+  rate: Rate;
+}
+
+/** The pricing of a fee in `denom`, or null when `denom` cannot pay the fee. */
+export function feePricing(data: FeeData, denom: string): FeePricing | null {
+  const rate = data.rates.get(denom);
+  const nativePrice = data.rates.get(data.nativeDenom);
+  if (!rate || !nativePrice) return null;
+  return { native: denom === data.nativeDenom, nativePrice, rate };
+}
+
 /**
- * The fee in a token for `gas`: the native fee `ceil(gas x nativePrice)` converted at the spot
- * ratio (`rate / nativePrice`), times the slippage margin, rounded up once more.
+ * The fee for `gasLimit` at `multiplier` times the minimum gas price, every step rounded up:
+ * `ceil(gasLimit x price)` in the native denom; in another token that native fee converted at
+ * the spot ratio (`rate / nativePrice`, never multiplied) times the slippage margin. The
+ * wallet's own estimate is this at the estimated gas limit and a multiplier of 1.
  */
-function foreignFee(gas: bigint, nativePrice: Rate, rate: Rate): bigint {
+export function feeAt(
+  pricing: FeePricing,
+  gasLimit: bigint,
+  multiplier: GasPriceMultiplier = 1n,
+): bigint {
+  const { nativePrice, rate } = pricing;
+  if (pricing.native) return ceilDiv(gasLimit * rate.num * multiplier, rate.den);
   // A zero gas price makes every fee zero (and the ratio undefined).
   if (nativePrice.num === 0n) return 0n;
-  const native = ceilDiv(gas * nativePrice.num, nativePrice.den);
+  const native = ceilDiv(gasLimit * nativePrice.num * multiplier, nativePrice.den);
   return ceilDiv(
     native * rate.num * nativePrice.den * FOREIGN_FEE_SLIPPAGE.num,
     rate.den * nativePrice.num * FOREIGN_FEE_SLIPPAGE.den,
   );
+}
+
+/** The wallet's gas limit for a simulation: `ceil(gasUsed x 1.5)`, and x 1.5 again for a fee swap. */
+function estimatedGasLimit(gasUsed: bigint, native: boolean): bigint {
+  const nativeGas = ceilDiv(gasUsed * GAS_HEADROOM.num, GAS_HEADROOM.den);
+  return native
+    ? nativeGas
+    : ceilDiv(nativeGas * FOREIGN_GAS_HEADROOM.num, FOREIGN_GAS_HEADROOM.den);
+}
+
+/** The gas limits a user may pick for a fee: never below `min`, never above `max`. */
+export interface GasLimitBounds {
+  /**
+   * What the simulation used; for a fee in another token the native estimate, because the
+   * simulation leaves out the swap of the fee.
+   */
+  min: bigint;
+  /** The wallet's own gas limit (`estimatedGasLimit`). Below it the transaction may run out. */
+  estimate: bigint;
+  /** Ten times the estimate. */
+  max: bigint;
+}
+
+const MAX_GAS_TIMES = 10n;
+
+export function gasLimitBounds(gasUsed: bigint, native: boolean): GasLimitBounds {
+  const estimate = estimatedGasLimit(gasUsed, native);
+  return {
+    min: native ? gasUsed : estimatedGasLimit(gasUsed, true),
+    estimate,
+    max: estimate * MAX_GAS_TIMES,
+  };
+}
+
+export type QuickGasPick = 'auto' | 'x1.5' | 'x2' | 'x5' | 'max';
+
+/** `n` rounded up to two significant digits: 185,439 → 190,000. */
+function tidyUp(n: bigint): bigint {
+  const step = 10n ** BigInt(Math.max(0, n.toString().length - 2));
+  return ceilDiv(n, step) * step;
+}
+
+/**
+ * The quick picks under the gas limit field. Each multiplies the estimate; x1.5, x2 and x5 are
+ * rounded up to two significant digits and never go above the maximum, which is the last pick
+ * exactly. None is below the minimum, since they all start at the estimate.
+ */
+export function quickGasLimits(bounds: GasLimitBounds): { pick: QuickGasPick; gasLimit: bigint }[] {
+  const times = (num: bigint, den: bigint): bigint => {
+    const tidy = tidyUp(ceilDiv(bounds.estimate * num, den));
+    return tidy > bounds.max ? bounds.max : tidy;
+  };
+  return [
+    { pick: 'auto', gasLimit: bounds.estimate },
+    { pick: 'x1.5', gasLimit: times(3n, 2n) },
+    { pick: 'x2', gasLimit: times(2n, 1n) },
+    { pick: 'x5', gasLimit: times(5n, 1n) },
+    { pick: 'max', gasLimit: bounds.max },
+  ];
+}
+
+/**
+ * What the user's gas limit and price give: `low` below the minimum and `high` above the
+ * maximum (both refused), `afford` when the fee is more than `spendable` (refused), `warn`
+ * below the estimate (allowed: the transaction may run out of gas), `ok` otherwise. The popup
+ * shows it live and the worker runs it again on fresh numbers before it signs.
+ */
+export type GasOverrideStatus = 'ok' | 'warn' | 'low' | 'high' | 'afford';
+
+export interface PricedGasOverride {
+  status: GasOverrideStatus;
+  /** The fee for `gasLimit` at the picked price. */
+  amount: bigint;
+  bounds: GasLimitBounds;
+}
+
+export function priceGasOverride(params: {
+  pricing: FeePricing;
+  /** What the simulation used. */
+  gasUsed: bigint;
+  gasLimit: bigint;
+  gasPrice: GasPriceMultiplier;
+  /** What the fee may take of its token (the balance, less a sent amount in the same token). */
+  spendable: bigint;
+}): PricedGasOverride {
+  const bounds = gasLimitBounds(params.gasUsed, params.pricing.native);
+  const amount = feeAt(params.pricing, params.gasLimit, params.gasPrice);
+  const status: GasOverrideStatus =
+    params.gasLimit < bounds.min
+      ? 'low'
+      : params.gasLimit > bounds.max
+        ? 'high'
+        : amount > params.spendable
+          ? 'afford'
+          : params.gasLimit < bounds.estimate
+            ? 'warn'
+            : 'ok';
+  return { status, amount, bounds };
 }
 
 /**
@@ -194,17 +328,12 @@ export class FeeEstimator {
       this.chain.simulate(simulationTxBytes(params.bodyBytes, params.pubKey, params.sequence)),
       this.feeData(),
     ]);
-    const nativeGas = ceilDiv(simulation.gasUsed * GAS_HEADROOM.num, GAS_HEADROOM.den);
-    const foreignGas = ceilDiv(nativeGas * FOREIGN_GAS_HEADROOM.num, FOREIGN_GAS_HEADROOM.den);
-    const nativePrice = data.rates.get(data.nativeDenom);
-    if (!nativePrice) throw new UnexpectedResponseError('fees.rates', 'no native gas price');
-
     const affordable: FeeOption[] = [];
-    for (const [denom, rate] of data.rates) {
-      const option =
-        denom === data.nativeDenom
-          ? { denom, amount: ceilDiv(nativeGas * rate.num, rate.den), gasLimit: nativeGas }
-          : { denom, amount: foreignFee(foreignGas, nativePrice, rate), gasLimit: foreignGas };
+    for (const denom of data.rates.keys()) {
+      const pricing = feePricing(data, denom);
+      if (!pricing) throw new UnexpectedResponseError('fees.rates', 'no native gas price');
+      const gasLimit = estimatedGasLimit(simulation.gasUsed, pricing.native);
+      const option = { denom, amount: feeAt(pricing, gasLimit), gasLimit };
       if ((params.balances.get(denom) ?? 0n) >= option.amount) affordable.push(option);
     }
     const options = await this.order(affordable, data.nativeDenom);

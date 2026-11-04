@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import {
   BroadcastError,
   HttpStatusError,
+  decodeAuthInfo,
+  decodeTxRaw,
   TransportError,
   txHash,
   NETWORKS,
@@ -196,7 +198,14 @@ const submitFrom = (q: SendQuote) => ({
   feeDenom: q.fee.denom,
   feeAmount: q.fee.amount,
   gasLimit: q.gasLimit,
+  ...(q.override === undefined ? {} : { override: q.override }),
 });
+
+/** The fee the broadcast transaction carries. */
+const sentFee = (txRaw: Uint8Array | undefined) => {
+  if (!txRaw) throw new Error('nothing was sent');
+  return decodeAuthInfo(decodeTxRaw(txRaw).authInfoBytes).fee;
+};
 
 async function quoteOf(s: ReturnType<typeof setup>, over: Record<string, unknown> = {}) {
   const res = await s.call('send.prepare', prepareReq(over));
@@ -546,6 +555,157 @@ describe('send.submit', () => {
       ok: false,
       error: { code: 'invalid-address' },
     });
+  });
+});
+
+describe('Advanced gas limit and price', () => {
+  // 133,333 simulated: the BZE estimate is 200,000 gas for 2,000 ubze at 0.01 ubze per gas.
+  const override = (gasLimit: string, gasPrice = 1) => ({
+    feeDenom: 'ubze',
+    override: { gasLimit, gasPrice },
+  });
+
+  it('prices the picked limit and price and signs exactly that', async () => {
+    const s = setup();
+    const quote = await quoteOf(s, override('300000', 2));
+    // 300,000 gas x 0.02 = 6,000 ubze; the options keep their own estimate.
+    expect(quote.fee).toMatchObject({ denom: 'ubze', amount: '6000', gasLimit: '300000' });
+    expect(quote.gasLimit).toBe('300000');
+    expect(quote.override).toEqual({ gasLimit: '300000', gasPrice: 2 });
+    expect(quote.overrideReset).toBeUndefined();
+    expect(quote.gasUsed).toBe('133333');
+    expect(quote.options[0]).toMatchObject({ amount: '2000', gasLimit: '200000' });
+    expect(quote.options[0]?.pricing).toEqual({
+      native: true,
+      nativePrice: { num: '1', den: '100' },
+      rate: { num: '1', den: '100' },
+    });
+
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+    expect(sentFee(s.sent[0])).toEqual({
+      amount: [{ denom: 'ubze', amount: '6000' }],
+      gasLimit: '300000',
+      payer: '',
+      granter: '',
+    });
+  });
+
+  it('allows a limit between the simulation and the estimate, refuses one below it', async () => {
+    const s = setup();
+    const low = await quoteOf(s, override('133333'));
+    expect(low.fee).toMatchObject({ amount: '1334', gasLimit: '133333' });
+    expect(await s.call('send.submit', submitFrom(low))).toMatchObject({ ok: true });
+    const below = await quoteOf(s, override('133332'));
+    // Below the simulation the settings are dropped: the estimate comes back, flagged.
+    expect(below.overrideReset).toBe(true);
+    expect(below.override).toBeUndefined();
+    expect(below.fee).toMatchObject({ amount: '2000', gasLimit: '200000' });
+  });
+
+  it('drops a limit above ten times the estimate', async () => {
+    const s = setup();
+    expect((await quoteOf(s, override('2000000'))).override).toBeDefined();
+    const above = await quoteOf(s, override('2000001'));
+    expect(above).toMatchObject({ overrideReset: true, gasLimit: '200000' });
+  });
+
+  it('drops the limit when the fresh simulation needs more, and signs nothing on submit', async () => {
+    const s = setup();
+    const quote = await quoteOf(s, override('140000'));
+    expect(quote.fee).toMatchObject({ amount: '1400', gasLimit: '140000' });
+    s.control.gasUsed = 150_000n;
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
+      ok: false,
+      error: { code: 'review-changed' },
+    });
+    expect(s.calls.sign).toBe(0);
+    const again = await quoteOf(s, override('140000'));
+    expect(again).toMatchObject({ overrideReset: true, gasLimit: '225000' });
+  });
+
+  it('signs nothing for a fee or a limit the settings do not price to', async () => {
+    const s = setup();
+    const quote = await quoteOf(s, override('300000', 3));
+    expect(quote.fee.amount).toBe('9000');
+    for (const tampered of [
+      { ...submitFrom(quote), feeAmount: '8999' },
+      { ...submitFrom(quote), gasLimit: '300001' },
+      { ...submitFrom(quote), override: { gasLimit: '300000', gasPrice: 2 } },
+    ]) {
+      expect(await s.call('send.submit', tampered)).toMatchObject({
+        ok: false,
+        error: { code: 'review-changed' },
+      });
+    }
+    expect(s.calls.sign).toBe(0);
+  });
+
+  it('drops settings whose fee the address cannot pay next to the amount', async () => {
+    // 1 BZE sent out of 1.05: 50,000 ubze are left for the fee; 2,000,000 gas x 0.03 is 60,000.
+    const s = setup({ balances: { ubze: 1_050_000n } });
+    const fits = await quoteOf(s, override('2000000', 2));
+    expect(fits.fee).toMatchObject({ amount: '40000', gasLimit: '2000000' });
+    const above = await quoteOf(s, override('2000000', 3));
+    expect(above).toMatchObject({ overrideReset: true, gasLimit: '200000' });
+    expect(above.fee.amount).toBe('2000');
+    expect(above.override).toBeUndefined();
+  });
+
+  it('drops the settings when a larger amount leaves too little for their fee', async () => {
+    // 40,000 ubze for the fee fits next to 1 BZE out of 1.05, not next to 1.02.
+    const s = setup({ balances: { ubze: 1_050_000n } });
+    const settings = override('2000000', 2);
+    expect((await quoteOf(s, { amount: '1', ...settings })).override).toEqual(settings.override);
+    const larger = await quoteOf(s, { amount: '1.02', ...settings });
+    expect(larger).toMatchObject({ overrideReset: true, gasLimit: '200000', amount: '1020000' });
+    expect(larger.fee).toMatchObject({ amount: '2000', gasLimit: '200000' });
+  });
+
+  it('sends max less the custom fee', async () => {
+    const s = setup({ balances: { ubze: 10_000_000n } });
+    const quote = await quoteOf(s, { max: true, ...override('300000') });
+    expect(quote.fee.amount).toBe('3000');
+    expect(quote.amount).toBe('9997000');
+  });
+
+  it('prices a fee in another token at the picked price', async () => {
+    // Pool 21,000 BZE / 50,000 VDL. 300,000 gas x 0.02 = 6,000 ubze -> 15,715 uvdl with 10%.
+    const s = setup({ balances: { ubze: 100_000_000n, [FACTORY]: 100_000_000n } });
+    const quote = await quoteOf(s, {
+      feeDenom: FACTORY,
+      override: { gasLimit: '300000', gasPrice: 2 },
+    });
+    expect(quote.fee).toMatchObject({ denom: FACTORY, amount: '15715', gasLimit: '300000' });
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+    expect(sentFee(s.sent[0])).toEqual({
+      amount: [{ denom: FACTORY, amount: '15715' }],
+      gasLimit: '300000',
+      payer: '',
+      granter: '',
+    });
+  });
+
+  it('refuses settings without their fee token and malformed ones', async () => {
+    const s = setup();
+    for (const bad of [
+      { override: { gasLimit: '300000', gasPrice: 1 } },
+      { feeDenom: 'ubze', override: { gasLimit: '300000', gasPrice: 4 } },
+      { feeDenom: 'ubze', override: { gasLimit: '0', gasPrice: 1 } },
+      { feeDenom: 'ubze', override: { gasLimit: '1.5', gasPrice: 1 } },
+      { feeDenom: 'ubze', override: { gasLimit: 300000, gasPrice: 1 } },
+    ]) {
+      expect(await s.call('send.prepare', prepareReq(bad))).toMatchObject({
+        ok: false,
+        error: { code: 'bad_request' },
+      });
+    }
+    const quote = await quoteOf(s, override('300000'));
+    expect(
+      await s.call('send.submit', {
+        ...submitFrom(quote),
+        override: { gasLimit: '300000', gasPrice: 9 },
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'bad_request' } });
   });
 });
 

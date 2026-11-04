@@ -279,3 +279,197 @@
   flex-direction: column;
   gap: 8px;
 }
+
+/* W-Fee Advanced: the row that opens it, and its step (gas limit, quick picks, gas price). */
+.bp-gas-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 2px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--bp-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bp-gas-row > .bp-icon {
+  color: var(--bp-muted);
+}
+
+.bp-gas-row-title {
+  flex: 1;
+}
+
+.bp-gas-row-hint {
+  color: var(--bp-muted);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-gas-row-custom {
+  color: var(--bp-accent-text);
+}
+
+.bp-gas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bp-gas-token {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  margin-bottom: 2px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--bp-line);
+  border-radius: 12px;
+  background: var(--bp-inset);
+}
+
+.bp-gas-token-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.bp-gas-token-text > span {
+  overflow: hidden;
+  color: var(--bp-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bp-gas-limit {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* "Use the site's N" sits on the label row, right. */
+.bp-gas-reset {
+  position: absolute;
+  top: -6px;
+  right: 0;
+  z-index: 1;
+  font-size: 12px;
+}
+
+.bp-gas-warn .bp-field-box {
+  border-color: var(--bp-warn-line);
+}
+
+.bp-gas-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.bp-gas-note > .bp-icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.bp-gas-warn.bp-gas-note,
+.bp-gas-warn .bp-gas-note {
+  color: var(--bp-warn-text);
+}
+
+.bp-gas-picks {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.bp-gas-prices {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bp-gas .bp-gas-pick {
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-color: var(--bp-line-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--bp-text);
+}
+
+.bp-gas .bp-gas-pick[aria-pressed='true'],
+.bp-gas .bp-gas-pick[aria-checked='true'] {
+  border-color: var(--bp-soft-line);
+  background: var(--bp-soft);
+  color: var(--bp-accent-text);
+}
+
+.bp-gas .bp-gas-pick:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bp-gas-price-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  margin-top: 4px;
+  color: var(--bp-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-gas-price-head > span:first-child {
+  color: var(--bp-muted);
+  font-weight: 600;
+}
+
+.bp-gas-fee {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bp-inset);
+  font-size: 13px;
+}
+
+.bp-gas-fee > span:first-child {
+  flex: 1;
+  color: var(--bp-muted);
+}
+
+.bp-gas-fee > strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.bp-gas-copy {
+  color: var(--bp-faint);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* "This site set too little gas" with its Raise gas button. */
+.bp-gas-raise {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bp-gas-raise > span {
+  flex: 1;
+}
