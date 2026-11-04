@@ -1,4 +1,5 @@
 import {
+  feePricing,
   minimumFee,
   rawJson,
   summarise,
@@ -18,6 +19,7 @@ import {
   type SiteFeeCheck,
 } from '../../protocol';
 import { validContact } from '../../features/address-book/contact';
+import { pricingToWire } from '../../features/send/override';
 import type { ProfileAddress } from '../../features/wallet/profile';
 import { refuse, type Outcome, type PendingRequest } from '../types';
 import { bigintFromWire, bytesFromWire, DappErrorCodes } from '../wire';
@@ -116,6 +118,12 @@ export interface Prepared {
   /** What was made of the site's fee; null when the request carried none. */
   siteFee: SiteFeeCheck | null;
   locked: boolean;
+  /** What the simulation used. */
+  gasUsed: bigint;
+  /** The fee prices right now, for pricing Advanced settings. */
+  feeData: FeeData;
+  /** The signer's balances right now. */
+  balances: Map<string, bigint>;
 }
 
 export type Preparation =
@@ -141,6 +149,12 @@ function toChoices(estimate: FeeEstimate, infos: Map<string, FeeChoice>): FeeCho
     const info = infos.get(o.denom);
     return info ? [{ ...info, amount: o.amount.toString(), gasLimit: o.gasLimit.toString() }] : [];
   });
+}
+
+/** A fee token's display data with its pricing, so Advanced can price any gas limit. */
+function withPricing(info: FeeChoice, data: FeeData): FeeChoice {
+  const pricing = feePricing(data, info.denom);
+  return pricing ? { ...info, pricing: pricingToWire(pricing) } : info;
 }
 
 /** The fee the site put in the auth info, as it came: null for none, an empty or a zero one. */
@@ -286,7 +300,7 @@ export async function prepareSign(
     () =>
       Promise.all([
         env.fees.estimate({ bodyBytes, pubKey, sequence: account.sequence, balances }),
-        siteFee ? env.fees.feeData() : Promise.resolve(null),
+        env.fees.feeData(),
       ]),
     simulationMessage,
   );
@@ -300,27 +314,27 @@ export async function prepareSign(
   if (siteDenom !== undefined) denoms.add(siteDenom);
   for (const denom of denoms) {
     const info = await feeTokenInfo(env, denom);
-    if (info) infos.set(denom, info);
+    const balance = (balances.get(denom) ?? 0n).toString();
+    if (info) infos.set(denom, withPricing({ ...info, balance }, feeData));
   }
   const walletOptions = toChoices(estimate, infos);
   const walletDefault = walletOptions.find((o) => o.denom === estimate.default) ?? walletOptions[0];
 
   // The site's fee is signed as it came unless it cannot be paid; the wallet's own options
   // stay on the fee sheet either way.
-  const site =
-    siteFee && feeData
-      ? checkSiteFee(
-          siteFee,
-          request.origin,
-          feeData,
-          balances,
-          siteDenom === undefined ? undefined : infos.get(siteDenom),
-          {
-            walletAmount: estimate.options.find((o) => o.denom === siteDenom)?.amount,
-            gasUsed: estimate.gasUsed,
-          },
-        )
-      : null;
+  const site = siteFee
+    ? checkSiteFee(
+        siteFee,
+        request.origin,
+        feeData,
+        balances,
+        siteDenom === undefined ? undefined : infos.get(siteDenom),
+        {
+          walletAmount: estimate.options.find((o) => o.denom === siteDenom)?.amount,
+          gasUsed: estimate.gasUsed,
+        },
+      )
+    : null;
   const options = site?.option ? [site.option, ...walletOptions] : walletOptions;
   const defaultFee = site?.option ?? walletDefault;
   if (!defaultFee) {
@@ -353,6 +367,9 @@ export async function prepareSign(
       defaultFee,
       siteFee: site?.check ?? null,
       locked: state !== 'unlocked',
+      gasUsed: estimate.gasUsed,
+      feeData,
+      balances,
     },
   };
 }
@@ -368,5 +385,6 @@ export function detailsOf(p: Prepared): SignDetails {
     fee: p.defaultFee,
     options: p.options,
     ...(p.siteFee ? { siteFee: p.siteFee } : {}),
+    gasUsed: p.gasUsed.toString(),
   };
 }

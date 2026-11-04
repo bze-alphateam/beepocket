@@ -9,13 +9,16 @@ import {
   buildAuthInfo,
   buildBody,
   encodeMsgSend,
+  feePricing,
   isBzeAddress,
   parseAmount,
+  priceGasOverride,
   signDocBytes,
   txHash,
   txRawBytes,
   type ChainClient,
   type Clock,
+  type FeeData,
   type FeeEstimate,
   type FeeEstimator,
   type Network,
@@ -25,12 +28,14 @@ import { ErrorCodes, fail, ok, type Result } from '../../protocol';
 import { SendErrorCodes } from '../../protocol/send';
 import type {
   FeeChoice,
+  FeeOverride,
   SendPrepareRequest,
   SendQuote,
   SendSubmitRequest,
   TxStatus,
 } from '../../protocol/send';
 import { WalletErrorCodes, type WalletAddress, type WalletState } from '../../protocol/wallet';
+import { multiplierOf, pricingToWire } from './override';
 
 /** The slice of the wallet service the send flow signs through. */
 export interface SendWallet {
@@ -46,7 +51,7 @@ export interface SendWallet {
 export interface SendDeps {
   network: Pick<Network, 'chainId' | 'scan'>;
   chain: Pick<ChainClient, 'account' | 'balances' | 'broadcast' | 'waitForTx'>;
-  fees: Pick<FeeEstimator, 'estimate'>;
+  fees: Pick<FeeEstimator, 'estimate' | 'feeData'>;
   tokens: { resolve(denom: string): Promise<TokenInfo> };
   wallet: SendWallet;
   clock: Clock;
@@ -62,6 +67,8 @@ const SIMULATION_PUBKEY = Uint8Array.from([2, ...new Array<number>(32).fill(1)])
 const MAX_PASSES = 5;
 const TX_HASH = /^[0-9A-Fa-f]{64}$/;
 const BASE_UNITS = /^\d{1,60}$/;
+const CANNOT_PAY = "This address can't pay the network fee.";
+const TOO_LITTLE = 'This address holds too little for this fee.';
 
 interface Context {
   from: WalletAddress;
@@ -137,14 +144,16 @@ export class SendService {
     }
 
     const pubKey = await this.pubKeyForSimulation(ctx);
+    const data = await guarded(() => this.deps.fees.feeData());
+    if (!data.ok) return data;
     // `typed` is null exactly for max, which starts from the whole balance.
     let amount = typed ?? balance;
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       const estimate = await this.estimate(ctx, pubKey, req, amount);
       if (!estimate.ok) return estimate;
-      const priced = await this.price(estimate.value, ctx, req, amount, typed === null);
+      const priced = await this.price(estimate.value, data.value, ctx, req, amount, typed === null);
       if (!priced.ok) return priced;
-      const { fee, options } = priced.value;
+      const { fee, options, override, reset } = priced.value;
       const settled =
         typed === null && fee.denom === req.denom ? balance - BigInt(fee.amount) : amount;
       if (settled <= 0n) {
@@ -169,6 +178,9 @@ export class SendService {
         gasLimit: fee.gasLimit,
         fee,
         options,
+        gasUsed: estimate.value.gasUsed.toString(),
+        ...(override === undefined ? {} : { override }),
+        ...(reset ? { overrideReset: true as const } : {}),
       });
     }
     return fail(SendErrorCodes.reviewChanged, 'The fee keeps changing. Try again.');
@@ -230,11 +242,34 @@ export class SendService {
     );
     if (!estimate.ok) return estimate;
     const current = estimate.value.options.find((o) => o.denom === req.feeDenom);
-    if (!current)
-      return fail(SendErrorCodes.cannotPayFee, "This address can't pay the network fee.");
+    if (!current) return fail(SendErrorCodes.cannotPayFee, CANNOT_PAY);
+    const gasLimit = BigInt(req.gasLimit);
+    const changed = fail(SendErrorCodes.reviewChanged, 'The network fee changed. Review it again.');
     // What was reviewed is what gets signed: any other fee goes back to the review screen.
-    if (current.amount !== reviewedFee || current.gasLimit !== BigInt(req.gasLimit)) {
-      return fail(SendErrorCodes.reviewChanged, 'The network fee changed. Review it again.');
+    if (req.override === undefined) {
+      if (current.amount !== reviewedFee || current.gasLimit !== gasLimit) return changed;
+    } else {
+      // Advanced settings are priced again on the fresh simulation, never taken from the popup.
+      const data = await guarded(() => this.deps.fees.feeData());
+      if (!data.ok) return data;
+      const pricing = feePricing(data.value, req.feeDenom);
+      if (!pricing) return fail(SendErrorCodes.cannotPayFee, CANNOT_PAY);
+      const priced = priceGasOverride({
+        pricing,
+        gasUsed: estimate.value.gasUsed,
+        gasLimit: BigInt(req.override.gasLimit),
+        gasPrice: multiplierOf(req.override.gasPrice),
+        spendable: feeHeld - (req.feeDenom === req.denom ? amount : 0n),
+      });
+      if (
+        priced.status === 'low' ||
+        priced.status === 'high' ||
+        priced.status === 'afford' ||
+        priced.amount !== reviewedFee ||
+        BigInt(req.override.gasLimit) !== gasLimit
+      ) {
+        return changed;
+      }
     }
 
     const authInfoBytes = buildAuthInfo({
@@ -242,7 +277,7 @@ export class SendService {
       sequence: ctx.sequence,
       fee: {
         amount: [{ denom: req.feeDenom, amount: reviewedFee.toString() }],
-        gasLimit: current.gasLimit,
+        gasLimit,
       },
     });
     const signature = await this.deps.wallet.signDirect(
@@ -366,16 +401,21 @@ export class SendService {
   /**
    * The fee tokens this send can really pay with. The estimator only checks that the fee fits
    * the balance; when the fee is paid in the token being sent, the amount has to fit as well.
+   * Advanced settings for the picked token replace its fee when they still fit this send; a
+   * limit the fresh simulation no longer allows is dropped (`reset`).
    */
   private async price(
     estimate: FeeEstimate,
+    data: FeeData,
     ctx: Context,
     req: SendPrepareRequest,
     amount: bigint,
     max: boolean,
-  ): Promise<Result<{ fee: FeeChoice; options: FeeChoice[] }>> {
+  ): Promise<
+    Result<{ fee: FeeChoice; options: FeeChoice[]; override?: FeeOverride; reset: boolean }>
+  > {
     if (estimate.options.length === 0) {
-      return fail(SendErrorCodes.cannotPayFee, "This address can't pay the network fee.");
+      return fail(SendErrorCodes.cannotPayFee, CANNOT_PAY);
     }
     const balance = ctx.balances.get(req.denom) ?? 0n;
     const affordable = estimate.options.filter(
@@ -388,6 +428,7 @@ export class SendService {
     for (const o of affordable) {
       // An option whose token cannot be read is left out: its fee could not be shown right.
       const info = await this.token(o.denom);
+      const pricing = feePricing(data, o.denom);
       if (info.ok) {
         options.push({
           denom: o.denom,
@@ -397,6 +438,7 @@ export class SendService {
           decimals: info.value.decimals,
           logo: info.value.logo,
           balance: (ctx.balances.get(o.denom) ?? 0n).toString(),
+          ...(pricing ? { pricing: pricingToWire(pricing) } : {}),
         });
       }
     }
@@ -405,7 +447,31 @@ export class SendService {
     const fee =
       wanted.map((d) => options.find((o) => o.denom === d)).find((o) => o !== undefined) ??
       options[0];
-    if (!fee) return fail(SendErrorCodes.cannotPayFee, "This address can't pay the network fee.");
-    return ok({ fee, options });
+    if (!fee) return fail(SendErrorCodes.cannotPayFee, CANNOT_PAY);
+    const { override } = req;
+    const pricing = feePricing(data, fee.denom);
+    if (override === undefined || fee.denom !== req.feeDenom || !pricing) {
+      return ok({ fee, options, reset: override !== undefined });
+    }
+    const held = ctx.balances.get(fee.denom) ?? 0n;
+    // A max send in the fee's own token sends what the fee leaves, so only one unit must stay.
+    const sent = fee.denom === req.denom ? (max ? 1n : amount) : 0n;
+    const priced = priceGasOverride({
+      pricing,
+      gasUsed: estimate.gasUsed,
+      gasLimit: BigInt(override.gasLimit),
+      gasPrice: multiplierOf(override.gasPrice),
+      spendable: held - sent,
+    });
+    if (priced.status === 'afford') return fail(SendErrorCodes.cannotPayFee, TOO_LITTLE);
+    if (priced.status === 'low' || priced.status === 'high')
+      return ok({ fee, options, reset: true });
+    const custom: FeeChoice = {
+      ...fee,
+      amount: priced.amount.toString(),
+      gasLimit: override.gasLimit,
+    };
+    // The options keep their own fees: Advanced starts from the picked one's estimate.
+    return ok({ fee: custom, options, override, reset: false });
   }
 }

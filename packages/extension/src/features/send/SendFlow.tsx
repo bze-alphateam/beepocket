@@ -9,7 +9,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { BookMatch, TokenBalances, WalletAddress } from '../../protocol';
-import { SendErrorCodes, type SendQuote } from '../../protocol/send';
+import { SendErrorCodes, type FeeOverride, type SendQuote } from '../../protocol/send';
 import { WalletErrorCodes } from '../../protocol/wallet';
 import { useClient } from '../../popup/client-context';
 import { Layout } from '../../popup/Layout';
@@ -29,6 +29,7 @@ import {
   Spinner,
 } from '../../ui';
 import { AddressBookSheet } from '../address-book';
+import { quoteAdvanced } from './Advanced';
 import { useSendEnv } from './env';
 import { errorText, exact, feeText, plainAmount } from './format';
 import { PendingScreen, ResultScreen, ReviewScreen, matchLabel, type Outcome } from './Screens';
@@ -177,6 +178,10 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
   const [max, setMax] = useState(false);
   /** The fee token the user picked on the form; null lets the default rule choose. */
   const [feeDenom, setFeeDenom] = useState<string | null>(null);
+  /** Advanced settings for `feeDenom`, this send only; null for the estimate. */
+  const [override, setOverride] = useState<FeeOverride | null>(null);
+  /** The worker dropped the settings: this send now needs more gas than that limit. */
+  const [overrideReset, setOverrideReset] = useState(false);
   const [match, setMatch] = useState<BookMatch | null>(null);
   /** The form's fee estimate: display only, never signed. */
   const [estimate, setEstimate] = useState<SendQuote | null>(null);
@@ -229,7 +234,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
     isBzeAddress(target) &&
     (max || (typed !== '' && amountProblem === null));
   const draftKey = ready
-    ? JSON.stringify([fromIndex, target, max ? '' : typed, max, feeDenom])
+    ? JSON.stringify([fromIndex, target, max ? '' : typed, max, feeDenom, override])
     : null;
 
   const request = () => ({
@@ -239,6 +244,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
     amount: typed,
     ...(max ? { max: true } : {}),
     ...(feeDenom === null ? {} : { feeDenom }),
+    ...(override === null ? {} : { override }),
   });
 
   // The form's fee row: debounced, only on the form, and only the newest answer is kept.
@@ -257,6 +263,10 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
           return;
         }
         setEstimate(res.value);
+        if (res.value.overrideReset === true) {
+          setOverride(null);
+          setOverrideReset(true);
+        }
         // Max paid in the same token: show what will really be sent.
         if (max) setAmount(plainAmount(BigInt(res.value.amount), token.decimals));
       });
@@ -278,6 +288,10 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       return;
     }
     setQuote(res.value);
+    if (res.value.overrideReset === true) {
+      setOverride(null);
+      setOverrideReset(true);
+    }
     setChanged(false);
     setStep({ kind: 'review' });
   };
@@ -300,6 +314,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       feeDenom: quote.fee.denom,
       feeAmount: quote.fee.amount,
       gasLimit: quote.fee.gasLimit,
+      ...(quote.override === undefined ? {} : { override: quote.override }),
     });
     setBusy(false);
     if (!sent.ok) {
@@ -315,6 +330,10 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
         if (again.ok) {
           setQuote(again.value);
           setChanged(true);
+          if (again.value.overrideReset === true) {
+            setOverride(null);
+            setOverrideReset(true);
+          }
         } else setError(again.error);
       } else {
         finish({ kind: 'failed', message: errorText(sent.error, quote.token.symbol) });
@@ -394,6 +413,8 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       >
         <ReviewScreen
           quote={quote}
+          advanced={quoteAdvanced(quote)}
+          reset={quote.overrideReset === true}
           fromLabel={labelOf(quote.from.index)}
           toLabel={matchLabel(match)}
           locked={locked}
@@ -419,6 +440,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
   const formError =
     error !== null && !AMOUNT_ERRORS.includes(error.code) ? errorText(error, token.symbol) : null;
   const shownFee = estimate?.fee ?? null;
+  const advanced = estimate ? quoteAdvanced(estimate) : null;
   const feeShort = shownFee === null ? '' : feeText(shownFee);
   const feeValue =
     shownFee !== null
@@ -552,6 +574,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
           tone="quiet"
           label={shownFee === null ? t('send.fee.row.empty') : t('send.fee.row', { fee: feeShort })}
           caption={t('send.review.fee')}
+          badge={estimate?.override ? t('send.fee.custom') : undefined}
           valueIcon={shownFee && <Avatar label={shownFee.symbol} src={shownFee.logo} size={18} />}
           value={feeValue}
           disabled={estimate === null}
@@ -559,6 +582,13 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
             setSheet('fee');
           }}
         />
+        {advanced?.warn === true && (
+          <p class="bp-gas-note bp-gas-warn" role="status">
+            <Icon name="alert-triangle" size={14} />
+            <span>{t('send.gas.warn.row')}</span>
+          </p>
+        )}
+        {overrideReset && <Banner tone="amber">{t('send.fee.reset')}</Banner>}
         {estimateError !== null && (
           <Banner tone="red">{errorText(estimateError, token.symbol)}</Banner>
         )}
@@ -574,6 +604,9 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
         onPick={(i) => {
           setFromIndex(i);
           setMax(false);
+          // New balances and fee tokens: Advanced settings start over.
+          setOverride(null);
+          setOverrideReset(false);
           setSheet('none');
         }}
         onClose={() => {
@@ -587,7 +620,24 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
           selected={estimate.fee.denom}
           onPick={(d) => {
             setFeeDenom(d);
+            setOverride(null);
+            setOverrideReset(false);
             setSheet('none');
+          }}
+          advanced={{
+            gasUsed: BigInt(estimate.gasUsed),
+            applied: estimate.override ?? null,
+            // A fee in the sent token leaves room for the amount (max keeps one unit).
+            spendable: (o) =>
+              BigInt(o.balance ?? '0') -
+              (o.denom === token.denom ? (max ? 1n : BigInt(estimate.amount)) : 0n),
+            holder: labelOf(fromIndex),
+            onApply: (o) => {
+              setFeeDenom(estimate.fee.denom);
+              setOverride(o);
+              setOverrideReset(false);
+              setSheet('none');
+            },
           }}
           onClose={() => {
             setSheet('none');

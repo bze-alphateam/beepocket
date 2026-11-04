@@ -219,6 +219,7 @@ const SIGN: Extract<RequestView, { status: 'sign' }> = {
     { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
     { denom: 'uother', amount: '500', gasLimit: '300000', symbol: 'OTH', decimals: 6 },
   ],
+  gasUsed: '150000',
 };
 
 function signRig(view: RequestView, extra: Partial<Record<Method, Handler>> = {}) {

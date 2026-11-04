@@ -23,6 +23,9 @@ export const dapp = {
   'dapp.sign.fee.high': 'This site set a fee about {times}× higher than needed',
   'dapp.sign.fee.higher': 'This site set a fee higher than needed',
   'dapp.sign.fee.gas': 'This site set too little gas; the transaction may fail',
+  'dapp.sign.fee.raise': 'Raise gas',
+  'dapp.sign.fee.replaced':
+    'You changed the fee {site} set (gas {gas}). BeePocket priced it for your settings.',
   'dapp.sign.fee.unusable': "The site's fee couldn't be used, so BeePocket picked its own",
   'dapp.sign.memo': 'Memo',
   'dapp.sign.details': 'Message details',

@@ -18,7 +18,7 @@ export interface FieldProps {
   autoFocus?: boolean | undefined;
   /** Autofill hint; defaults to `off`. */
   autoComplete?: string | undefined;
-  inputMode?: 'text' | 'decimal' | undefined;
+  inputMode?: 'text' | 'decimal' | 'numeric' | undefined;
   maxLength?: number | undefined;
   /** Inside the box after the input: an icon button, a suffix like "BZE", a chip like MAX. */
   trailing?: ComponentChildren;

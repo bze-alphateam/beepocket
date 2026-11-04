@@ -1,5 +1,5 @@
 import type { NetworkId, TxSummary } from '@beepocket/core';
-import type { FeeChoice } from './send';
+import type { FeeChoice, FeeOverride } from './send';
 
 /** The fee the user saw. The worker signs it only if it still prices the same. */
 export interface ReviewedFee {
@@ -7,6 +7,11 @@ export interface ReviewedFee {
   /** Base units, decimal string. */
   amount: string;
   gasLimit: string;
+  /**
+   * Set when the user changed the gas limit or price in Advanced: the worker prices this again
+   * on a fresh simulation instead of matching one of the options.
+   */
+  override?: FeeOverride;
 }
 
 /** What the sign screen shows. Everything here comes from the very bytes that get signed. */
@@ -29,6 +34,8 @@ export interface SignDetails {
   options: FeeChoice[];
   /** What the wallet makes of the fee the site set; absent when the site set none. */
   siteFee?: SiteFeeCheck;
+  /** What the simulation used, decimal string: Advanced's bounds start from it. */
+  gasUsed: string;
 }
 
 /**

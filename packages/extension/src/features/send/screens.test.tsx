@@ -40,6 +40,7 @@ const quote = (over: Partial<SendQuote> = {}): SendQuote => ({
     { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
     { denom: 'factory/x/page', amount: '5000', gasLimit: '300000', symbol: 'PAGE', decimals: 2 },
   ],
+  gasUsed: '133334',
   ...over,
 });
 

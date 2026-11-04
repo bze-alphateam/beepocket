@@ -14,6 +14,8 @@ export interface SheetProps {
   actions?: ComponentChildren;
   /** `auto` fits the content; `tall` takes the full height a sheet may have (lists, search). */
   height?: 'auto' | 'tall' | undefined;
+  /** A second step of the sheet: a back arrow before the title goes to the first. */
+  onBack?: (() => void) | undefined;
 }
 
 // The open sheets. One opened inside another (a DropdownSheet in a sheet) takes the keyboard.
@@ -88,6 +90,16 @@ export function Sheet(props: SheetProps) {
         tabIndex={-1}
       >
         <div class="bp-sheet-head">
+          {props.onBack !== undefined && (
+            <Button
+              variant="icon"
+              icon="arrow-left"
+              iconSize={20}
+              class="bp-sheet-back"
+              label={t('app.sheet.back')}
+              onClick={props.onBack}
+            />
+          )}
           <h2>{title}</h2>
           {props.count !== undefined && <span class="bp-sheet-count">{props.count}</span>}
           <Button

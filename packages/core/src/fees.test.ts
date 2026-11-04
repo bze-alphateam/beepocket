@@ -5,7 +5,15 @@ import { MemoryCache, stubChain } from '../test/stubs';
 import {
   FEE_TTL_MS,
   FeeEstimator,
+  GAS_PRICE_MULTIPLIERS,
+  estimatedGasLimit,
+  feeAt,
+  feePricing,
+  gasLimitBounds,
+  isGasPriceMultiplier,
   minimumFee,
+  priceGasOverride,
+  quickGasLimits,
   SimulationError,
   UnexpectedResponseError,
   simulationTxBytes,
@@ -415,5 +423,175 @@ describe('minimumFee', () => {
     const data = await estimator(chainWith([deepPool], { gasPrice: '0' })).feeData();
     expect(minimumFee(data, NATIVE, 300_000n)).toBe(0n);
     expect(minimumFee(data, X, 300_000n)).toBe(0n);
+  });
+});
+
+describe('feeAt', () => {
+  it('gives back every option of the estimate at its own gas limit and the minimum price', async () => {
+    const fees = estimator(chainWith([deepPool], { gasUsed: 76_403n }));
+    const result = await estimate(fees, [
+      [NATIVE, 10n ** 9n],
+      [X, 10n ** 9n],
+    ]);
+    const data = await fees.feeData();
+    expect(result.options).toHaveLength(2);
+    for (const o of result.options) {
+      const pricing = feePricing(data, o.denom);
+      expect(pricing).not.toBeNull();
+      if (pricing) expect(feeAt(pricing, o.gasLimit)).toBe(o.amount);
+    }
+  });
+
+  it('prices any gas limit with the same round-ups: 250,000 gas is 2,500 ubze or 1,375 uX', async () => {
+    const data = await estimator(chainWith([deepPool])).feeData();
+    const native = feePricing(data, NATIVE);
+    const token = feePricing(data, X);
+    expect(native?.native).toBe(true);
+    expect(token?.native).toBe(false);
+    if (!native || !token) return;
+    expect(feeAt(native, 250_000n)).toBe(2_500n);
+    expect(feeAt(native, 250_001n)).toBe(2_501n);
+    // 2,500 ubze -> 1,250 uX at 2 BZE per X, plus 10%.
+    expect(feeAt(token, 250_000n)).toBe(1_375n);
+  });
+
+  it('multiplies the gas price, not the spot ratio, for x2 and x3', async () => {
+    const data = await estimator(chainWith([deepPool])).feeData();
+    const native = feePricing(data, NATIVE);
+    const token = feePricing(data, X);
+    if (!native || !token) throw new Error('no pricing');
+    expect(feeAt(native, 250_000n, 2n)).toBe(5_000n);
+    expect(feeAt(native, 250_000n, 3n)).toBe(7_500n);
+    // 7,500 ubze -> 3,750 uX -> 4,125 uX with the margin.
+    expect(feeAt(token, 250_000n, 3n)).toBe(4_125n);
+    // The native fee is rounded up after the multiplier: 3 gas x 0.02 = 0.06 -> 1 ubze.
+    expect(feeAt(native, 3n, 2n)).toBe(1n);
+  });
+
+  it('is zero at a zero gas price and null pricing for a token that cannot pay', async () => {
+    const data = await estimator(chainWith([deepPool], { gasPrice: '0' })).feeData();
+    const token = feePricing(data, X);
+    if (!token) throw new Error('no pricing');
+    expect(feeAt(token, 300_000n, 3n)).toBe(0n);
+    expect(feePricing(data, Y)).toBeNull();
+  });
+});
+
+describe('gas price multipliers', () => {
+  it('are the minimum, twice and three times it, and nothing else', () => {
+    expect(GAS_PRICE_MULTIPLIERS).toEqual([1n, 2n, 3n]);
+    expect([0n, 1n, 2n, 3n, 4n].map(isGasPriceMultiplier)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      false,
+    ]);
+  });
+});
+
+describe('gasLimitBounds', () => {
+  it('is the simulation, the estimate and ten times it for a BZE fee', () => {
+    expect(estimatedGasLimit(82_417n, true)).toBe(123_626n);
+    expect(gasLimitBounds(82_417n, true)).toEqual({
+      min: 82_417n,
+      estimate: 123_626n,
+      max: 1_236_260n,
+    });
+  });
+
+  it('starts at the native estimate for a fee in another token, whose swap the simulation leaves out', () => {
+    expect(estimatedGasLimit(82_417n, false)).toBe(185_439n);
+    expect(gasLimitBounds(82_417n, false)).toEqual({
+      min: 123_626n,
+      estimate: 185_439n,
+      max: 1_854_390n,
+    });
+  });
+});
+
+describe('quickGasLimits', () => {
+  it('rounds x1.5, x2 and x5 of the estimate up to two significant digits', () => {
+    expect(quickGasLimits(gasLimitBounds(82_417n, true))).toEqual([
+      { pick: 'auto', gasLimit: 123_626n },
+      { pick: 'x1.5', gasLimit: 190_000n },
+      { pick: 'x2', gasLimit: 250_000n },
+      { pick: 'x5', gasLimit: 620_000n },
+      { pick: 'max', gasLimit: 1_236_260n },
+    ]);
+  });
+
+  it('never goes above the maximum, and never below the minimum', () => {
+    // estimate 99,999: x5 = 499,995 -> 500,000; max = 999,990.
+    const bounds = { min: 66_666n, estimate: 99_999n, max: 999_990n };
+    const picks = quickGasLimits(bounds);
+    expect(picks.map((p) => p.gasLimit)).toEqual([99_999n, 150_000n, 200_000n, 500_000n, 999_990n]);
+    // A cap right above the estimate clamps every rounded pick to it.
+    const tight = quickGasLimits({ min: 10n, estimate: 99_999n, max: 140_000n });
+    expect(tight.map((p) => p.gasLimit)).toEqual([99_999n, 140_000n, 140_000n, 140_000n, 140_000n]);
+    for (const p of [...picks, ...tight]) expect(p.gasLimit).toBeGreaterThanOrEqual(99_999n);
+  });
+
+  it('leaves tiny limits exact', () => {
+    expect(quickGasLimits({ min: 1n, estimate: 2n, max: 20n }).map((p) => p.gasLimit)).toEqual([
+      2n,
+      3n,
+      4n,
+      10n,
+      20n,
+    ]);
+  });
+});
+
+describe('priceGasOverride', () => {
+  async function pricings() {
+    const data = await estimator(chainWith([deepPool])).feeData();
+    const native = feePricing(data, NATIVE);
+    const token = feePricing(data, X);
+    if (!native || !token) throw new Error('no pricing');
+    return { native, token };
+  }
+  const run = (
+    pricing: Parameters<typeof priceGasOverride>[0]['pricing'],
+    gasLimit: bigint,
+    extra: { gasPrice?: 1n | 2n | 3n; spendable?: bigint } = {},
+  ) =>
+    priceGasOverride({
+      pricing,
+      gasUsed: 82_417n,
+      gasLimit,
+      gasPrice: extra.gasPrice ?? 1n,
+      spendable: extra.spendable ?? 10n ** 12n,
+    });
+
+  it('refuses below the simulation, warns below the estimate and accepts from it on (BZE)', async () => {
+    const { native } = await pricings();
+    expect(run(native, 82_416n).status).toBe('low');
+    expect(run(native, 82_417n).status).toBe('warn');
+    expect(run(native, 123_625n).status).toBe('warn');
+    expect(run(native, 123_626n)).toEqual({
+      status: 'ok',
+      amount: 1_237n,
+      bounds: { min: 82_417n, estimate: 123_626n, max: 1_236_260n },
+    });
+    expect(run(native, 1_236_260n).status).toBe('ok');
+    expect(run(native, 1_236_261n).status).toBe('high');
+  });
+
+  it('starts the foreign floor at the native estimate, for the fee swap', async () => {
+    const { token } = await pricings();
+    expect(run(token, 123_625n).status).toBe('low');
+    expect(run(token, 123_626n).status).toBe('warn');
+    expect(run(token, 185_439n).status).toBe('ok');
+  });
+
+  it('refuses a fee above what may be spent, at the picked price', async () => {
+    const { native } = await pricings();
+    // 250,000 gas: 2,500 ubze at the minimum, 5,000 at x2.
+    expect(run(native, 250_000n, { spendable: 2_500n }).status).toBe('ok');
+    expect(run(native, 250_000n, { spendable: 2_500n, gasPrice: 2n })).toMatchObject({
+      status: 'afford',
+      amount: 5_000n,
+    });
   });
 });

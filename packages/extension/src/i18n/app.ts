@@ -6,6 +6,7 @@ export const app = {
   'app.loading': 'Loading',
   'app.error.generic': 'Something went wrong. Please try again.',
   'app.sheet.close': 'Close',
+  'app.sheet.back': 'Back',
   'app.back': 'Back',
   'app.settings': 'Settings',
   'app.appearance.toLight': 'Switch to light mode',

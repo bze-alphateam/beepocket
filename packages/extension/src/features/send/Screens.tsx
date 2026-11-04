@@ -1,9 +1,10 @@
-import { shortAddress } from '@beepocket/core';
+import { formatAmount, shortAddress } from '@beepocket/core';
 import { t } from '../../i18n';
 import type { BookMatch } from '../../protocol';
 import type { SendQuote } from '../../protocol/send';
 import { Banner, Button, Card, DetailRow, Icon, ResultLayout } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
+import type { QuoteAdvanced } from './Advanced';
 import { exact, feeText, totalText } from './format';
 
 export function matchLabel(match: BookMatch | null): string | null {
@@ -18,6 +19,10 @@ export function matchLabel(match: BookMatch | null): string | null {
  */
 export function ReviewScreen(props: {
   quote: SendQuote;
+  /** The quote's Advanced settings: shown as rows, since they are signed too. */
+  advanced: QuoteAdvanced | null;
+  /** The settings were dropped: this send now needs more gas than that limit. */
+  reset: boolean;
   fromLabel: string;
   toLabel: string | null;
   /** The weak lock: the password field signs, in place of the plain button. */
@@ -53,6 +58,19 @@ export function ReviewScreen(props: {
           </span>
         </DetailRow>
         <DetailRow label={t('send.review.fee')}>{feeText(quote.fee)}</DetailRow>
+        {props.advanced?.customGas === true && (
+          <DetailRow label={t('send.gas.row')}>
+            {t('send.gas.row.value', { gas: formatAmount(BigInt(props.advanced.gasLimit), 0) })}
+          </DetailRow>
+        )}
+        {props.advanced !== null && props.advanced.gasPrice !== 1 && (
+          <DetailRow label={t('send.gas.row.price')}>
+            {t('send.gas.row.price.value', {
+              price: props.advanced.price,
+              times: props.advanced.gasPrice,
+            })}
+          </DetailRow>
+        )}
         <DetailRow label={t('send.review.total')} strong>
           {totalText(quote)}
         </DetailRow>
@@ -61,6 +79,15 @@ export function ReviewScreen(props: {
         <Icon name="alert-circle" size={16} />
         <span>{t('send.review.warning')}</span>
       </p>
+      {props.advanced?.warn === true && (
+        <Banner tone="amber">
+          {t('send.gas.warn.long', {
+            gas: formatAmount(BigInt(props.advanced.gasLimit), 0),
+            estimate: formatAmount(BigInt(props.advanced.estimate), 0),
+          })}
+        </Banner>
+      )}
+      {props.reset && <Banner tone="amber">{t('send.fee.reset')}</Banner>}
       {props.changed && <Banner tone="amber">{t('send.review.changed')}</Banner>}
       {props.error !== null && <Banner tone="red">{props.error}</Banner>}
       <div class="bp-send-grow" />

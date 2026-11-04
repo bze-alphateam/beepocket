@@ -1,19 +1,25 @@
 import { ErrorCodes, fail, ok, type ReviewedFee } from '../protocol';
 import type { HandlerRegistry } from '../background/registry';
+import { validOverride } from '../features/send/override';
 import type { DappService } from './service';
 
 const BASE_UNITS = /^\d{1,60}$/;
 
 function reviewedFee(x: unknown): ReviewedFee | null {
   if (typeof x !== 'object' || x === null) return null;
-  const { denom, amount, gasLimit } = x as Record<string, unknown>;
-  return typeof denom === 'string' &&
-    typeof amount === 'string' &&
-    typeof gasLimit === 'string' &&
-    BASE_UNITS.test(amount) &&
-    BASE_UNITS.test(gasLimit)
-    ? { denom, amount, gasLimit }
-    : null;
+  const { denom, amount, gasLimit, override } = x as Record<string, unknown>;
+  if (
+    typeof denom !== 'string' ||
+    typeof amount !== 'string' ||
+    typeof gasLimit !== 'string' ||
+    !BASE_UNITS.test(amount) ||
+    !BASE_UNITS.test(gasLimit)
+  ) {
+    return null;
+  }
+  if (override === undefined) return { denom, amount, gasLimit };
+  const valid = validOverride(override);
+  return valid === null ? null : { denom, amount, gasLimit, override: valid };
 }
 
 /** The request window's calls. They live in the popup registry: own pages only. */
