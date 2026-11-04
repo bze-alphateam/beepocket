@@ -1,8 +1,10 @@
 import {
+  minimumFee,
   rawJson,
   summarise,
   verifySignRequest,
   type AnyMsg,
+  type FeeData,
   type FeeEstimate,
   type TxSummary,
 } from '@beepocket/core';
@@ -13,12 +15,13 @@ import {
   type FeeChoice,
   type Result,
   type SignDetails,
+  type SiteFeeCheck,
 } from '../../protocol';
 import { validContact } from '../../features/address-book/contact';
 import type { ProfileAddress } from '../../features/wallet/profile';
 import { refuse, type Outcome, type PendingRequest } from '../types';
 import { bigintFromWire, bytesFromWire, DappErrorCodes } from '../wire';
-import { guarded, simulationMessage, type TxDeps } from './env';
+import { guarded, simulationMessage, type ChainEnv, type TxDeps } from './env';
 import { connectedAddress, networkRefusal, pubKeyOf } from './key';
 
 /** `signDirect` params as they are kept with the pending request (JSON: bytes are base64). */
@@ -104,9 +107,14 @@ export interface Prepared {
   rawJson: string;
   /** The JSON of each message on its own. */
   messageJson: string[];
-  /** The fee tokens the signer can pay with, each with the gas limit it pays for. */
+  /**
+   * The site's fee when it can be paid, then the fee tokens the signer can pay with, each with
+   * the gas limit it pays for.
+   */
   options: FeeChoice[];
   defaultFee: FeeChoice;
+  /** What was made of the site's fee; null when the request carried none. */
+  siteFee: SiteFeeCheck | null;
   locked: boolean;
 }
 
@@ -133,6 +141,85 @@ function toChoices(estimate: FeeEstimate, infos: Map<string, FeeChoice>): FeeCho
     const info = infos.get(o.denom);
     return info ? [{ ...info, amount: o.amount.toString(), gasLimit: o.gasLimit.toString() }] : [];
   });
+}
+
+/** The fee the site put in the auth info, as it came: null for none, an empty or a zero one. */
+interface SiteFee {
+  coins: { denom: string; amount: string }[];
+  gasLimit: bigint;
+}
+
+const DIGITS = /^\d{1,78}$/;
+
+function siteFeeOf(
+  fee: { amount: { denom: string; amount: string }[]; gasLimit: bigint } | undefined,
+): SiteFee | null {
+  if (!fee || fee.amount.length === 0 || fee.gasLimit === 0n) return null;
+  // A fee of nothing at all is the same as none: the wallet prices it as before.
+  if (fee.amount.every((c) => DIGITS.test(c.amount) && BigInt(c.amount) === 0n)) return null;
+  return { coins: fee.amount, gasLimit: fee.gasLimit };
+}
+
+/** Rounded half up. */
+function roundedRatio(num: bigint, den: bigint): number {
+  return Number((num * 2n + den) / (den * 2n));
+}
+
+/** At most this many times the wallet's own estimate before the site's fee is called high. */
+const HIGH_FEE_TIMES = 3n;
+
+/**
+ * The site's fee as an option, with what the wallet makes of it; `null` option when it cannot
+ * be paid. `walletAmount` is the wallet's own estimate in the same token, when it has one;
+ * `gasUsed` is what the simulation of this transaction used.
+ */
+function checkSiteFee(
+  fee: SiteFee,
+  origin: string,
+  data: FeeData,
+  balances: Map<string, bigint>,
+  info: FeeChoice | undefined,
+  estimate: { walletAmount: bigint | undefined; gasUsed: bigint },
+): { option: FeeChoice | null; check: SiteFeeCheck } {
+  const unusable = { option: null, check: { status: 'unusable' as const } };
+  const [coin] = fee.coins;
+  if (fee.coins.length !== 1 || !coin || !DIGITS.test(coin.amount) || !info) return unusable;
+  const amount = BigInt(coin.amount);
+  const minimum = minimumFee(data, coin.denom, fee.gasLimit);
+  if (minimum === null || (balances.get(coin.denom) ?? 0n) < amount) return unusable;
+  const option: FeeChoice = {
+    ...info,
+    amount: amount.toString(),
+    gasLimit: fee.gasLimit.toString(),
+    setBy: origin,
+  };
+  // Too little gas runs out mid-way and the fee is still charged.
+  if (fee.gasLimit < estimate.gasUsed) return { option, check: { status: 'gas' } };
+  if (amount < minimum) return { option, check: { status: 'low' } };
+  const { walletAmount } = estimate;
+  if (walletAmount !== undefined && amount > walletAmount * HIGH_FEE_TIMES) {
+    // A zero estimate (a zero gas price) makes any fee too high, by no meaningful ratio.
+    const times = walletAmount === 0n ? null : roundedRatio(amount, walletAmount);
+    return { option, check: { status: 'high', times } };
+  }
+  return { option, check: { status: 'ok' } };
+}
+
+/** The display data of a fee token, or undefined when it cannot be shown right. */
+async function feeTokenInfo(env: ChainEnv, denom: string): Promise<FeeChoice | undefined> {
+  const info = await env.tokens.resolve(denom).then(
+    (t) => (t.source === 'fallback' ? null : t),
+    () => null,
+  );
+  if (!info) return undefined;
+  return {
+    denom,
+    amount: '0',
+    gasLimit: '0',
+    symbol: info.symbol,
+    decimals: info.decimals,
+    logo: info.logo,
+  };
 }
 
 /**
@@ -194,33 +281,48 @@ export async function prepareSign(
     return refused(code, verified.message);
   }
 
+  const siteFee = siteFeeOf(verified.authInfo.fee);
   const estimated = await guarded(
-    () => env.fees.estimate({ bodyBytes, pubKey, sequence: account.sequence, balances }),
+    () =>
+      Promise.all([
+        env.fees.estimate({ bodyBytes, pubKey, sequence: account.sequence, balances }),
+        siteFee ? env.fees.feeData() : Promise.resolve(null),
+      ]),
     simulationMessage,
   );
   if (!estimated.ok) return { kind: 'refuse', outcome: estimated.outcome };
-  const estimate = estimated.value;
+  const [estimate, feeData] = estimated.value;
 
   // A token whose display data cannot be read is left out: its fee could not be shown right.
   const infos = new Map<string, FeeChoice>();
-  for (const o of estimate.options) {
-    const info = await env.tokens.resolve(o.denom).then(
-      (t) => (t.source === 'fallback' ? null : t),
-      () => null,
-    );
-    if (info) {
-      infos.set(o.denom, {
-        denom: o.denom,
-        amount: '0',
-        gasLimit: '0',
-        symbol: info.symbol,
-        decimals: info.decimals,
-        logo: info.logo,
-      });
-    }
+  const denoms = new Set(estimate.options.map((o) => o.denom));
+  const siteDenom = siteFee?.coins.length === 1 ? siteFee.coins[0]?.denom : undefined;
+  if (siteDenom !== undefined) denoms.add(siteDenom);
+  for (const denom of denoms) {
+    const info = await feeTokenInfo(env, denom);
+    if (info) infos.set(denom, info);
   }
-  const options = toChoices(estimate, infos);
-  const defaultFee = options.find((o) => o.denom === estimate.default) ?? options[0];
+  const walletOptions = toChoices(estimate, infos);
+  const walletDefault = walletOptions.find((o) => o.denom === estimate.default) ?? walletOptions[0];
+
+  // The site's fee is signed as it came unless it cannot be paid; the wallet's own options
+  // stay on the fee sheet either way.
+  const site =
+    siteFee && feeData
+      ? checkSiteFee(
+          siteFee,
+          request.origin,
+          feeData,
+          balances,
+          siteDenom === undefined ? undefined : infos.get(siteDenom),
+          {
+            walletAmount: estimate.options.find((o) => o.denom === siteDenom)?.amount,
+            gasUsed: estimate.gasUsed,
+          },
+        )
+      : null;
+  const options = site?.option ? [site.option, ...walletOptions] : walletOptions;
+  const defaultFee = site?.option ?? walletDefault;
   if (!defaultFee) {
     return refused(DappErrorCodes.invalidRequest, "This address can't pay the network fee.");
   }
@@ -249,6 +351,7 @@ export async function prepareSign(
       messageJson: verified.messages.map(messageJsonOf),
       options,
       defaultFee,
+      siteFee: site?.check ?? null,
       locked: state !== 'unlocked',
     },
   };
@@ -264,5 +367,6 @@ export function detailsOf(p: Prepared): SignDetails {
     locked: p.locked,
     fee: p.defaultFee,
     options: p.options,
+    ...(p.siteFee ? { siteFee: p.siteFee } : {}),
   };
 }

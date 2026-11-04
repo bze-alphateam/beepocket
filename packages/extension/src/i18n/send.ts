@@ -34,6 +34,7 @@ export const send = {
   'send.review.password': 'Password',
   'send.fee.title': 'Pay network fee with',
   'send.fee.balance': 'Balance {amount}',
+  'send.fee.setBy': 'Set by {site} · {denom} · gas {gas}',
   'send.fee.selected': 'Selected',
   'send.fee.option': '{symbol}, {fee}',
   'send.fee.row': 'Network fee about {fee}. Change fee token',

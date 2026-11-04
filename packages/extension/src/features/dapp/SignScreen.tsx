@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
-import { WalletErrorCodes, type SignView } from '../../protocol';
+import { WalletErrorCodes, type FeeChoice, type SignView } from '../../protocol';
 import { SendErrorCodes } from '../../protocol/send';
 import {
   Avatar,
@@ -25,7 +25,7 @@ import {
 } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
 import { feeText } from '../send/format';
-import { FeeSheet } from '../send/Sheets';
+import { feeKey, FeeSheet } from '../send/Sheets';
 import { requestBadge, type Answer } from './answers';
 import { useFirstToken } from './theme';
 
@@ -91,6 +91,24 @@ function MessageItem(props: {
   );
 }
 
+/** The warning under the fee row: about the site's fee, when that is the one picked. */
+function feeNote(view: SignView, fee: FeeChoice): { tone: 'amber' | 'info'; text: string } | null {
+  const check = view.siteFee;
+  if (!check) return null;
+  if (check.status === 'unusable') return { tone: 'info', text: t('dapp.sign.fee.unusable') };
+  if (fee.setBy === undefined) return null;
+  if (check.status === 'gas') return { tone: 'amber', text: t('dapp.sign.fee.gas') };
+  if (check.status === 'low') return { tone: 'amber', text: t('dapp.sign.fee.low') };
+  if (check.status === 'high') {
+    const text =
+      check.times === null
+        ? t('dapp.sign.fee.higher')
+        : t('dapp.sign.fee.high', { times: String(check.times) });
+    return { tone: 'amber', text };
+  }
+  return null;
+}
+
 /**
  * The sign screen: the site and the signing address, the plain-word summary, the fee and, behind
  * "Message details", the decoded messages. Every message is shown and numbered; an unknown one
@@ -100,7 +118,7 @@ function MessageItem(props: {
 export function SignScreen({ view, done, queue }: SignScreenProps) {
   const client = useClient();
   useFirstToken();
-  const [picked, setPicked] = useState(view.fee.denom);
+  const [picked, setPicked] = useState(feeKey(view.fee));
   const [feeOpen, setFeeOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [trusted, setTrusted] = useState(false);
@@ -108,7 +126,8 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
   const [error, setError] = useState<string | null>(null);
 
   // A fee token the signer can no longer pay with falls back to the worker's pick.
-  const fee = view.options.find((o) => o.denom === picked) ?? view.fee;
+  const fee = view.options.find((o) => feeKey(o) === picked) ?? view.fee;
+  const note = feeNote(view, fee);
   const { summary } = view;
   const dangerous = summary.level === 'dangerous';
   const count = summary.messages.length;
@@ -261,6 +280,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
             />
           }
         />
+        {note && <Banner tone={note.tone}>{note.text}</Banner>}
         <GhostRow
           icon="code"
           title={t('dapp.sign.details')}
@@ -279,9 +299,9 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
       <FeeSheet
         open={feeOpen}
         options={view.options}
-        selected={fee.denom}
-        onPick={(denom) => {
-          setPicked(denom);
+        selected={feeKey(fee)}
+        onPick={(key) => {
+          setPicked(key);
           setTrusted(false);
           setFeeOpen(false);
         }}

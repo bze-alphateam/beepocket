@@ -291,3 +291,48 @@ test('closing the window answers every queued request rejected', async ({
     stop();
   }
 });
+
+test('a fee the site set is pre-selected, labelled on the fee sheet and signed', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  const { dapp, stop } = await connectedDapp(context, extensionId);
+  try {
+    await dapp.getByLabel('Recipient').fill(RECIPIENT);
+    const [sign] = await Promise.all([
+      context.waitForEvent('page'),
+      dapp.getByRole('button', { name: 'Pay with site fee' }).click(),
+    ]);
+    // The site's 5,000 ubze for 300,000 gas, not the wallet's 2,250 ubze for 225,000.
+    const feeRow = sign.getByRole('button', { name: /Change fee token/ });
+    await expect(feeRow).toContainText('0.005 BZE');
+    await expect(sign.getByText(/higher than needed|too low/)).toHaveCount(0);
+    await feeRow.click();
+    const origin = new URL(dapp.url()).origin;
+    await expect(sign.getByText(`Set by ${origin}`)).toBeVisible();
+    await sign.getByRole('button', { name: /^BZE, ≈ 0\.005 BZE/ }).click();
+    await sign.getByRole('button', { name: 'Approve' }).click();
+    await expect(dapp.getByRole('status')).toHaveText(`hash ${HASH.toLowerCase()}`);
+  } finally {
+    stop();
+  }
+});
+
+test('a site fee far above the estimate shows a warning', async ({ context, extensionId }) => {
+  test.setTimeout(120_000);
+  const { dapp, stop } = await connectedDapp(context, extensionId);
+  try {
+    await dapp.getByLabel('Recipient').fill(RECIPIENT);
+    const [sign] = await Promise.all([
+      context.waitForEvent('page'),
+      dapp.getByRole('button', { name: 'Pay with high site fee' }).click(),
+    ]);
+    // 10,000 ubze against the wallet's own 2,250.
+    await expect(sign.getByText('This site set a fee about 4× higher than needed')).toBeVisible();
+    await sign.getByRole('button', { name: 'Reject' }).click();
+    await expect(dapp.getByRole('status')).toHaveText('error rejected');
+  } finally {
+    stop();
+  }
+});

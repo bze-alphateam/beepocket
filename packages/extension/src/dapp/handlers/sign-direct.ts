@@ -9,8 +9,9 @@ import { detailsOf, prepareSign, validateSignParams, type SignParams } from './s
 
 /**
  * `signDirect(chainId, signer, signDoc)`: a connected site gets one transaction signed after
- * the user has read it. The wallet signs the request's own `bodyBytes` untouched, with its own
- * fee in the auth info; both the review and the signature run `prepareSign`.
+ * the user has read it. The wallet signs the request's own `bodyBytes` untouched, with the fee
+ * the user approved in a rebuilt auth info: the site's own fee by default, or one of the
+ * wallet's options; both the review and the signature run `prepareSign`.
  */
 export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
   return {
@@ -48,10 +49,15 @@ export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
       }
       const reviewed = user.fee;
       if (!reviewed) return fail(ErrorCodes.badRequest, 'dapp.answer needs the reviewed fee.');
-      const chosen = p.options.find((o) => o.denom === reviewed.denom);
-      // What was reviewed is what gets signed: any other fee goes back to the review.
-      const moved = chosen?.amount !== reviewed.amount || chosen.gasLimit !== reviewed.gasLimit;
-      if (!chosen || moved) {
+      // What was reviewed is what gets signed: the site's fee or one of the wallet's, exactly
+      // as shown. Any other fee goes back to the review.
+      const chosen = p.options.find(
+        (o) =>
+          o.denom === reviewed.denom &&
+          o.amount === reviewed.amount &&
+          o.gasLimit === reviewed.gasLimit,
+      );
+      if (!chosen) {
         return fail(SendErrorCodes.reviewChanged, 'The network fee changed. Review it again.');
       }
       const authInfoBytes = withWalletFee(

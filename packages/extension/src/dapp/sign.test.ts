@@ -15,6 +15,7 @@ import {
   Vault,
   WebCryptoCipher,
   type ChainClient,
+  type FeeData,
   type FeeEstimate,
   type Random,
 } from '@beepocket/core';
@@ -66,11 +67,15 @@ interface SignedAnswer {
 const TOKENS: Record<string, { symbol: string; decimals: number }> = {
   ubze: { symbol: 'BZE', decimals: 6 },
   uother: { symbol: 'OTH', decimals: 6 },
+  // Known to the wallet, but no pool makes it a fee token.
+  ufree: { symbol: 'FRE', decimals: 6 },
 };
 
 interface Node {
   account: { accountNumber: bigint; sequence: bigint; pubKey: null } | null;
   estimate: () => Promise<FeeEstimate>;
+  balances: Map<string, bigint>;
+  feeData: FeeData;
   broadcast: Mock<ChainClient['broadcast']>;
 }
 
@@ -81,6 +86,16 @@ const FEES: FeeEstimate = {
     { denom: 'uother', amount: 500n, gasLimit: 300_000n },
   ],
   default: 'ubze',
+  gasUsed: 150_000n,
+};
+
+/** 0.01 ubze per gas; 6 ubze per uother at the pool's spot ratio. */
+const FEE_DATA: FeeData = {
+  nativeDenom: 'ubze',
+  rates: new Map([
+    ['ubze', { num: 1n, den: 100n }],
+    ['uother', { num: 1n, den: 600n }],
+  ]),
 };
 
 async function rig() {
@@ -117,19 +132,21 @@ async function rig() {
   const node: Node = {
     account: { accountNumber: ACCOUNT_NUMBER, sequence: SEQUENCE, pubKey: null },
     estimate: () => Promise.resolve(FEES),
+    balances: new Map([['ubze', 100_000_000n]]),
+    feeData: FEE_DATA,
     broadcast: vi.fn<ChainClient['broadcast']>(() => Promise.resolve({ txHash: HASH })),
   };
   const env: ChainEnv = {
     network: NETWORKS.mainnet,
     chain: {
       account: () => Promise.resolve(node.account),
-      balances: () => Promise.resolve(new Map([['ubze', 100_000_000n]])),
+      balances: () => Promise.resolve(node.balances),
       broadcast: (bytes) => node.broadcast(bytes),
       markets: () => Promise.resolve([]),
       liquidityPools: () => Promise.resolve([]),
       marketOrder: () => Promise.resolve(null),
     },
-    fees: { estimate: () => node.estimate() },
+    fees: { estimate: () => node.estimate(), feeData: () => Promise.resolve(node.feeData) },
     tokens: {
       resolve: (denom) => {
         const known = TOKENS[denom];
@@ -226,7 +243,8 @@ interface DocOptions {
   sequence?: bigint;
   messages?: { typeUrl: string; value: Uint8Array }[];
   memo?: string;
-  requestFee?: bigint;
+  /** The fee the site puts in the auth info; none (gas only) by default. */
+  requestFee?: { coins: [string, bigint][]; gasLimit: bigint };
 }
 
 /** What a dapp passes to `signDirect`, in wire form, plus the raw bytes for the checks. */
@@ -245,8 +263,11 @@ function request(options: DocOptions = {}) {
     pubKey: MAIN.pubKey,
     sequence: options.sequence ?? SEQUENCE,
     fee: {
-      amount: [{ denom: 'ubze', amount: (options.requestFee ?? 1n).toString() }],
-      gasLimit: 1n,
+      amount: (options.requestFee?.coins ?? []).map(([denom, amount]) => ({
+        denom,
+        amount: amount.toString(),
+      })),
+      gasLimit: options.requestFee?.gasLimit ?? 1n,
     },
   });
   const chainId = options.chainId ?? CHAIN_ID;
@@ -338,7 +359,7 @@ describe('signDirect refuses before any window opens', () => {
   it('when no token can pay the fee', async () => {
     const t = await rig();
     await t.connect();
-    t.node.estimate = () => Promise.resolve({ options: [], default: null });
+    t.node.estimate = () => Promise.resolve({ options: [], default: null, gasUsed: 150_000n });
     const a = await t.ask('signDirect', request().params);
     expect(t.answerOf(a.id)).toMatchObject({ error: { code: 'invalid-request' } });
   });
@@ -371,10 +392,11 @@ describe('signDirect review and approval', () => {
     });
   });
 
-  it('signs the requests body untouched with the wallets own fee', async () => {
+  it('signs the requests body untouched with the wallets own fee when the site set none', async () => {
     const t = await rig();
     await t.connect();
-    const r = await review(t, { requestFee: 1n });
+    const r = await review(t);
+    expect(r.view.siteFee).toBeUndefined();
     const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(res.ok).toBe(true);
     const { signed, signature } = t.signedOf(r.id);
@@ -685,5 +707,207 @@ describe('a sign request waiting in the queue', () => {
     expect(await t.dapp.sites.disconnect(ORIGIN)).toEqual({ ok: true, value: {} });
     expect(await t.dapp.current()).toEqual({ status: 'none' });
     expect(t.answerOf(second.id)).toMatchObject({ error: { code: 'not-connected' } });
+  });
+});
+
+describe('signDirect with a fee the site set', () => {
+  const site = (coins: [string, bigint][], gasLimit: bigint): DocOptions => ({
+    requestFee: { coins, gasLimit },
+  });
+  const signedFee = (t: Rig, id: string) =>
+    decodeAuthInfo(bytesFromWire(t.signedOf(id).signed.authInfoBytes)).fee;
+
+  it('pre-selects the sites fee, offers it first on the sheet and signs exactly it', async () => {
+    const t = await rig();
+    await t.connect();
+    // 250,000 gas at 0.01 needs 2,500 ubze; 5,000 is 2.5x the wallet's 2,000.
+    const r = await review(t, site([['ubze', 5_000n]], 250_000n));
+    expect(r.view.fee).toMatchObject({
+      denom: 'ubze',
+      amount: '5000',
+      gasLimit: '250000',
+      symbol: 'BZE',
+      setBy: ORIGIN,
+    });
+    expect(r.view.siteFee).toEqual({ status: 'ok' });
+    expect(r.view.options.map((o) => [o.denom, o.amount, o.setBy])).toEqual([
+      ['ubze', '5000', ORIGIN],
+      ['ubze', '2000', undefined],
+      ['uother', '500', undefined],
+    ]);
+    expect((await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) })).ok).toBe(true);
+    expect(signedFee(t, r.id)).toMatchObject({
+      amount: [{ denom: 'ubze', amount: '5000' }],
+      gasLimit: '250000',
+    });
+  });
+
+  it('signs the wallets option in the same token when the user picks it instead', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, site([['ubze', 5_000n]], 250_000n));
+    await t.dapp.answer(r.id, {
+      approve: true,
+      fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
+    });
+    expect(signedFee(t, r.id)).toMatchObject({
+      amount: [{ denom: 'ubze', amount: '2000' }],
+      gasLimit: '200000',
+    });
+  });
+
+  it('refuses the sites amount with another gas limit: only what was shown is signed', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, site([['ubze', 5_000n]], 250_000n));
+    expect(
+      await t.dapp.answer(r.id, {
+        approve: true,
+        fee: { denom: 'ubze', amount: '5000', gasLimit: '200000' },
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'review-changed' } });
+    expect(t.answerOf(r.id)).toBeUndefined();
+  });
+
+  it('warns about a fee below the chains minimum for its gas limit, and keeps it selected', async () => {
+    const t = await rig();
+    await t.connect();
+    const at = await review(t, site([['ubze', 2_500n]], 250_000n));
+    expect(at.view.siteFee).toEqual({ status: 'ok' });
+    await t.dapp.answer(at.id, { approve: false });
+    const below = await review(t, site([['ubze', 2_499n]], 250_000n));
+    expect(below.view.siteFee).toEqual({ status: 'low' });
+    expect(below.view.fee).toMatchObject({ amount: '2499', setBy: ORIGIN });
+    await t.dapp.answer(below.id, { approve: true, fee: feeFor(below.view) });
+    expect(signedFee(t, below.id)).toMatchObject({
+      amount: [{ denom: 'ubze', amount: '2499' }],
+      gasLimit: '250000',
+    });
+  });
+
+  it('warns about a fee more than three times the wallets estimate, with the rounded ratio', async () => {
+    const t = await rig();
+    await t.connect();
+    const three = await review(t, site([['ubze', 6_000n]], 200_000n));
+    expect(three.view.siteFee).toEqual({ status: 'ok' });
+    await t.dapp.answer(three.id, { approve: false });
+    const over = await review(t, site([['ubze', 6_001n]], 200_000n));
+    expect(over.view.siteFee).toEqual({ status: 'high', times: 3 });
+    await t.dapp.answer(over.id, { approve: false });
+    const many = await review(t, site([['ubze', 9_000n]], 200_000n));
+    expect(many.view.siteFee).toEqual({ status: 'high', times: 5 });
+    expect(many.view.fee).toMatchObject({ amount: '9000', setBy: ORIGIN });
+  });
+
+  it('warns about a gas limit below what the simulation used, even with fee to spare', async () => {
+    const t = await rig();
+    await t.connect();
+    // The simulation used 150,000 gas.
+    const below = await review(t, site([['ubze', 5_000n]], 149_999n));
+    expect(below.view.siteFee).toEqual({ status: 'gas' });
+    expect(below.view.fee).toMatchObject({ gasLimit: '149999', setBy: ORIGIN });
+    await t.dapp.answer(below.id, { approve: false });
+    const at = await review(t, site([['ubze', 1_500n]], 150_000n));
+    expect(at.view.siteFee).toEqual({ status: 'ok' });
+  });
+
+  it('calls any fee high when the wallets own estimate is zero', async () => {
+    const t = await rig();
+    await t.connect();
+    t.node.feeData = {
+      nativeDenom: 'ubze',
+      rates: new Map([['ubze', { num: 0n, den: 1n }]]),
+    };
+    t.node.estimate = () =>
+      Promise.resolve({
+        options: [{ denom: 'ubze', amount: 0n, gasLimit: 225_000n }],
+        default: 'ubze',
+        gasUsed: 150_000n,
+      });
+    const r = await review(t, site([['ubze', 1_000_000n]], 225_000n));
+    expect(r.view.siteFee).toEqual({ status: 'high', times: null });
+    expect(r.view.fee).toMatchObject({ amount: '1000000', setBy: ORIGIN });
+  });
+
+  it('checks a fee in another token at the spot ratio, without the wallets margin', async () => {
+    const t = await rig();
+    await t.connect();
+    t.node.balances = new Map([
+      ['ubze', 100_000_000n],
+      ['uother', 10_000n],
+    ]);
+    // 300,000 gas is 3,000 ubze, 500 uother at 6 ubze each.
+    const ok = await review(t, site([['uother', 500n]], 300_000n));
+    expect(ok.view.siteFee).toEqual({ status: 'ok' });
+    expect(ok.view.fee).toMatchObject({ denom: 'uother', symbol: 'OTH', setBy: ORIGIN });
+    await t.dapp.answer(ok.id, { approve: true, fee: feeFor(ok.view) });
+    expect(signedFee(t, ok.id)).toMatchObject({
+      amount: [{ denom: 'uother', amount: '500' }],
+      gasLimit: '300000',
+    });
+    const low = await review(t, site([['uother', 499n]], 300_000n));
+    expect(low.view.siteFee).toEqual({ status: 'low' });
+    await t.dapp.answer(low.id, { approve: false });
+    // The wallet's own estimate in uother is 500.
+    const high = await review(t, site([['uother', 2_000n]], 300_000n));
+    expect(high.view.siteFee).toEqual({ status: 'high', times: 4 });
+  });
+
+  const unusable: [string, DocOptions, [string, bigint][]][] = [
+    [
+      'a token that cannot pay fees on BZE',
+      site([['ufree', 100n]], 200_000n),
+      [['ufree', 10n ** 9n]],
+    ],
+    ['a token the wallet cannot show', site([['unope', 100n]], 200_000n), [['unope', 10n ** 9n]]],
+    ['more than the address holds', site([['uother', 600n]], 300_000n), [['uother', 599n]]],
+    [
+      'more than one coin',
+      site(
+        [
+          ['ubze', 3_000n],
+          ['uother', 1n],
+        ],
+        300_000n,
+      ),
+      [['uother', 10n]],
+    ],
+  ];
+  for (const [name, options, held] of unusable) {
+    it(`falls back to the wallets own fee for ${name}`, async () => {
+      const t = await rig();
+      await t.connect();
+      t.node.balances = new Map([['ubze', 100_000_000n], ...held]);
+      const r = await review(t, options);
+      expect(r.view.siteFee).toEqual({ status: 'unusable' });
+      expect(r.view.fee).toMatchObject({ denom: 'ubze', amount: '2000', gasLimit: '200000' });
+      expect(r.view.fee.setBy).toBeUndefined();
+      expect(r.view.options.every((o) => o.setBy === undefined)).toBe(true);
+      await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+      expect(signedFee(t, r.id)).toMatchObject({
+        amount: [{ denom: 'ubze', amount: '2000' }],
+        gasLimit: '200000',
+      });
+    });
+  }
+
+  it('treats a zero fee like no fee', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, site([['ubze', 0n]], 200_000n));
+    expect(r.view.siteFee).toBeUndefined();
+    expect(r.view.fee).toMatchObject({ denom: 'ubze', amount: '2000', gasLimit: '200000' });
+    expect(r.view.options).toHaveLength(2);
+  });
+
+  it('signs a usable site fee even when the wallets own options are all out of reach', async () => {
+    const t = await rig();
+    await t.connect();
+    t.node.estimate = () => Promise.resolve({ options: [], default: null, gasUsed: 150_000n });
+    const r = await review(t, site([['ubze', 2_500n]], 250_000n));
+    expect(r.view.options).toHaveLength(1);
+    expect(r.view.siteFee).toEqual({ status: 'ok' });
+    await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    expect(signedFee(t, r.id)).toMatchObject({ amount: [{ denom: 'ubze', amount: '2500' }] });
   });
 });

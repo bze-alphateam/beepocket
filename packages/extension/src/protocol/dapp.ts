@@ -2,7 +2,7 @@ import type { NetworkId } from '@beepocket/core';
 import type { ReviewedFee, SignView } from './dapp-sign';
 import type { WalletAddress } from './wallet';
 
-export type { ReviewedFee, SignDetails, SignView } from './dapp-sign';
+export type { ReviewedFee, SignDetails, SignView, SiteFeeCheck } from './dapp-sign';
 
 /** Error codes of the `dapp.*` methods (`ProtocolError.code`). */
 export const DappProtocolCodes = {

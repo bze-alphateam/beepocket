@@ -36,6 +36,8 @@ export interface FeeEstimate {
   options: FeeOption[];
   /** The denom to pre-select, null when the payer can pay with none. */
   default: string | null;
+  /** The gas the simulation used, before any headroom. */
+  gasUsed: bigint;
 }
 
 export interface EstimateParams {
@@ -96,6 +98,21 @@ function foreignFee(gas: bigint, nativePrice: Rate, rate: Rate): bigint {
     native * rate.num * nativePrice.den * FOREIGN_FEE_SLIPPAGE.num,
     rate.den * nativePrice.num * FOREIGN_FEE_SLIPPAGE.den,
   );
+}
+
+/**
+ * The least fee the chain takes in `denom` for `gasLimit`, with no margin: `ceil(gasLimit x
+ * minimum gas price)` in the native token, and that native fee converted at the pool's spot
+ * ratio (rounded up) in another token. `null` when `denom` cannot pay the fee at all.
+ */
+export function minimumFee(data: FeeData, denom: string, gasLimit: bigint): bigint | null {
+  const rate = data.rates.get(denom);
+  const nativePrice = data.rates.get(data.nativeDenom);
+  if (!rate || !nativePrice) return null;
+  const native = ceilDiv(gasLimit * nativePrice.num, nativePrice.den);
+  if (denom === data.nativeDenom) return native;
+  if (nativePrice.num === 0n) return 0n;
+  return ceilDiv(native * rate.num * nativePrice.den, rate.den * nativePrice.num);
 }
 
 /** The pool pairing the native denom with `denom`, whichever side each is on. */
@@ -195,7 +212,7 @@ export class FeeEstimator {
     const has = (denom: string | undefined): denom is string =>
       denom !== undefined && options.some((o) => o.denom === denom);
     const selected = [data.nativeDenom, params.preferred].find(has) ?? options[0]?.denom ?? null;
-    return { options, default: selected };
+    return { options, default: selected, gasUsed: simulation.gasUsed };
   }
 
   private async order(options: FeeOption[], native: string): Promise<FeeOption[]> {

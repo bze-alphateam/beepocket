@@ -122,7 +122,14 @@ const grantMsg = (key: Account, grantee: string): Uint8Array => {
 // A message type the wallet has never heard of, with arbitrary bytes.
 const nothingMsg = (): Uint8Array => any('/test.v1.MsgNothing', Uint8Array.from([1, 2, 3, 250]));
 
-function sendDoc(key: Account, messages: Uint8Array[]) {
+/** A fee the site sets itself: one coin and a gas limit. */
+interface SiteFee {
+  denom: string;
+  amount: string;
+  gasLimit: number;
+}
+
+function sendDoc(key: Account, messages: Uint8Array[], fee?: SiteFee) {
   const bodyBytes = cat(...messages.map((m) => bytesField(1, m)));
   const pubKey = any('/cosmos.crypto.secp256k1.PubKey', bytesField(1, key.pubkey));
   const signerInfo = cat(
@@ -130,14 +137,23 @@ function sendDoc(key: Account, messages: Uint8Array[]) {
     bytesField(2, bytesField(1, numberField(1, 1))),
     numberField(3, 0),
   );
-  // The wallet replaces this fee with its own.
-  const authInfoBytes = cat(bytesField(1, signerInfo), bytesField(2, numberField(2, 1)));
+  // Without a site fee only a gas limit is sent and the wallet prices the fee itself.
+  const feeBytes = fee
+    ? cat(
+        bytesField(1, cat(textField(1, fee.denom), textField(2, fee.amount))),
+        numberField(2, fee.gasLimit),
+      )
+    : numberField(2, 1);
+  const authInfoBytes = cat(bytesField(1, signerInfo), bytesField(2, feeBytes));
   return { bodyBytes, authInfoBytes, chainId: CHAIN_ID, accountNumber: 7n };
 }
 
 const cosmos = (): CosmosWallet => beePocketWallet.getWalletByChainType('cosmos') as CosmosWallet;
 
-const signAndSend = (messagesOf: (key: Account, to: string) => Uint8Array[]): void => {
+const signAndSend = (
+  messagesOf: (key: Account, to: string) => Uint8Array[],
+  fee?: SiteFee,
+): void => {
   void (async () => {
     try {
       const key = await account();
@@ -145,7 +161,7 @@ const signAndSend = (messagesOf: (key: Account, to: string) => Uint8Array[]): vo
       const { signed, signature } = await cosmos().signDirect(
         CHAIN_ID,
         key.address,
-        sendDoc(key, messagesOf(key, to)),
+        sendDoc(key, messagesOf(key, to), fee),
       );
       const txRaw = cat(
         bytesField(1, signed.bodyBytes),
@@ -167,6 +183,16 @@ const signAndSend = (messagesOf: (key: Account, to: string) => Uint8Array[]): vo
 
 element('send').addEventListener('click', () => {
   signAndSend((key, to) => [sendMsg(key, to)]);
+});
+element('send-site-fee').addEventListener('click', () => {
+  signAndSend((key, to) => [sendMsg(key, to)], { denom: 'ubze', amount: '5000', gasLimit: 300000 });
+});
+element('send-high-fee').addEventListener('click', () => {
+  signAndSend((key, to) => [sendMsg(key, to)], {
+    denom: 'ubze',
+    amount: '10000',
+    gasLimit: 300000,
+  });
 });
 element('grant').addEventListener('click', () => {
   signAndSend((key, to) => [grantMsg(key, to)]);

@@ -5,6 +5,7 @@ import { MemoryCache, stubChain } from '../test/stubs';
 import {
   FEE_TTL_MS,
   FeeEstimator,
+  minimumFee,
   SimulationError,
   UnexpectedResponseError,
   simulationTxBytes,
@@ -170,6 +171,7 @@ describe('FeeEstimator.estimate', () => {
     expect(result).toEqual({
       options: [{ denom: NATIVE, amount: 3_000n, gasLimit: 300_000n }],
       default: NATIVE,
+      gasUsed: 200_000n,
     });
     expect(chain.simulate).toHaveBeenCalledWith(simulationTxBytes(body, pubKey, 7n));
   });
@@ -196,7 +198,7 @@ describe('FeeEstimator.estimate', () => {
 
   it('offers nothing when the payer holds one unit less than the fee', async () => {
     const result = await estimate(estimator(chainWith([deepPool])), [[X, 2_474n]]);
-    expect(result).toEqual({ options: [], default: null });
+    expect(result).toEqual({ options: [], default: null, gasUsed: 200_000n });
   });
 
   it('offers a token that is held exactly', async () => {
@@ -386,5 +388,32 @@ describe('FeeEstimator cache', () => {
     const rates = await estimator(chain, { cache }).feeTokenRates();
     expect(rates.has(NATIVE)).toBe(true);
     expect(chain.feeParams).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('minimumFee', () => {
+  it('is ceil(gas x price) in BZE, with no margin', async () => {
+    const data = await estimator(chainWith([])).feeData();
+    expect(minimumFee(data, NATIVE, 300_000n)).toBe(3_000n);
+    expect(minimumFee(data, NATIVE, 300_001n)).toBe(3_001n);
+  });
+
+  it('converts the BZE minimum at the spot ratio for another token, without the 10% margin', async () => {
+    const data = await estimator(chainWith([deepPool])).feeData();
+    // 450,000 gas -> 4,500 ubze -> 2,250 uX at 2 BZE per X (the estimate adds 10% on top).
+    expect(minimumFee(data, X, 450_000n)).toBe(2_250n);
+    // 450,100 gas -> 4,501 ubze -> 2,250.5 uX, rounded up.
+    expect(minimumFee(data, X, 450_100n)).toBe(2_251n);
+  });
+
+  it('is null for a token that cannot pay the fee', async () => {
+    const data = await estimator(chainWith([deepPool])).feeData();
+    expect(minimumFee(data, Y, 300_000n)).toBeNull();
+  });
+
+  it('is zero everywhere when the gas price is zero', async () => {
+    const data = await estimator(chainWith([deepPool], { gasPrice: '0' })).feeData();
+    expect(minimumFee(data, NATIVE, 300_000n)).toBe(0n);
+    expect(minimumFee(data, X, 300_000n)).toBe(0n);
   });
 });

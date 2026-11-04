@@ -20,7 +20,7 @@ export interface ChainEnv {
     ChainClient,
     'account' | 'balances' | 'broadcast' | 'markets' | 'liquidityPools' | 'marketOrder'
   >;
-  fees: Pick<FeeEstimator, 'estimate'>;
+  fees: Pick<FeeEstimator, 'estimate' | 'feeData'>;
   tokens: { resolve(denom: string): Promise<TokenInfo> };
 }
 
