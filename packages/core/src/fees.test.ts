@@ -45,7 +45,7 @@ const deepPool = pool(NATIVE, X, 1_000_000_000_000n, 500_000_000_000n);
 
 /** The fee coins a simulated transaction carries, as `denom:amount`. */
 function feeOf(tx: Uint8Array): string[] {
-  const authInfo = decodeAuthInfo(decodeTxRaw(tx).authInfoBytes) as {
+  const authInfo = decodeAuthInfo(decodeTxRaw(tx).authInfoBytes) as unknown as {
     fee: { amount: { denom: string; amount: string }[] };
   };
   return authInfo.fee.amount.map((c) => `${c.denom}:${c.amount}`);

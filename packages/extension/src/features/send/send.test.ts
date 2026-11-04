@@ -106,12 +106,15 @@ function setup(opts: Options = {}) {
     simulate: (tx: Uint8Array) => {
       calls.simulate++;
       const raw = decodeTxRaw(tx);
-      const fee = (decodeAuthInfo(raw.authInfoBytes) as { fee: { amount: Coin[] } }).fee.amount;
+      const fee = (decodeAuthInfo(raw.authInfoBytes) as unknown as { fee: { amount: Coin[] } }).fee
+        .amount;
       simulatedFees.push(fee.map((c) => `${c.denom}:${c.amount}`));
       if (control.simulateError) return Promise.reject(control.simulateError);
       // Like the chain: the fee coin is deducted before the send runs, so both must be held.
       const messages = (
-        decodeTxBody(raw.bodyBytes) as { messages: { value: { amount: Coin[] } }[] }
+        decodeTxBody(raw.bodyBytes) as unknown as {
+          messages: { value: { amount: Coin[] } }[];
+        }
       ).messages;
       const spent = new Map<string, bigint>();
       for (const c of [...fee, ...messages.flatMap((m) => m.value.amount)]) {
