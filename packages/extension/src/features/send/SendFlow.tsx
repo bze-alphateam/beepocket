@@ -625,7 +625,6 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
             setSheet('none');
           }}
           advanced={{
-            gasUsed: BigInt(estimate.gasUsed),
             applied: estimate.override ?? null,
             // A fee in the sent token leaves room for the amount (max keeps one unit).
             spendable: (o) =>

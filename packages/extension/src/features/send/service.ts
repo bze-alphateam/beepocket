@@ -68,6 +68,10 @@ const MAX_PASSES = 5;
 const TX_HASH = /^[0-9A-Fa-f]{64}$/;
 const BASE_UNITS = /^\d{1,60}$/;
 const CANNOT_PAY = "This address can't pay the network fee.";
+const LEAVES_NO_FEE = {
+  code: SendErrorCodes.amountLeavesNoFee,
+  message: 'Leave room for the network fee, or use max.',
+};
 
 interface Context {
   from: WalletAddress;
@@ -145,16 +149,25 @@ export class SendService {
     const pubKey = await this.pubKeyForSimulation(ctx);
     const data = await guarded(() => this.deps.fees.feeData());
     if (!data.ok) return data;
-    // `typed` is null exactly for max, which starts from the whole balance.
-    let amount = typed ?? balance;
+    // `typed` is null exactly for max. It starts one unit short of the balance: the fee is
+    // simulated with a real fee coin of one unit, which may be in the token being sent.
+    let amount = typed ?? (balance > 1n ? balance - 1n : balance);
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       const estimate = await this.estimate(ctx, pubKey, req, amount);
-      if (!estimate.ok) return estimate;
+      if (!estimate.ok) {
+        // The whole balance (typed, or max of a single unit) leaves nothing for a fee coin of the
+        // sent token; when no other token could be simulated either, say what to do about it.
+        if (amount === balance && estimate.error.code === SendErrorCodes.simulationFailed) {
+          return fail(LEAVES_NO_FEE.code, LEAVES_NO_FEE.message);
+        }
+        return estimate;
+      }
       const priced = await this.price(estimate.value, data.value, ctx, req, amount, typed === null);
       if (!priced.ok) return priced;
       const { fee, options, override, reset } = priced.value;
+      // Max sends what the fee leaves of the balance, or all of it when the fee is in another token.
       const settled =
-        typed === null && fee.denom === req.denom ? balance - BigInt(fee.amount) : amount;
+        typed !== null ? amount : fee.denom === req.denom ? balance - BigInt(fee.amount) : balance;
       if (settled <= 0n) {
         return fail(SendErrorCodes.insufficientFunds, 'Nothing is left to send after the fee.');
       }
@@ -177,7 +190,6 @@ export class SendService {
         gasLimit: fee.gasLimit,
         fee,
         options,
-        gasUsed: estimate.value.gasUsed.toString(),
         ...(override === undefined ? {} : { override }),
         ...(reset ? { overrideReset: true as const } : {}),
       });
@@ -236,7 +248,9 @@ export class SendService {
         pubKey: key.value,
         sequence: ctx.sequence,
         balances: ctx.balances,
-        preferred: req.denom,
+        // The reviewed fee's token is the one its kind of fee is simulated with.
+        preferred: req.feeDenom,
+        spent: new Map([[req.denom, amount]]),
       }),
     );
     if (!estimate.ok) return estimate;
@@ -255,7 +269,7 @@ export class SendService {
       if (!pricing) return fail(SendErrorCodes.cannotPayFee, CANNOT_PAY);
       const priced = priceGasOverride({
         pricing,
-        gasUsed: estimate.value.gasUsed,
+        gasUsed: current.gasUsed,
         gasLimit: BigInt(req.override.gasLimit),
         gasPrice: multiplierOf(req.override.gasPrice),
         spendable: feeHeld - (req.feeDenom === req.denom ? amount : 0n),
@@ -392,7 +406,10 @@ export class SendService {
         pubKey,
         sequence: ctx.sequence,
         balances: ctx.balances,
-        preferred: req.denom,
+        // A picked fee token is the one a fee in another token is simulated with. The amount is
+        // spent first, so a token with no unit left next to it is never simulated as the fee.
+        preferred: req.feeDenom ?? req.denom,
+        spent: new Map([[req.denom, amount]]),
       }),
     );
   }
@@ -421,7 +438,7 @@ export class SendService {
       (o) => o.denom !== req.denom || (max ? o.amount < balance : amount + o.amount <= balance),
     );
     if (affordable.length === 0) {
-      return fail(SendErrorCodes.amountLeavesNoFee, 'Leave room for the network fee, or use max.');
+      return fail(LEAVES_NO_FEE.code, LEAVES_NO_FEE.message);
     }
     const options: FeeChoice[] = [];
     for (const o of affordable) {
@@ -433,6 +450,7 @@ export class SendService {
           denom: o.denom,
           amount: o.amount.toString(),
           gasLimit: o.gasLimit.toString(),
+          gasUsed: o.gasUsed.toString(),
           symbol: info.value.symbol,
           decimals: info.value.decimals,
           logo: info.value.logo,
@@ -457,7 +475,7 @@ export class SendService {
     const sent = fee.denom === req.denom ? (max ? 1n : amount) : 0n;
     const priced = priceGasOverride({
       pricing,
-      gasUsed: estimate.gasUsed,
+      gasUsed: BigInt(fee.gasUsed),
       gasLimit: BigInt(override.gasLimit),
       gasPrice: multiplierOf(override.gasPrice),
       spendable: held - sent,

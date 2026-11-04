@@ -15,6 +15,7 @@ import {
   Vault,
   WebCryptoCipher,
   type ChainClient,
+  type EstimateParams,
   type FeeData,
   type FeeEstimate,
   type Random,
@@ -75,19 +76,28 @@ const TOKENS: Record<string, { symbol: string; decimals: number }> = {
 interface Node {
   account: { accountNumber: bigint; sequence: bigint; pubKey: null } | null;
   estimate: () => Promise<FeeEstimate>;
+  /** What each estimate was asked for. */
+  estimates: EstimateParams[];
   balances: Map<string, bigint>;
   feeData: FeeData;
   broadcast: Mock<ChainClient['broadcast']>;
 }
 
+/** The simulation with a BZE fee used 150,000 gas, the one with a fee in another token 200,000. */
 const FEES: FeeEstimate = {
   options: [
-    { denom: 'ubze', amount: 2000n, gasLimit: 200_000n },
-    // A fee in another token pays for its swap: a larger gas limit.
-    { denom: 'uother', amount: 500n, gasLimit: 300_000n },
+    { denom: 'ubze', amount: 2000n, gasLimit: 200_000n, gasUsed: 150_000n },
+    // A fee in another token has its own simulation: a larger gas limit.
+    { denom: 'uother', amount: 500n, gasLimit: 300_000n, gasUsed: 200_000n },
   ],
   default: 'ubze',
-  gasUsed: 150_000n,
+  simulated: { native: 150_000n, foreign: 200_000n },
+};
+
+const NO_OPTIONS: FeeEstimate = {
+  options: [],
+  default: null,
+  simulated: { native: 150_000n, foreign: null },
 };
 
 /** 0.01 ubze per gas; 6 ubze per uother at the pool's spot ratio. */
@@ -133,6 +143,7 @@ async function rig() {
   const node: Node = {
     account: { accountNumber: ACCOUNT_NUMBER, sequence: SEQUENCE, pubKey: null },
     estimate: () => Promise.resolve(FEES),
+    estimates: [],
     balances: new Map([['ubze', 100_000_000n]]),
     feeData: FEE_DATA,
     broadcast: vi.fn<ChainClient['broadcast']>(() => Promise.resolve({ txHash: HASH })),
@@ -147,7 +158,13 @@ async function rig() {
       liquidityPools: () => Promise.resolve([]),
       marketOrder: () => Promise.resolve(null),
     },
-    fees: { estimate: () => node.estimate(), feeData: () => Promise.resolve(node.feeData) },
+    fees: {
+      estimate: (params) => {
+        node.estimates.push(params);
+        return node.estimate();
+      },
+      feeData: () => Promise.resolve(node.feeData),
+    },
     tokens: {
       resolve: (denom) => {
         const known = TOKENS[denom];
@@ -382,7 +399,7 @@ describe('signDirect refuses before any window opens', () => {
   it('when no token can pay the fee', async () => {
     const t = await rig();
     await t.connect();
-    t.node.estimate = () => Promise.resolve({ options: [], default: null, gasUsed: 150_000n });
+    t.node.estimate = () => Promise.resolve(NO_OPTIONS);
     const a = await t.ask('signDirect', request().params);
     expect(t.answerOf(a.id)).toMatchObject({ error: { code: 'invalid-request' } });
   });
@@ -870,6 +887,49 @@ describe('signDirect with a fee the site set', () => {
     expect(at.view.siteFee).toEqual({ status: 'ok' });
   });
 
+  it('checks the gas of a fee in another token against the simulation in another token', async () => {
+    const t = await rig();
+    await t.connect();
+    t.node.balances = new Map([
+      ['ubze', 100_000_000n],
+      ['uother', 10_000n],
+    ]);
+    // Above the BZE simulation (150,000) but below the one in another token (200,000).
+    const below = await review(t, site([['uother', 400n]], 180_000n));
+    expect(below.view.siteFee).toEqual({ status: 'gas' });
+    expect(below.view.fee).toMatchObject({ denom: 'uother', gasUsed: '200000', setBy: ORIGIN });
+    // The site's token is the one the estimate simulates a fee in another token with.
+    expect(t.node.estimates.at(-1)?.preferred).toBe('uother');
+    await t.dapp.answer(below.id, { approve: false });
+    const at = await review(t, site([['uother', 400n]], 200_000n));
+    expect(at.view.siteFee).toEqual({ status: 'ok' });
+    await t.dapp.answer(at.id, { approve: false });
+    // A BZE fee is still checked against the BZE simulation.
+    const bze = await review(t, site([['ubze', 1_800n]], 180_000n));
+    expect(bze.view.siteFee).toEqual({ status: 'ok' });
+    expect(bze.view.fee).toMatchObject({ gasUsed: '150000' });
+  });
+
+  it('drops a site fee in another token when no simulation in another token passed', async () => {
+    const t = await rig();
+    await t.connect();
+    t.node.balances = new Map([
+      ['ubze', 100_000_000n],
+      ['uother', 10_000n],
+    ]);
+    t.node.estimate = () =>
+      Promise.resolve({
+        ...FEES,
+        options: FEES.options.slice(0, 1),
+        simulated: { native: 150_000n, foreign: null },
+      });
+    // Enough gas for the BZE simulation, but nothing measured a fee in another token.
+    const r = await review(t, site([['uother', 400n]], 180_000n));
+    expect(r.view.siteFee).toEqual({ status: 'unusable' });
+    expect(r.view.fee).toMatchObject({ denom: 'ubze', amount: '2000', gasLimit: '200000' });
+    expect(r.view.options.every((o) => o.setBy === undefined)).toBe(true);
+  });
+
   it('calls any fee high when the wallets own estimate is zero', async () => {
     const t = await rig();
     await t.connect();
@@ -879,9 +939,9 @@ describe('signDirect with a fee the site set', () => {
     };
     t.node.estimate = () =>
       Promise.resolve({
-        options: [{ denom: 'ubze', amount: 0n, gasLimit: 225_000n }],
+        options: [{ denom: 'ubze', amount: 0n, gasLimit: 225_000n, gasUsed: 150_000n }],
         default: 'ubze',
-        gasUsed: 150_000n,
+        simulated: { native: 150_000n, foreign: null },
       });
     const r = await review(t, site([['ubze', 1_000_000n]], 225_000n));
     expect(r.view.siteFee).toEqual({ status: 'high', times: null });
@@ -962,7 +1022,7 @@ describe('signDirect with a fee the site set', () => {
   it('signs a usable site fee even when the wallets own options are all out of reach', async () => {
     const t = await rig();
     await t.connect();
-    t.node.estimate = () => Promise.resolve({ options: [], default: null, gasUsed: 150_000n });
+    t.node.estimate = () => Promise.resolve(NO_OPTIONS);
     const r = await review(t, site([['ubze', 2_500n]], 250_000n));
     expect(r.view.options).toHaveLength(1);
     expect(r.view.siteFee).toEqual({ status: 'ok' });
@@ -977,8 +1037,8 @@ describe('signDirect with Advanced gas limit and price', () => {
   });
   const signedFee = (t: Rig, id: string) =>
     decodeAuthInfo(bytesFromWire(t.signedOf(id).signed.authInfoBytes)).fee;
-  // The rig simulates 150,000 gas at 0.01 ubze per gas: the BZE bounds are 150,000 (the
-  // simulation), 225,000 (the estimate) and 2,250,000 (ten times it).
+  // The rig simulates 150,000 gas with a BZE fee at 0.01 ubze per gas: the BZE bounds are
+  // 150,000 (the simulation), 180,000 (the estimate) and 1,800,000 (ten times it).
   const custom = (amount: string, gasLimit: string, gasPrice: 1 | 2 | 3 = 1) => ({
     denom: 'ubze',
     amount,
@@ -990,9 +1050,9 @@ describe('signDirect with Advanced gas limit and price', () => {
     const t = await rig();
     await t.connect();
     const r = await review(t);
-    expect(r.view.gasUsed).toBe('150000');
     expect(r.view.options[0]).toMatchObject({
       denom: 'ubze',
+      gasUsed: '150000',
       balance: '100000000',
       pricing: { native: true, nativePrice: { num: '1', den: '100' } },
     });
@@ -1030,7 +1090,7 @@ describe('signDirect with Advanced gas limit and price', () => {
       custom('6000', '300000', 3),
       // One below the simulation and one above ten times the estimate, both priced right.
       custom('1500', '149999'),
-      custom('22501', '2250001'),
+      custom('18001', '1800001'),
       { ...custom('6000', '300000', 2), gasLimit: '300001' },
       { ...custom('6000', '300000', 2), denom: 'ufree' },
     ];
@@ -1057,6 +1117,28 @@ describe('signDirect with Advanced gas limit and price', () => {
       gasLimit: '225000',
       payer: '',
       granter: '',
+    });
+  });
+
+  it('bounds settings for a fee in another token by the simulation in another token', async () => {
+    const t = await rig();
+    await t.connect();
+    t.node.balances = new Map([
+      ['ubze', 100_000_000n],
+      ['uother', 10_000n],
+    ]);
+    const r = await review(t);
+    // 200,000 gas is 2,000 ubze, 333.3 uother at 6 ubze each, 367 with the 10% margin; one gas
+    // less prices the same but is below the simulation in another token.
+    const fee = (gasLimit: string) => ({ ...custom('367', gasLimit), denom: 'uother' });
+    expect(await t.dapp.answer(r.id, { approve: true, fee: fee('199999') })).toMatchObject({
+      ok: false,
+      error: { code: 'review-changed' },
+    });
+    expect((await t.dapp.answer(r.id, { approve: true, fee: fee('200000') })).ok).toBe(true);
+    expect(signedFee(t, r.id)).toMatchObject({
+      amount: [{ denom: 'uother', amount: '367' }],
+      gasLimit: '200000',
     });
   });
 });

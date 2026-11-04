@@ -60,8 +60,6 @@ export const feeKey = (o: FeeChoice): string =>
 
 /** The fee sheet's Advanced step, for the picked option. */
 export interface FeeSheetAdvanced {
-  /** What the simulation used. */
-  gasUsed: bigint;
   /** The settings in force for the picked option, null for none. */
   applied: FeeOverride | null;
   /** What the fee may take of a token (its balance, less a sent amount in it). */
@@ -96,9 +94,7 @@ export function FeeSheet(props: {
   const picked = props.options.find((o) => feeKey(o) === props.selected);
   const canAdvance = advanced !== undefined && picked !== undefined && pricingOf(picked) !== null;
   const shown =
-    picked && advanced
-      ? applyOverride(picked, advanced.gasUsed, advanced.applied, advanced.spendable(picked))
-      : null;
+    picked && advanced ? applyOverride(picked, advanced.applied, advanced.spendable(picked)) : null;
 
   if (step === 'advanced' && canAdvance) {
     return (
@@ -113,7 +109,6 @@ export function FeeSheet(props: {
         <Advanced
           key={`${feeKey(picked)}:${prefill ?? ''}`}
           option={picked}
-          gasUsed={advanced.gasUsed}
           applied={advanced.applied}
           prefill={prefill}
           spendable={advanced.spendable(picked)}

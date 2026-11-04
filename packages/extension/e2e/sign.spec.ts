@@ -317,7 +317,7 @@ test('a fee the site set is pre-selected, labelled on the fee sheet and signed',
       context.waitForEvent('page'),
       dapp.getByRole('button', { name: 'Pay with site fee' }).click(),
     ]);
-    // The site's 5,000 ubze for 300,000 gas, not the wallet's 2,250 ubze for 225,000.
+    // The site's 5,000 ubze for 300,000 gas, not the wallet's 1,800 ubze for 180,000.
     const feeRow = sign.getByRole('button', { name: /Change fee token/ });
     await expect(feeRow).toContainText('0.005 BZE');
     await expect(sign.getByText(/higher than needed|too low/)).toHaveCount(0);
@@ -341,8 +341,8 @@ test('a site fee far above the estimate shows a warning', async ({ context, exte
       context.waitForEvent('page'),
       dapp.getByRole('button', { name: 'Pay with high site fee' }).click(),
     ]);
-    // 10,000 ubze against the wallet's own 2,250.
-    await expect(sign.getByText('This site set a fee about 4× higher than needed')).toBeVisible();
+    // 10,000 ubze against the wallet's own 1,800.
+    await expect(sign.getByText('This site set a fee about 6× higher than needed')).toBeVisible();
     await sign.getByRole('button', { name: 'Reject' }).click();
     await expect(dapp.getByRole('status')).toHaveText('error rejected');
   } finally {
@@ -362,10 +362,10 @@ test('Advanced gas limit and price are signed and broadcast exactly as shown', a
       context.waitForEvent('page'),
       dapp.getByRole('button', { name: 'Send 1 BZE' }).click(),
     ]);
-    // 150,000 simulated: Auto is 225,000 gas. 300,000 gas at 3 × 0.01 ubze is 9,000 ubze.
+    // 150,000 simulated: Auto is 180,000 gas. 300,000 gas at 3 × 0.01 ubze is 9,000 ubze.
     await sign.getByRole('button', { name: /Change fee token/ }).click();
     await sign.getByRole('button', { name: /^Advanced: gas limit and price/ }).click();
-    await expect(sign.getByRole('textbox', { name: 'Gas limit' })).toHaveValue('225,000');
+    await expect(sign.getByRole('textbox', { name: 'Gas limit' })).toHaveValue('180,000');
     await sign.getByRole('textbox', { name: 'Gas limit' }).fill('300000');
     await sign.getByRole('radio', { name: /^×3/ }).click();
     await expect(sign.locator('.bp-gas-fee')).toContainText('0.009 BZE');

@@ -97,15 +97,19 @@ export function decodeTxRaw(txRaw: Uint8Array): {
   return { bodyBytes, authInfoBytes, signatures };
 }
 
-/** `TxRaw` for `/cosmos/tx/v1beta1/simulate`: empty signature and a zero fee. */
+/**
+ * `TxRaw` for `/cosmos/tx/v1beta1/simulate`: empty signature, a zero gas limit and `fee` (none
+ * by default). A fee coin makes the chain run the fee deduction, and its gas, as it will for real.
+ */
 export function simulationTxBytes(
   bodyBytes: Uint8Array,
   pubKey: Uint8Array,
   sequence: bigint,
+  fee: Coin[] = [],
 ): Uint8Array {
   return txRawBytes({
     bodyBytes,
-    authInfoBytes: buildAuthInfo({ pubKey, sequence, fee: { amount: [], gasLimit: 0n } }),
+    authInfoBytes: buildAuthInfo({ pubKey, sequence, fee: { amount: fee, gasLimit: 0n } }),
     signatures: [new Uint8Array()],
   });
 }

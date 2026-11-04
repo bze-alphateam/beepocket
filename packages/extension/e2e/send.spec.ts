@@ -179,13 +179,13 @@ test('sends with an Advanced gas limit and price, signed exactly as reviewed', a
   const node = await mockNode(context);
   const page = await openSend(context, extensionId, false);
 
-  // 150,000 simulated: Auto is 225,000 gas. 300,000 gas at 2 × 0.01 ubze is 6,000 ubze.
+  // 150,000 simulated: Auto is 180,000 gas. 300,000 gas at 2 × 0.01 ubze is 6,000 ubze.
   const feeRow = page.getByRole('button', { name: /^Network fee about/ });
-  await expect(feeRow).toContainText('0.00225 BZE');
+  await expect(feeRow).toContainText('0.0018 BZE');
   await feeRow.click();
   await page.getByRole('button', { name: /^Advanced: gas limit and price/ }).click();
   const gas = page.getByRole('textbox', { name: 'Gas limit' });
-  await expect(gas).toHaveValue('225,000');
+  await expect(gas).toHaveValue('180,000');
   await gas.fill('100000');
   await expect(page.getByText('At least 150,000, the gas the simulation used.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Done' })).toBeDisabled();

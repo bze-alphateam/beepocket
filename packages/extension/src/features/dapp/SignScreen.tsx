@@ -268,9 +268,8 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
 
   // A fee token the signer can no longer pay with falls back to the worker's pick.
   const base = view.options.find((o) => feeKey(o) === picked) ?? view.fee;
-  const gasUsed = BigInt(view.gasUsed);
   const spendable = (o: FeeChoice): bigint => BigInt(o.balance ?? '0');
-  const applied: AppliedFee = applyOverride(base, gasUsed, override, spendable(base));
+  const applied: AppliedFee = applyOverride(base, override, spendable(base));
   const fee = applied.fee;
   const note = feeNote(view, base, override !== null);
   const { summary } = view;
@@ -536,7 +535,6 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
           setPrefill(undefined);
         }}
         advanced={{
-          gasUsed,
           applied: override,
           spendable,
           holder: view.signer.label,

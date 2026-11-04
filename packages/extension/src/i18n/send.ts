@@ -65,7 +65,6 @@ export const send = {
   'send.gas.siteLow': '{site} set {gas}, below the simulated {used}. It may run out of gas.',
   'send.gas.empty': 'Enter a gas limit, or pick Auto.',
   'send.gas.low': 'At least {min}, the gas the simulation used.',
-  'send.gas.low.swap': 'At least {min}. Paying in {symbol} adds a swap the simulation leaves out.',
   'send.gas.high': 'At most {max}, 10× the estimate.',
   'send.gas.afford': '{label} holds {amount} {symbol}, too little for this fee.',
   'send.gas.warn':

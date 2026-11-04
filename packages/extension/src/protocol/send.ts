@@ -58,8 +58,13 @@ export interface FeeChoice {
   denom: string;
   /** Base units of `denom`, decimal string. */
   amount: string;
-  /** The gas limit this fee pays for; a fee in another token pays for the swap as well. */
+  /** The gas limit this fee pays for; a fee in another token may pay for a swap as well. */
   gasLimit: string;
+  /**
+   * What the simulation with a fee in this token's kind (native or another token) used, decimal
+   * string: Advanced's bounds start from it.
+   */
+  gasUsed: string;
   symbol: string;
   decimals: number;
   /** The fee token's logo URL (see `TokenInfo.logo`). */
@@ -86,8 +91,6 @@ export interface SendQuote {
   fee: FeeChoice;
   /** Every token the address can pay this send's fee with, native first. Includes `fee`. */
   options: FeeChoice[];
-  /** What the simulation used, decimal string: Advanced's bounds start from it. */
-  gasUsed: string;
   /** The Advanced settings `fee` was priced with; absent when it is the wallet's estimate. */
   override?: FeeOverride;
   /**

@@ -2,11 +2,13 @@ import {
   feePricing,
   minimumFee,
   rawJson,
+  simulatedGasFor,
   summarise,
   verifySignRequest,
   type AnyMsg,
   type FeeData,
   type FeeEstimate,
+  type SimulatedGas,
   type TxSummary,
 } from '@beepocket/core';
 import {
@@ -118,8 +120,8 @@ export interface Prepared {
   /** What was made of the site's fee; null when the request carried none. */
   siteFee: SiteFeeCheck | null;
   locked: boolean;
-  /** What the simulation used. */
-  gasUsed: bigint;
+  /** What the simulations used: the native kind and the other tokens' kind. */
+  simulated: SimulatedGas;
   /** The fee prices right now, for pricing Advanced settings. */
   feeData: FeeData;
   /** The signer's balances right now. */
@@ -147,7 +149,16 @@ function contactName(book: unknown[], address: string): string | null {
 function toChoices(estimate: FeeEstimate, infos: Map<string, FeeChoice>): FeeChoice[] {
   return estimate.options.flatMap((o) => {
     const info = infos.get(o.denom);
-    return info ? [{ ...info, amount: o.amount.toString(), gasLimit: o.gasLimit.toString() }] : [];
+    return info
+      ? [
+          {
+            ...info,
+            amount: o.amount.toString(),
+            gasLimit: o.gasLimit.toString(),
+            gasUsed: o.gasUsed.toString(),
+          },
+        ]
+      : [];
   });
 }
 
@@ -185,7 +196,8 @@ const HIGH_FEE_TIMES = 3n;
 /**
  * The site's fee as an option, with what the wallet makes of it; `null` option when it cannot
  * be paid. `walletAmount` is the wallet's own estimate in the same token, when it has one;
- * `gasUsed` is what the simulation of this transaction used.
+ * `simulated` is what the simulations of this transaction used: the site's gas limit is checked
+ * against the one with a fee in its token's kind, and the fee is unusable when that one failed.
  */
 function checkSiteFee(
   fee: SiteFee,
@@ -193,7 +205,7 @@ function checkSiteFee(
   data: FeeData,
   balances: Map<string, bigint>,
   info: FeeChoice | undefined,
-  estimate: { walletAmount: bigint | undefined; gasUsed: bigint },
+  estimate: { walletAmount: bigint | undefined; simulated: SimulatedGas },
 ): { option: FeeChoice | null; check: SiteFeeCheck } {
   const unusable = { option: null, check: { status: 'unusable' as const } };
   const [coin] = fee.coins;
@@ -201,14 +213,18 @@ function checkSiteFee(
   const amount = BigInt(coin.amount);
   const minimum = minimumFee(data, coin.denom, fee.gasLimit);
   if (minimum === null || (balances.get(coin.denom) ?? 0n) < amount) return unusable;
+  // Without a passing simulation in its kind of token nothing measured the site's fee path.
+  const gasUsed = simulatedGasFor(estimate.simulated, coin.denom === data.nativeDenom);
+  if (gasUsed === null) return unusable;
   const option: FeeChoice = {
     ...info,
     amount: amount.toString(),
     gasLimit: fee.gasLimit.toString(),
+    gasUsed: gasUsed.toString(),
     setBy: origin,
   };
   // Too little gas runs out mid-way and the fee is still charged.
-  if (fee.gasLimit < estimate.gasUsed) return { option, check: { status: 'gas' } };
+  if (fee.gasLimit < gasUsed) return { option, check: { status: 'gas' } };
   if (amount < minimum) return { option, check: { status: 'low' } };
   const { walletAmount } = estimate;
   if (walletAmount !== undefined && amount > walletAmount * HIGH_FEE_TIMES) {
@@ -230,6 +246,7 @@ async function feeTokenInfo(env: ChainEnv, denom: string): Promise<FeeChoice | u
     denom,
     amount: '0',
     gasLimit: '0',
+    gasUsed: '0',
     symbol: info.symbol,
     decimals: info.decimals,
     logo: info.logo,
@@ -296,10 +313,18 @@ export async function prepareSign(
   }
 
   const siteFee = siteFeeOf(verified.authInfo.fee);
+  const siteDenom = siteFee?.coins.length === 1 ? siteFee.coins[0]?.denom : undefined;
   const estimated = await guarded(
     () =>
       Promise.all([
-        env.fees.estimate({ bodyBytes, pubKey, sequence: account.sequence, balances }),
+        // The site's token, when it is another token, is the one its fee is simulated with.
+        env.fees.estimate({
+          bodyBytes,
+          pubKey,
+          sequence: account.sequence,
+          balances,
+          ...(siteDenom === undefined ? {} : { preferred: siteDenom }),
+        }),
         env.fees.feeData(),
       ]),
     simulationMessage,
@@ -310,7 +335,6 @@ export async function prepareSign(
   // A token whose display data cannot be read is left out: its fee could not be shown right.
   const infos = new Map<string, FeeChoice>();
   const denoms = new Set(estimate.options.map((o) => o.denom));
-  const siteDenom = siteFee?.coins.length === 1 ? siteFee.coins[0]?.denom : undefined;
   if (siteDenom !== undefined) denoms.add(siteDenom);
   for (const denom of denoms) {
     const info = await feeTokenInfo(env, denom);
@@ -331,7 +355,7 @@ export async function prepareSign(
         siteDenom === undefined ? undefined : infos.get(siteDenom),
         {
           walletAmount: estimate.options.find((o) => o.denom === siteDenom)?.amount,
-          gasUsed: estimate.gasUsed,
+          simulated: estimate.simulated,
         },
       )
     : null;
@@ -367,7 +391,7 @@ export async function prepareSign(
       defaultFee,
       siteFee: site?.check ?? null,
       locked: state !== 'unlocked',
-      gasUsed: estimate.gasUsed,
+      simulated: estimate.simulated,
       feeData,
       balances,
     },
@@ -385,6 +409,5 @@ export function detailsOf(p: Prepared): SignDetails {
     fee: p.defaultFee,
     options: p.options,
     ...(p.siteFee ? { siteFee: p.siteFee } : {}),
-    gasUsed: p.gasUsed.toString(),
   };
 }

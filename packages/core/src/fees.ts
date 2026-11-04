@@ -1,7 +1,7 @@
 import type { Cache } from './cache';
 import { FEE_TTL_MS } from './cache';
 import type { ChainClient, Clock, Pool } from './net';
-import { UnexpectedResponseError } from './net';
+import { HttpStatusError, SimulationError, TransportError, UnexpectedResponseError } from './net';
 import { simulationTxBytes } from './tx';
 
 /** A gas price as an exact fraction: base units per unit of gas. */
@@ -24,11 +24,24 @@ export interface FeeOption {
   denom: string;
   amount: bigint;
   /**
-   * The gas limit this fee pays for. Paying in another token costs more gas than paying in
-   * the native one (the fee is swapped to the native token before the messages run), so each
+   * The gas limit this fee pays for. Paying in another token can cost more gas than paying in
+   * the native one (a module fee in the transaction is swapped to the native token), so each
    * option carries its own limit and the transaction must be signed with it.
    */
   gasLimit: bigint;
+  /** What the simulation with a fee in this option's kind of token used, before any margin. */
+  gasUsed: bigint;
+}
+
+/** What the simulations used, before any margin. */
+export interface SimulatedGas {
+  /**
+   * With a fee of one native base unit (no fee when the payer holds none); null when it failed
+   * and the other one did not.
+   */
+  native: bigint | null;
+  /** With a fee of one unit of another token; null when it was not run or failed. */
+  foreign: bigint | null;
 }
 
 export interface FeeEstimate {
@@ -36,8 +49,13 @@ export interface FeeEstimate {
   options: FeeOption[];
   /** The denom to pre-select, null when the payer can pay with none. */
   default: string | null;
-  /** The gas the simulation used, before any headroom. */
-  gasUsed: bigint;
+  /** What each simulation used. Every option carries the one matching its token. */
+  simulated: SimulatedGas;
+}
+
+/** The simulation matching a fee in the native or another token; null when it did not run. */
+export function simulatedGasFor(simulated: SimulatedGas, native: boolean): bigint | null {
+  return native ? simulated.native : simulated.foreign;
 }
 
 export interface EstimateParams {
@@ -46,8 +64,16 @@ export interface EstimateParams {
   sequence: bigint;
   /** The paying address's balances. */
   balances: Map<string, bigint>;
-  /** The user's selected token; used as the default when the native token is not an option. */
+  /**
+   * The user's selected token: the default when the native token is not an option, and the
+   * token the fee in another token is simulated with when it can pay and the payer holds it.
+   */
   preferred?: string;
+  /**
+   * What the transaction's own messages take of each token (a send's amount), when the caller
+   * knows it. A fee coin is simulated in a token only when one unit is left next to it.
+   */
+  spent?: Map<string, bigint>;
 }
 
 /** Where symbols come from when sorting options; `TokenResolver` fits. */
@@ -63,14 +89,14 @@ export interface FeeEstimatorOptions {
   tokens?: SymbolSource;
 }
 
-// The simulation runs with an empty fee, so it never pays for the fee deduction, and a fee in
-// another token is swapped to the native one by the ante handler before the messages run. The
-// margins match the BZE dapps:
-//   gasLimit   = ceil(simulated x 1.5)                       (native fee)
-//   foreignGas = ceil(gasLimit x 1.5)                        (fee in another token)
-//   foreignFee = ceil(ceil(foreignGas x price) / spot x 1.1) (spot = native per token)
-const GAS_HEADROOM = { num: 15n, den: 10n };
-const FOREIGN_GAS_HEADROOM = { num: 15n, den: 10n };
+// The transaction is simulated with a real fee of one unit, once in the native token and once in
+// one other token, so the chain measures the fee deduction and, for a module fee paid in
+// another token, its swap to the native one. Every fee in another token takes the same path
+// (one hop against the native token), so one of them stands for all. The margins match the BZE
+// dapps:
+//   gasLimit   = ceil(simulated x 1.2)                     (simulated with a fee in the token's kind)
+//   foreignFee = ceil(ceil(gasLimit x price) / spot x 1.1) (spot = native per token)
+const GAS_HEADROOM = { num: 12n, den: 10n };
 const FOREIGN_FEE_SLIPPAGE = { num: 11n, den: 10n };
 const MAX_PRICE_DIGITS = 40;
 
@@ -136,20 +162,14 @@ export function feeAt(
   );
 }
 
-/** The wallet's gas limit for a simulation: `ceil(gasUsed x 1.5)`, and x 1.5 again for a fee swap. */
-function estimatedGasLimit(gasUsed: bigint, native: boolean): bigint {
-  const nativeGas = ceilDiv(gasUsed * GAS_HEADROOM.num, GAS_HEADROOM.den);
-  return native
-    ? nativeGas
-    : ceilDiv(nativeGas * FOREIGN_GAS_HEADROOM.num, FOREIGN_GAS_HEADROOM.den);
+/** The wallet's gas limit for a simulation: `ceil(gasUsed x 1.2)`. */
+function estimatedGasLimit(gasUsed: bigint): bigint {
+  return ceilDiv(gasUsed * GAS_HEADROOM.num, GAS_HEADROOM.den);
 }
 
 /** The gas limits a user may pick for a fee: never below `min`, never above `max`. */
 export interface GasLimitBounds {
-  /**
-   * What the simulation used; for a fee in another token the native estimate, because the
-   * simulation leaves out the swap of the fee.
-   */
+  /** What the simulation with a fee in this token's kind used. */
   min: bigint;
   /** The wallet's own gas limit (`estimatedGasLimit`). Below it the transaction may run out. */
   estimate: bigint;
@@ -159,10 +179,11 @@ export interface GasLimitBounds {
 
 const MAX_GAS_TIMES = 10n;
 
-export function gasLimitBounds(gasUsed: bigint, native: boolean): GasLimitBounds {
-  const estimate = estimatedGasLimit(gasUsed, native);
+/** The bounds for a fee whose token's kind of simulation used `gasUsed`. */
+export function gasLimitBounds(gasUsed: bigint): GasLimitBounds {
+  const estimate = estimatedGasLimit(gasUsed);
   return {
-    min: native ? gasUsed : estimatedGasLimit(gasUsed, true),
+    min: gasUsed,
     estimate,
     max: estimate * MAX_GAS_TIMES,
   };
@@ -212,14 +233,14 @@ export interface PricedGasOverride {
 
 export function priceGasOverride(params: {
   pricing: FeePricing;
-  /** What the simulation used. */
+  /** What the simulation matching the fee's token used (`simulatedGasFor`, `FeeOption.gasUsed`). */
   gasUsed: bigint;
   gasLimit: bigint;
   gasPrice: GasPriceMultiplier;
   /** What the fee may take of its token (the balance, less a sent amount in the same token). */
   spendable: bigint;
 }): PricedGasOverride {
-  const bounds = gasLimitBounds(params.gasUsed, params.pricing.native);
+  const bounds = gasLimitBounds(params.gasUsed);
   const amount = feeAt(params.pricing, params.gasLimit, params.gasPrice);
   const status: GasOverrideStatus =
     params.gasLimit < bounds.min
@@ -247,6 +268,32 @@ export function minimumFee(data: FeeData, denom: string, gasLimit: bigint): bigi
   if (denom === data.nativeDenom) return native;
   if (nativePrice.num === 0n) return 0n;
   return ceilDiv(native * rate.num * nativePrice.den, rate.den * nativePrice.num);
+}
+
+type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
+
+function settle<T>(run: Promise<T>): Promise<Settled<T>> {
+  return run.then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+}
+
+/**
+ * A simulation's gas, or null when the node refused it or could not be reached. Anything else
+ * is a bug and propagates.
+ */
+function gasOf(run: Settled<bigint>): bigint | null {
+  if (run.ok) return run.value;
+  const { error } = run;
+  if (
+    error instanceof SimulationError ||
+    error instanceof TransportError ||
+    error instanceof HttpStatusError ||
+    error instanceof UnexpectedResponseError
+  )
+    return null;
+  throw error;
 }
 
 /** The pool pairing the native denom with `denom`, whichever side each is on. */
@@ -322,29 +369,76 @@ export class FeeEstimator {
     return data;
   }
 
-  /** Simulates the transaction and prices its fee in every denom the payer can pay with. */
+  /**
+   * Simulates the transaction and prices its fee in every denom the payer can pay with. It runs
+   * at most two simulations, side by side: one with a fee of one native base unit, and one with
+   * a fee of one unit of another token the payer has a unit of to spare after `spent`
+   * (`preferred` when it qualifies, else the first in option order). Native options come from the first, every other from the second.
+   * One failing leaves its options out; both failing (or the native one, when the other did not
+   * run) throws the native one's error.
+   */
   async estimate(params: EstimateParams): Promise<FeeEstimate> {
-    const [simulation, data] = await Promise.all([
-      this.chain.simulate(simulationTxBytes(params.bodyBytes, params.pubKey, params.sequence)),
-      this.feeData(),
-    ]);
+    const left = (denom: string) =>
+      (params.balances.get(denom) ?? 0n) - (params.spent?.get(denom) ?? 0n);
+    const held = (denom: string) => left(denom) >= 1n;
+    const simulateWith = (fee: { denom: string; amount: string }[]) =>
+      this.chain
+        .simulate(simulationTxBytes(params.bodyBytes, params.pubKey, params.sequence, fee))
+        .then((r) => r.gasUsed);
+    // The native denom and the eligible tokens come from the fee data (cached), so both
+    // simulations start once it is read.
+    const data = await this.feeData();
+    const native = data.nativeDenom;
+    // A payer with no native unit to spare cannot fund a fee coin in it: no fee, as it cannot
+    // pay a native fee anyway.
+    const nativeRun = settle(simulateWith(held(native) ? [{ denom: native, amount: '1' }] : []));
+    const representative = await this.representative(data, params, held);
+    const foreignRun =
+      representative === null
+        ? null
+        : settle(simulateWith([{ denom: representative, amount: '1' }]));
+    const [nativeResult, foreignResult] = await Promise.all([nativeRun, foreignRun]);
+    const simulated: SimulatedGas = {
+      native: gasOf(nativeResult),
+      foreign: foreignResult && gasOf(foreignResult),
+    };
+    if (!nativeResult.ok && simulated.foreign === null) throw nativeResult.error;
+
     const affordable: FeeOption[] = [];
     for (const denom of data.rates.keys()) {
       const pricing = feePricing(data, denom);
       if (!pricing) throw new UnexpectedResponseError('fees.rates', 'no native gas price');
-      const gasLimit = estimatedGasLimit(simulation.gasUsed, pricing.native);
-      const option = { denom, amount: feeAt(pricing, gasLimit), gasLimit };
+      const gasUsed = simulatedGasFor(simulated, pricing.native);
+      if (gasUsed === null) continue;
+      const gasLimit = estimatedGasLimit(gasUsed);
+      const option = { denom, amount: feeAt(pricing, gasLimit), gasLimit, gasUsed };
       if ((params.balances.get(denom) ?? 0n) >= option.amount) affordable.push(option);
     }
-    const options = await this.order(affordable, data.nativeDenom);
+    const options = await this.order(affordable, native);
 
     const has = (denom: string | undefined): denom is string =>
       denom !== undefined && options.some((o) => o.denom === denom);
-    const selected = [data.nativeDenom, params.preferred].find(has) ?? options[0]?.denom ?? null;
-    return { options, default: selected, gasUsed: simulation.gasUsed };
+    const selected = [native, params.preferred].find(has) ?? options[0]?.denom ?? null;
+    return { options, default: selected, simulated };
   }
 
-  private async order(options: FeeOption[], native: string): Promise<FeeOption[]> {
+  /** The other token the fee is simulated in: null when none can pay or the payer holds none. */
+  private async representative(
+    data: FeeData,
+    params: EstimateParams,
+    held: (denom: string) => boolean,
+  ): Promise<string | null> {
+    const candidates = [...data.rates.keys()].filter((d) => d !== data.nativeDenom && held(d));
+    const { preferred } = params;
+    if (preferred !== undefined && candidates.includes(preferred)) return preferred;
+    const [first] = await this.order(
+      candidates.map((denom) => ({ denom })),
+      data.nativeDenom,
+    );
+    return first?.denom ?? null;
+  }
+
+  private async order<T extends { denom: string }>(options: T[], native: string): Promise<T[]> {
     const symbols = new Map<string, string>();
     await Promise.all(
       options.map(async (o) => {
@@ -355,7 +449,7 @@ export class FeeEstimator {
         symbols.set(o.denom, symbol ?? o.denom);
       }),
     );
-    const sortKey = (o: FeeOption): [number, string, string] => [
+    const sortKey = (o: T): [number, string, string] => [
       o.denom === native ? 0 : 1,
       symbols.get(o.denom) ?? o.denom,
       o.denom,
