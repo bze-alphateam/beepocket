@@ -85,6 +85,10 @@ export function sendTxHandler(deps: TxDeps): DappHandler<SendTxParams> {
         return done(invalid('The transaction cannot be read.'));
       }
       const env = await deps.env();
+      // Checked right before the broadcast: the page may have given up while the request waited.
+      if (deps.cancelled.has(request)) {
+        return done(refuse(DappErrorCodes.unavailable, 'The page stopped waiting.'));
+      }
       const sent = await guarded(
         () => env.chain.broadcast(txBytes),
         (e) => (e instanceof BroadcastError ? e.rawLog || e.message : null),

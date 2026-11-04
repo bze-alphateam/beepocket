@@ -33,6 +33,7 @@ import type { ChainEnv } from './handlers/env';
 import { DappRegistry } from './registry';
 import { grantMsg, nothingMsg } from './test-support';
 import { RequestStore } from './requests';
+import { Cancellations } from './cancellations';
 import { DappService } from './service';
 import { SitesService } from './sites';
 import type { DappSender } from './types';
@@ -169,7 +170,14 @@ async function rig() {
   const created: unknown[] = [];
   const open = new Set<number>();
   const registry = new DappRegistry();
-  registerDappHandlers(registry, { wallet, services, clock, env: () => Promise.resolve(env) });
+  const cancellations = new Cancellations();
+  registerDappHandlers(registry, {
+    wallet,
+    services,
+    clock,
+    env: () => Promise.resolve(env),
+    cancelled: cancellations,
+  });
   const deliverer = new Deliverer({
     sendMessage: (_tab, message, options) => {
       delivered.push({ documentId: options?.documentId, message });
@@ -208,6 +216,7 @@ async function rig() {
       tabs: { query: () => Promise.resolve([]) },
     }),
     services,
+    cancellations,
     clock,
   });
 
@@ -231,7 +240,21 @@ async function rig() {
     await dapp.current();
     await dapp.answer(a.id, { approve: true, index: 0 });
   };
-  return { wallet, dapp, ask, answerOf, signedOf, node, env, alarms, created, delivered, connect };
+  return {
+    wallet,
+    dapp,
+    from,
+    clock,
+    ask,
+    answerOf,
+    signedOf,
+    node,
+    env,
+    alarms,
+    created,
+    delivered,
+    connect,
+  };
 }
 
 type Rig = Awaited<ReturnType<typeof rig>>;
@@ -596,6 +619,42 @@ describe('sendTx', () => {
     chainId: CHAIN_ID,
     txBytes: bytesToWire(txBytes),
     mode,
+  });
+
+  it('broadcasts nothing for a request that arrives after the page gave up on it', async () => {
+    const t = await rig();
+    await t.connect();
+    const received = await t.dapp.receive(t.from, {
+      id: 'e'.repeat(32),
+      method: 'sendTx',
+      params: params(),
+      sentAt: t.clock.now() - 10_000,
+    });
+    expect(received.ack).toEqual({
+      error: { code: 'unavailable', message: 'BeePocket is not responding. Reload this page.' },
+    });
+    await received.after();
+    expect(t.node.broadcast).not.toHaveBeenCalled();
+    expect(t.answerOf('e'.repeat(32))).toBeUndefined();
+  });
+
+  it('broadcasts nothing when the page cancels before the broadcast', async () => {
+    const t = await rig();
+    await t.connect();
+    const id = 'e'.repeat(32);
+    const received = await t.dapp.receive(t.from, {
+      id,
+      method: 'sendTx',
+      params: params(),
+      sentAt: t.clock.now(),
+    });
+    expect(received.ack).toEqual({ accepted: true });
+    // The page's ack timer ran out first: its cancel is handled before the request is.
+    const cancel = await t.dapp.receive(t.from, { id, cancel: true });
+    await cancel.after();
+    await received.after();
+    expect(t.node.broadcast).not.toHaveBeenCalled();
+    expect(t.answerOf(id)).toBeUndefined();
   });
 
   it('broadcasts for a connected site without a window and answers the 32-byte hash', async () => {

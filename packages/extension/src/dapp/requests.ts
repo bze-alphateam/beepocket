@@ -142,6 +142,19 @@ export class RequestStore {
     });
   }
 
+  /** Takes out a request its page gave up on; only the document that sent it can. */
+  cancel(id: string, tabId: number, documentId: string): Promise<boolean> {
+    return this.exclusive(async () => {
+      const all = await this.read();
+      const kept = all.filter(
+        (r) => !(r.id === id && r.tabId === tabId && r.documentId === documentId),
+      );
+      if (kept.length === all.length) return false;
+      await this.write(kept);
+      return true;
+    });
+  }
+
   /** Forgets the requests of a closed tab; their pages are gone. */
   removeTab(tabId: number): Promise<void> {
     return this.exclusive(async () => {

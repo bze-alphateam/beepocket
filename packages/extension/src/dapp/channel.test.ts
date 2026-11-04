@@ -11,7 +11,7 @@ import {
   type NetworkId,
   type Random,
 } from '@beepocket/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Services } from '../background/services';
 import { ChromeSessionStorage, ChromeStorage, type Platform } from '../platform';
 import { FakeArea } from '../platform/test-support';
@@ -80,8 +80,13 @@ async function rig() {
     denomMetadata: () => Promise.resolve(null),
     denomBranding: () => Promise.resolve(null),
   } as unknown as ChainClient;
+  /** `broken`: the worker fails while handling a request after the ack. */
+  const faults = { create: 'ok' as 'ok' | 'fail' | 'hang', broken: false };
   const services = {
-    activeNetwork: () => Promise.resolve(NETWORKS[network]),
+    activeNetwork: () =>
+      faults.broken
+        ? Promise.reject(new Error('storage gone'))
+        : Promise.resolve(NETWORKS[network]),
     clients: () => Promise.resolve({ network: NETWORKS[network], chain, scan: {} }),
   } as unknown as Services;
   const unreachable = new Set<string>();
@@ -122,6 +127,8 @@ async function rig() {
       },
       windows: {
         create: (info) => {
+          if (faults.create === 'fail') return Promise.reject(new Error('no window'));
+          if (faults.create === 'hang') return new Promise(() => undefined);
           created.push(info);
           open.add(created.length);
           return Promise.resolve({ id: created.length });
@@ -180,6 +187,7 @@ async function rig() {
     vault,
     active,
     queried,
+    faults,
     setNetwork: (id: NetworkId) => {
       network = id;
     },
@@ -737,6 +745,7 @@ describe('request queue', () => {
     expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: a.id, count: 3 });
     expect(await t.dapp.queue()).toEqual({
       head: at(1),
+      headId: a.id,
       count: 3,
       origins: [at(1), at(2), at(3)],
     });
@@ -756,7 +765,8 @@ describe('request queue', () => {
       expect(ok.ack).toEqual({ accepted: true });
     }
     const sixth = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
-    expect(sixth.ack).toEqual({
+    expect(sixth.ack).toEqual({ accepted: true });
+    expect(one(t.answersFor(sixth.id))).toMatchObject({
       error: { code: 'invalid-request', message: 'Too many requests waiting' },
     });
     // The hostile site did not take anybody else's place.
@@ -803,8 +813,121 @@ describe('request queue', () => {
       method: 'connect',
       params: chainId(),
     });
-    expect(again.ack).toMatchObject({ error: { code: 'invalid-request' } });
+    await again.after();
+    expect(one(t.answersFor(a.id))).toMatchObject({
+      error: { code: 'invalid-request', message: 'Duplicate request.' },
+    });
     expect((await t.dapp.queue()).count).toBe(1);
+  });
+
+  it('acks before the window opens: a window that never opens still leaves the request queued', async () => {
+    const t = await rig();
+    t.faults.create = 'hang';
+    const received = await t.dapp.receive(t.site(), {
+      id: 'c'.repeat(32),
+      method: 'connect',
+      params: chainId(),
+    });
+    expect(received.ack).toEqual({ accepted: true });
+    void received.after();
+    await vi.waitFor(async () => {
+      expect((await t.dapp.queue()).count).toBe(1);
+    });
+    expect(t.answersFor('c'.repeat(32))).toEqual([]);
+  });
+
+  it('keeps the request waiting, without an error, when the window fails to open', async () => {
+    const t = await rig();
+    t.faults.create = 'fail';
+    const a = await t.ask('connect', chainId());
+    expect(a.ack).toEqual({ accepted: true });
+    expect(t.answersFor(a.id)).toEqual([]);
+    expect((await t.dapp.queue()).count).toBe(1);
+    // The window opens on the next try (the unlock screen or the next request).
+    t.faults.create = 'ok';
+    await t.dapp.openWindow();
+    expect(t.created).toHaveLength(1);
+  });
+
+  it('answers the page with an error when the worker fails after the ack', async () => {
+    const t = await rig();
+    t.faults.broken = true;
+    const a = await t.ask('getKey', chainId());
+    expect(a.ack).toEqual({ accepted: true });
+    expect(one(t.answersFor(a.id))).toMatchObject({
+      error: { code: 'invalid-request', message: 'The wallet could not handle the request.' },
+    });
+    expect(one(t.delivered)).toMatchObject({ tabId: 1, documentId: 'doc-1' });
+  });
+
+  it('does nothing for a request that arrives after the page gave up on it', async () => {
+    const t = await rig();
+    const late = await t.dapp.receive(t.site(), {
+      id: 'c'.repeat(32),
+      method: 'connect',
+      params: chainId(),
+      sentAt: t.clock.now() - 10_000,
+    });
+    expect(late.ack).toEqual({
+      error: { code: 'unavailable', message: 'BeePocket is not responding. Reload this page.' },
+    });
+    await late.after();
+    expect((await t.dapp.queue()).count).toBe(0);
+    expect(t.created).toHaveLength(0);
+    // Sent just now, the same request is taken.
+    const fresh = await t.dapp.receive(t.site(), {
+      id: 'd'.repeat(32),
+      method: 'connect',
+      params: chainId(),
+      sentAt: t.clock.now(),
+    });
+    expect(fresh.ack).toEqual({ accepted: true });
+  });
+
+  it('refuses a send time that is not a number', async () => {
+    const t = await rig();
+    const received = await t.dapp.receive(t.site(), {
+      id: 'c'.repeat(32),
+      method: 'connect',
+      params: chainId(),
+      sentAt: 'now',
+    });
+    expect(received.ack).toMatchObject({ error: { code: 'invalid-request' } });
+  });
+
+  it('drops a queued request its page cancels, and the queue head moves on', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId());
+    const b = await t.ask('connect', chainId());
+    expect(await t.dapp.queue()).toMatchObject({ count: 2, headId: a.id });
+    const cancel = await t.dapp.receive(t.site(), { id: a.id, cancel: true });
+    await cancel.after();
+    expect(await t.dapp.queue()).toMatchObject({ count: 1, headId: b.id });
+    expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: b.id });
+    // The page stopped waiting: it is told nothing.
+    expect(t.answersFor(a.id)).toEqual([]);
+  });
+
+  it('ignores a cancel from another document for a request it did not send', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId());
+    for (const other of [t.site(ORIGIN, 1, 'doc-2'), t.site(ORIGIN, 2, 'doc-1')]) {
+      const cancel = await t.dapp.receive(other, { id: a.id, cancel: true });
+      await cancel.after();
+    }
+    expect(await t.dapp.queue()).toMatchObject({ count: 1, headId: a.id });
+  });
+
+  it('never queues a request cancelled while it was being handled', async () => {
+    const t = await rig();
+    const id = 'c'.repeat(32);
+    const received = await t.dapp.receive(t.site(), { id, method: 'connect', params: chainId() });
+    const cancel = await t.dapp.receive(t.site(), { id, cancel: true });
+    await cancel.after();
+    await received.after();
+    expect((await t.dapp.queue()).count).toBe(0);
+    expect(t.created).toHaveLength(0);
+    expect(t.answersFor(id)).toEqual([]);
   });
 
   it('does not queue what needs no window', async () => {
@@ -832,7 +955,12 @@ describe('request queue', () => {
     await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
     const b = await t.ask('connect', chainId(), t.site(at(2), 2, 'd2'));
     await t.dapp.onTabRemoved(1);
-    expect(await t.dapp.queue()).toEqual({ head: at(2), count: 1, origins: [at(2)] });
+    expect(await t.dapp.queue()).toEqual({
+      head: at(2),
+      headId: b.id,
+      count: 1,
+      origins: [at(2)],
+    });
     expect(await t.dapp.current()).toMatchObject({ id: b.id });
   });
 

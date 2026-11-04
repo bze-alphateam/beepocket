@@ -246,3 +246,60 @@ test('a fully locked wallet shows the waiting card in the popup; unlocking there
     stop();
   }
 });
+
+test('a toolbar popup that never opens leaves the request waiting, acked, for the toolbar', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const { dapp, stop } = await openDapp(context);
+  try {
+    // Patched on the current worker right before the click: a restarted worker would get the
+    // fixture's rejecting openPopup back, and the fallback window would open at once.
+    for (const worker of context.serviceWorkers()) {
+      await worker.evaluate(() => {
+        Object.assign(chrome.action, { openPopup: () => new Promise(() => undefined) });
+      });
+    }
+    let opened = 0;
+    context.on('page', () => {
+      opened++;
+    });
+    await dapp.getByRole('button', { name: 'Connect wallet' }).click();
+    // Past the page's 10 s ack timer: the wallet took the request although no UI could open,
+    // and it opened no window next to a popup that may still be on its way.
+    await dapp.waitForTimeout(12_000);
+    await expect(dapp.getByRole('status')).toHaveText('');
+    expect(opened).toBe(0);
+    const popup = await context.newPage();
+    await popup.setViewportSize({ width: 360, height: 600 });
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await popup.getByRole('button', { name: 'Connect', exact: true }).click();
+    await expect(dapp.getByRole('status')).toHaveText(/name Main$/);
+  } finally {
+    stop();
+  }
+});
+
+test('a page left behind by an extension reload answers unavailable instead of hanging', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const { dapp, stop } = await openDapp(context);
+  try {
+    const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+    // The reload ends the worker under the evaluate call, which may then reject.
+    await worker
+      .evaluate(() => {
+        chrome.runtime.reload();
+      })
+      .catch(() => undefined);
+    await dapp.getByRole('button', { name: 'Get key' }).click();
+    await expect(dapp.getByRole('status')).toHaveText('error unavailable');
+  } finally {
+    stop();
+  }
+});

@@ -24,7 +24,12 @@ export class RequestWindow {
 
   private tail: Promise<unknown> = Promise.resolve();
 
-  /** Calls run one after another, so requests arriving together open one window, not two. */
+  /**
+   * Calls run one after another, so requests arriving together open one window, not two. Each
+   * waits for the one before to really finish, however long the browser takes: a popup or window
+   * still on its way is never joined by a second one, and a window that opens late is still
+   * remembered. The page does not wait for this (its request was acked before).
+   */
   show(): Promise<void> {
     const run = this.tail.then(
       () => this.open(),

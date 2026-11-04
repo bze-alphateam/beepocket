@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SessionStorage } from '../platform';
 import type { ToolbarPopup } from '../platform/toolbar-popup';
 import type { WindowBounds } from '../platform/wallet-window';
+import { WINDOW_KEY } from './requests';
 import { RequestWindow, type WindowsLike } from './window';
 
 class MemorySession implements SessionStorage {
@@ -23,7 +24,21 @@ class MemorySession implements SessionStorage {
   }
 }
 
-function rig(browser: WindowBounds | null, popup?: ToolbarPopup) {
+/** A promise the test settles when it likes: a browser call that answers late. */
+function later<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+function rig(
+  browser: WindowBounds | null,
+  popup?: ToolbarPopup,
+  opts: { create?: WindowsLike['create'] } = {},
+) {
+  const session = new MemorySession();
   const created: unknown[] = [];
   const focused: number[] = [];
   const open = new Set<number>();
@@ -31,7 +46,7 @@ function rig(browser: WindowBounds | null, popup?: ToolbarPopup) {
     create: (info) => {
       created.push(info);
       open.add(created.length);
-      return Promise.resolve({ id: created.length });
+      return opts.create ? opts.create(info) : Promise.resolve({ id: created.length });
     },
     get: (id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('no window'))),
     getLastFocused: () =>
@@ -41,7 +56,12 @@ function rig(browser: WindowBounds | null, popup?: ToolbarPopup) {
       return Promise.resolve({});
     },
   };
-  return { window: new RequestWindow(windows, new MemorySession(), popup), created, focused };
+  return {
+    window: new RequestWindow(windows, session, popup),
+    session,
+    created,
+    focused,
+  };
 }
 
 function toolbar(opts: { open?: boolean; fail?: boolean } = {}) {
@@ -113,6 +133,50 @@ describe('the request window', () => {
     // The window is the one place now: the next request focuses it, no popup is tried.
     await t.window.show();
     expect(p.opened()).toBe(1);
+    expect(t.created).toHaveLength(1);
+    expect(t.focused).toEqual([1]);
+  });
+
+  it('opens nothing more while a toolbar popup is still on its way', async () => {
+    const opening = later<undefined>();
+    let shown = false;
+    const popup: ToolbarPopup = {
+      isOpen: () => Promise.resolve(shown),
+      open: () =>
+        opening.promise.then(() => {
+          shown = true;
+        }),
+    };
+    const t = rig(null, popup);
+    let done = false;
+    void Promise.all([t.window.show(), t.window.show()]).then(() => {
+      done = true;
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(done).toBe(false);
+    expect(t.created).toEqual([]);
+    // The popup opens late: the second request finds it open and adds nothing.
+    opening.resolve(undefined);
+    await vi.waitFor(() => {
+      expect(done).toBe(true);
+    });
+    expect(t.created).toEqual([]);
+  });
+
+  it('remembers a window that opens late, and focuses it for the next request', async () => {
+    const opening = later<{ id: number }>();
+    const t = rig(null, undefined, { create: () => opening.promise });
+    let done = false;
+    void Promise.all([t.window.show(), t.window.show()]).then(() => {
+      done = true;
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.created).toHaveLength(1);
+    opening.resolve({ id: 1 });
+    await vi.waitFor(() => {
+      expect(done).toBe(true);
+    });
+    expect(t.session.data.get(WINDOW_KEY)).toBe(1);
     expect(t.created).toHaveLength(1);
     expect(t.focused).toEqual([1]);
   });

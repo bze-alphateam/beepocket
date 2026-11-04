@@ -198,6 +198,16 @@ describe('dapp channel', () => {
     });
   });
 
+  it('answers unavailable when the worker cannot start, and works on the next message', async () => {
+    const { send } = start(new FlakySession(1));
+    const first = await send(connect(), PAGE);
+    expect(first.reply).toEqual({
+      error: { code: 'unavailable', message: 'BeePocket is not responding. Reload this page.' },
+    });
+    const second = await send(connect(), PAGE);
+    expect(second.reply).toEqual({ accepted: true });
+  });
+
   it.each([
     ['a missing tab', { ...PAGE, tab: undefined }],
     ['a subframe', { ...PAGE, frameId: 1 }],

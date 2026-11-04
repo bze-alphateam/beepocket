@@ -15,6 +15,7 @@ import { RequestStore } from './requests';
 import { DappService } from './service';
 import type { ToolbarPopup } from '../platform/toolbar-popup';
 import { RequestWindow, type WindowsLike } from './window';
+import { Cancellations } from './cancellations';
 
 export { dappSender, type SenderLike } from './sender';
 export { DappService, type Ack } from './service';
@@ -46,7 +47,14 @@ export function createDappService(
     });
     return { network, chain, fees, tokens };
   };
-  registerDappHandlers(registry, { wallet, services, clock: platform.clock, env });
+  const cancellations = new Cancellations();
+  registerDappHandlers(registry, {
+    wallet,
+    services,
+    clock: platform.clock,
+    env,
+    cancelled: cancellations,
+  });
   const deliverer = new Deliverer(chrome.tabs);
   const documents = new DocumentLog(platform.session);
   const changes = new AccountChanges({ documents, deliverer });
@@ -59,6 +67,7 @@ export function createDappService(
     changes,
     sites: new SitesService({ wallet, services, changes, tabs: chrome.tabs }),
     services,
+    cancellations,
     clock: platform.clock,
   });
 }

@@ -19,6 +19,7 @@ import {
   type WindowsLike,
 } from '../dapp';
 import { DAPP_EXPIRY_ALARM } from '../dapp/requests';
+import { DappErrorCodes, NOT_RESPONDING_MESSAGE } from '../dapp/wire';
 import { ChromeToolbarPopup, type ActionLike, type ContextsLike } from '../platform/toolbar-popup';
 import { AddTokenService, linkSender, type LinkTabsLike } from '../features/addtoken';
 import { registerHandlers } from './handlers';
@@ -104,7 +105,9 @@ export function startBackground(env: BackgroundEnv): void {
           return after();
         },
         () => {
-          sendResponse({ error: { code: 'invalid-request', message: 'The wallet is not ready.' } });
+          sendResponse({
+            error: { code: DappErrorCodes.unavailable, message: NOT_RESPONDING_MESSAGE },
+          });
         },
       )
       .catch(() => undefined);

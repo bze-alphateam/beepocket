@@ -11,6 +11,7 @@ import {
 import type { Outcome } from '../types';
 import { refuse } from '../types';
 import { DappErrorCodes } from '../wire';
+import type { CancelledRequests } from '../cancellations';
 import type { KeyDeps } from './key';
 
 /** The node-facing pieces a transaction request needs, for the active network. */
@@ -30,6 +31,8 @@ export type ChainEnvProvider = () => Promise<ChainEnv>;
 /** What the transaction handlers use on top of what `connect` and `getKey` use. */
 export interface TxDeps extends KeyDeps {
   env: ChainEnvProvider;
+  /** Requests their page gave up on: nothing is broadcast for them. */
+  cancelled: CancelledRequests;
 }
 
 /**

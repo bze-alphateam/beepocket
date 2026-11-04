@@ -5,6 +5,15 @@ import type { BeePocketProvider } from './provider.js';
 /** The chains BeePocket serves: BeeZee mainnet and testnet. */
 const SUPPORTED_CHAIN_IDS: readonly string[] = ['beezee-1', 'bzetestnet-3'];
 
+/** The provider could not reach the wallet: the page must be reloaded. */
+function isUnavailable(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'unavailable'
+  );
+}
+
 function sameBytes(a: Uint8Array | null | undefined, b: Uint8Array | null | undefined): boolean {
   if (!a || !b) return false;
   return a.length === b.length && a.every((byte, i) => byte === b[i]);
@@ -47,11 +56,31 @@ export class BeePocketCosmosWallet extends CosmosWallet {
   override async signDirect(
     ...args: Parameters<CosmosWallet['signDirect']>
   ): ReturnType<CosmosWallet['signDirect']> {
-    const response = await super.signDirect(...args);
+    const response = await this.reachable(super.signDirect(...args));
     if (!sameBytes(response.signed.bodyBytes, args[2].bodyBytes)) {
       throw new Error('BeePocket returned a different transaction body than the one requested');
     }
     return response;
+  }
+
+  override sendTx(...args: Parameters<CosmosWallet['sendTx']>): ReturnType<CosmosWallet['sendTx']> {
+    return this.reachable(super.sendTx(...args));
+  }
+
+  /**
+   * A wallet the page cannot reach any more (the extension was updated, or does not answer)
+   * fails every call until the page reloads. interchain-kit only shows that once its account
+   * refresh fails, so an `unavailable` failure announces an account change: the refresh then
+   * fails too and the dapp shows the wallet disconnected, with the reload message. Never done
+   * from `getAccount`, which the refresh itself calls.
+   */
+  private async reachable<T>(call: Promise<T>): Promise<T> {
+    try {
+      return await call;
+    } catch (error) {
+      if (isUnavailable(error)) this.events.emit('accountChanged', () => undefined);
+      throw error;
+    }
   }
 
   override addSuggestChain(): Promise<void> {
