@@ -120,6 +120,11 @@ function mount(
       seen.push(r);
       return <p>home</p>;
     },
+    // The state routing: with a wallet it opens the unlock screen.
+    'lock.root': ({ route: r }: { route: { name: 'lock.root' } }) => {
+      seen.push(r);
+      return <p>state routing</p>;
+    },
   };
   const view = render(
     <ClientProvider client={client}>
@@ -170,6 +175,7 @@ const field = (host: HTMLElement, label: string) => {
 };
 
 const baseHandlers = {
+  'wallet.state': () => ok({ state: 'uninitialised', retryAt: null }),
   'wallet.generateMnemonic': () => ok({ mnemonic: PHRASE }),
   'tokens.preferred': () => ok([]),
   'wallet.createWallet': () => ok({ addresses: [] }),
@@ -634,6 +640,134 @@ async function createdWallet(
   await flush();
   return view;
 }
+
+/** A wallet already exists: the worker refuses a create or import without `replace: true`. */
+const existing = {
+  ...baseHandlers,
+  'wallet.state': () => ok({ state: 'locked', retryAt: null }),
+  'wallet.createWallet': (req: { replace?: boolean }) =>
+    req.replace === true
+      ? ok({ addresses: [] })
+      : fail('wallet_already_initialised', 'A wallet already exists.'),
+  'wallet.importWallet': (req: { replace?: boolean }) =>
+    req.replace === true
+      ? ok({ addresses: [] })
+      : fail('wallet_already_initialised', 'A wallet already exists.'),
+} as Partial<Record<Method, Handler>>;
+
+const writes = (client: { calls: [string, unknown][] }) =>
+  client.calls.filter(([m]) => m === 'wallet.createWallet' || m === 'wallet.importWallet');
+
+describe('over an existing wallet', () => {
+  // The lock screen's "Forgot it?" opens the import step. Back used to land on a first-run
+  // Welcome with no way to the unlock screen: the wallet looked deleted, and one Import from
+  // there replaced it without a word.
+  it('Back from the "Forgot it?" import step returns to the unlock screen', async () => {
+    const client = mockClient(existing);
+    const { host, seen } = mount(client, { name: 'onboarding.import' });
+    await flush();
+    fireEvent(backButton(host), 'click');
+    await flush();
+    expect(seen).toEqual([{ name: 'lock.root' }]);
+    expect(host.textContent).not.toContain(en['onboarding.welcome.create']);
+    expect(writes(client)).toEqual([]);
+  });
+
+  it('Welcome has a way back to the unlock screen, and the create step leads back there too', async () => {
+    const client = mockClient(existing);
+    const { host, seen } = mount(client);
+    await flush();
+    const welcomeBack = host.querySelector('.ob-welcome [aria-label="Back"]');
+    if (!welcomeBack) throw new Error('no back button on Welcome');
+    fireEvent(welcomeBack, 'click');
+    await flush();
+    expect(seen).toEqual([{ name: 'lock.root' }]);
+    cleanup();
+    const again = mount(client);
+    await flush();
+    await click(again.host, 'Create a new wallet');
+    fireEvent(backButton(again.host), 'click');
+    await flush();
+    expect(again.seen).toEqual([{ name: 'lock.root' }]);
+    expect(writes(client)).toEqual([]);
+  });
+
+  it('a first run keeps Back on Welcome and shows no Welcome back button', async () => {
+    const { host, seen } = mount(mockClient(baseHandlers));
+    await flush();
+    expect(host.querySelector('.ob-welcome [aria-label="Back"]')).toBeNull();
+    await click(host, 'Create a new wallet');
+    fireEvent(backButton(host), 'click');
+    await flush();
+    expect(host.textContent).toContain(en['onboarding.welcome.create']);
+    expect(seen).toEqual([]);
+  });
+
+  it('an import asks to confirm the deletion; the button waits for the tick, then replaces', async () => {
+    const client = mockClient(existing);
+    const { host } = mount(client, { name: 'onboarding.import' });
+    await flush();
+    paste(cells(host)[0], PHRASE_12);
+    await click(host, 'Continue');
+    await submitPassword(host);
+    expect(writes(client)).toEqual([
+      ['wallet.importWallet', { password: 'longenough1', mnemonic: PHRASE_12 }],
+    ]);
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain(en['onboarding.replace.text']);
+    const confirm = button(host, en['onboarding.replace.confirm']);
+    expect(confirm?.disabled).toBe(true);
+    fireEvent(confirm, 'click');
+    await flush();
+    expect(writes(client)).toHaveLength(1);
+    fireEvent(alert?.querySelector('[role="checkbox"]'), 'click');
+    expect(button(host, en['onboarding.replace.confirm'])?.disabled).toBe(false);
+    await click(host, en['onboarding.replace.confirm']);
+    expect(writes(client)[1]).toEqual([
+      'wallet.importWallet',
+      { password: 'longenough1', mnemonic: PHRASE_12, replace: true },
+    ]);
+    expect(host.textContent).toContain(en['onboarding.start.title']);
+  });
+
+  it('Cancel returns to the password step without writing; asking again starts unticked', async () => {
+    const client = mockClient(existing);
+    const { host } = mount(client);
+    await flush();
+    await toPassword(host);
+    answerQuiz(host, true);
+    await click(host, 'Continue');
+    await submitPassword(host);
+    fireEvent(host.querySelector('[role="alert"] [role="checkbox"]'), 'click');
+    await click(host, en['onboarding.replace.cancel']);
+    expect(host.textContent).toContain(en['onboarding.password.title']);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(writes(client)).toEqual([
+      ['wallet.createWallet', { password: 'longenough1', mnemonic: PHRASE }],
+    ]);
+    fireEvent(host.querySelector('form'), 'submit');
+    await flush();
+    expect(button(host, en['onboarding.replace.confirm'])?.disabled).toBe(true);
+    expect(writes(client).every(([, req]) => !(req as { replace?: boolean }).replace)).toBe(true);
+  });
+
+  it('a create confirmed over the wallet sends replace: true', async () => {
+    const client = mockClient(existing);
+    const { host } = mount(client);
+    await flush();
+    await toPassword(host);
+    answerQuiz(host, true);
+    await click(host, 'Continue');
+    await submitPassword(host);
+    fireEvent(host.querySelector('[role="alert"] [role="checkbox"]'), 'click');
+    await click(host, en['onboarding.replace.confirm']);
+    expect(writes(client)[1]).toEqual([
+      'wallet.createWallet',
+      { password: 'longenough1', mnemonic: PHRASE, replace: true },
+    ]);
+    expect(host.textContent).toContain(en['onboarding.start.title']);
+  });
+});
 
 describe('start with a token code', () => {
   async function look(host: HTMLElement, code: string) {
