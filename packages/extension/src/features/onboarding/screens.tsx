@@ -51,6 +51,12 @@ export interface StepFrame {
   onBack?: (() => void) | undefined;
 }
 
+/**
+ * How saving the picked tokens ended: saved (Home opens), failed (the step says so) or stopped by
+ * the weak lock (the flow moves to the password step).
+ */
+export type AddOutcome = 'done' | 'failed' | 'unlock';
+
 /** The frame of every step after Welcome: header, title block, body, pinned actions. */
 function Step(
   props: StepFrame & {
@@ -626,7 +632,7 @@ export function Start(props: {
   warn?: boolean;
   /** A code found a token: the token step drops out of the flow. */
   onFound: (found: boolean) => void;
-  onOpen: (denom: string) => Promise<boolean>;
+  onOpen: (denom: string) => Promise<AddOutcome>;
   onPick: () => void;
 }) {
   const client = useClient();
@@ -691,7 +697,7 @@ export function Start(props: {
   const open = async () => {
     if (!found) return;
     setBusy(true);
-    setError((await props.onOpen(found.denom)) ? null : 'failed');
+    setError((await props.onOpen(found.denom)) === 'failed' ? 'failed' : null);
     setBusy(false);
   };
   const look = found ? tokenLook(found, scheme) : null;
@@ -793,7 +799,7 @@ export function Start(props: {
 
 export function Tokens(props: {
   frame: StepFrame;
-  onFinish: (denoms: string[]) => Promise<boolean>;
+  onFinish: (denoms: string[]) => Promise<AddOutcome>;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [finishFailed, setFinishFailed] = useState(false);
@@ -819,9 +825,9 @@ export function Tokens(props: {
             onClick={() => {
               setBusy(true);
               setFinishFailed(false);
-              void props.onFinish(selected).then((done) => {
+              void props.onFinish(selected).then((outcome) => {
                 setBusy(false);
-                setFinishFailed(!done);
+                setFinishFailed(outcome === 'failed');
               });
             }}
           >

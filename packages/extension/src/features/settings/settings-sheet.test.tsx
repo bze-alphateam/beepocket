@@ -811,6 +811,13 @@ describe('Preferred tokens', () => {
       await flush();
       expect(password(host)).not.toBeNull();
       expect(host.textContent).toContain('Unlock and save');
+      // The pick count stays above the password field.
+      expect(must(host.querySelector('.bp-bottom-bar-note')).textContent).toBe('1 selected');
+      fireEvent(row(host, 'PAGE'), 'click');
+      expect(must(host.querySelector('.bp-bottom-bar-note')).textContent).toBe(
+        'Pick at least one token.',
+      );
+      fireEvent(row(host, 'PAGE'), 'click');
       expect(host.textContent).not.toContain('The change could not be saved.');
       expect(client.saw('tokens.remove')).toEqual([]);
       expect(client.preferred.mainnet).toEqual(['ubze']);

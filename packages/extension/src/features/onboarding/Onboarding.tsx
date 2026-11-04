@@ -14,6 +14,7 @@ import {
   Start,
   Tokens,
   UnlockStep,
+  type AddOutcome,
   Welcome,
   type StepFrame,
   type WelcomeLink,
@@ -150,10 +151,10 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
     setStep('start');
   };
 
-  const addAll = async (denoms: string[]): Promise<boolean> => {
+  const addAll = async (denoms: string[]): Promise<AddOutcome> => {
     // A failed attempt may have added some tokens: a retry only adds what is still missing.
     const current = await client.call('tokens.preferred', {});
-    if (!current.ok) return false;
+    if (!current.ok) return 'failed';
     let last = current.value;
     for (const denom of denoms) {
       if (last.some((tok) => tok.denom === denom)) continue;
@@ -162,13 +163,13 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
         setPending(denoms);
         setUnlockFailed(false);
         setStep('unlock');
-        return true;
+        return 'unlock';
       }
-      if (!res.ok) return false;
+      if (!res.ok) return 'failed';
       last = res.value;
     }
     home();
-    return true;
+    return 'done';
   };
 
   switch (step) {
@@ -274,8 +275,8 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
           failed={unlockFailed}
           onUnlocked={() => {
             setUnlockFailed(false);
-            void addAll(pending).then((done) => {
-              setUnlockFailed(!done);
+            void addAll(pending).then((outcome) => {
+              setUnlockFailed(outcome === 'failed');
             });
           }}
         />

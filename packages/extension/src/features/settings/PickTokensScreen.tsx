@@ -158,6 +158,9 @@ export function PickTokensScreen() {
       footer={
         needsPassword ? (
           <div class="bp-bottom">
+            <p class="bp-bottom-bar-note" role="status">
+              {note}
+            </p>
             <PasswordGate
               submitLabel={t('settings.tokens.unlock')}
               labelIcon="lock"
