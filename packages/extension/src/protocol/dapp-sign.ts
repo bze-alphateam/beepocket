@@ -24,7 +24,6 @@ export interface SignDetails {
   fee: FeeChoice;
   /** Every token the signer can pay this fee with, native first. */
   options: FeeChoice[];
-  gasLimit: string;
 }
 
 export type SignView = {

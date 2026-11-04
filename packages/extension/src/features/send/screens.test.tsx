@@ -35,10 +35,10 @@ const quote = (over: Partial<SendQuote> = {}): SendQuote => ({
   amount: '1500000',
   balance: '5000000',
   gasLimit: '200000',
-  fee: { denom: 'ubze', amount: '2000', symbol: 'BZE', decimals: 6 },
+  fee: { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
   options: [
-    { denom: 'ubze', amount: '2000', symbol: 'BZE', decimals: 6 },
-    { denom: 'factory/x/page', amount: '5000', symbol: 'PAGE', decimals: 2 },
+    { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
+    { denom: 'factory/x/page', amount: '5000', gasLimit: '300000', symbol: 'PAGE', decimals: 2 },
   ],
   ...over,
 });
@@ -356,7 +356,15 @@ describe('review', () => {
         ok(
           ++calls === 1
             ? quote()
-            : quote({ fee: { denom: 'ubze', amount: '3000', symbol: 'BZE', decimals: 6 } }),
+            : quote({
+                fee: {
+                  denom: 'ubze',
+                  amount: '3000',
+                  gasLimit: '200000',
+                  symbol: 'BZE',
+                  decimals: 6,
+                },
+              }),
         ),
     });
     await toReview(host);
@@ -517,9 +525,19 @@ describe('leaving Send', () => {
 });
 
 describe('fee on the form', () => {
-  const PAGE_FEE = { denom: 'factory/x/page', amount: '5000', symbol: 'PAGE', decimals: 2 };
+  const PAGE_FEE = {
+    denom: 'factory/x/page',
+    amount: '5000',
+    gasLimit: '300000',
+    symbol: 'PAGE',
+    decimals: 2,
+  };
   const priced = (r: Record<string, unknown>) =>
-    ok(r.feeDenom === PAGE_FEE.denom ? quote({ fee: PAGE_FEE }) : quote());
+    ok(
+      r.feeDenom === PAGE_FEE.denom
+        ? quote({ fee: PAGE_FEE, gasLimit: PAGE_FEE.gasLimit })
+        : quote(),
+    );
 
   it('simulates only once From, To and Amount are valid', async () => {
     const { host, call, scheduler } = setup();
@@ -587,6 +605,16 @@ describe('fee on the form', () => {
       ),
     ).toEqual(['Back', 'Confirm and send', 'Edit']);
     expect(submits(call)).toBe(0);
+    // What is signed is the picked fee with its own gas limit.
+    await press(host, 'Confirm and send');
+    expect(call).toHaveBeenCalledWith(
+      'send.submit',
+      expect.objectContaining({
+        feeDenom: 'factory/x/page',
+        feeAmount: '5000',
+        gasLimit: '300000',
+      }),
+    );
   });
 
   it("Edit and the form's Review are separate buttons, so a tap on Edit never submits", async () => {
@@ -643,7 +671,13 @@ describe('fee on the form', () => {
     await scheduler.fire();
     await submitForm(host);
     expect(host.textContent).toContain('1.502 BZE');
-    release(ok(quote({ fee: { denom: 'ubze', amount: '9000000', symbol: 'BZE', decimals: 6 } })));
+    release(
+      ok(
+        quote({
+          fee: { denom: 'ubze', amount: '9000000', gasLimit: '200000', symbol: 'BZE', decimals: 6 },
+        }),
+      ),
+    );
     await flush();
     await scheduler.fire();
     expect(host.textContent).toContain('1.502 BZE');

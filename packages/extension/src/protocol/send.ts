@@ -38,6 +38,8 @@ export interface FeeChoice {
   denom: string;
   /** Base units of `denom`, decimal string. */
   amount: string;
+  /** The gas limit this fee pays for; a fee in another token pays for the swap as well. */
+  gasLimit: string;
   symbol: string;
   decimals: number;
   /** The fee token's logo URL (see `TokenInfo.logo`). */
@@ -55,6 +57,7 @@ export interface SendQuote {
   amount: string;
   /** Base units the address holds of the token. */
   balance: string;
+  /** The gas limit of `fee`. */
   gasLimit: string;
   fee: FeeChoice;
   /** Every token the address can pay this send's fee with, native first. Includes `fee`. */

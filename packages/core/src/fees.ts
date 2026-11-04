@@ -13,17 +13,25 @@ export interface Rate {
 /** What the chain says about fees right now. */
 export interface FeeData {
   nativeDenom: string;
-  /** Every denom that can pay the fee, the native one included. */
+  /**
+   * The chain's minimum gas price in every denom that can pay the fee, the native one
+   * included: the native price converted at the pool's spot ratio, with no margin.
+   */
   rates: Map<string, Rate>;
 }
 
 export interface FeeOption {
   denom: string;
   amount: bigint;
+  /**
+   * The gas limit this fee pays for. Paying in another token costs more gas than paying in
+   * the native one (the fee is swapped to the native token before the messages run), so each
+   * option carries its own limit and the transaction must be signed with it.
+   */
+  gasLimit: bigint;
 }
 
 export interface FeeEstimate {
-  gasLimit: bigint;
   /** Eligible denoms the payer holds enough of: native first, then by symbol. */
   options: FeeOption[];
   /** The denom to pre-select, null when the payer can pay with none. */
@@ -53,9 +61,15 @@ export interface FeeEstimatorOptions {
   tokens?: SymbolSource;
 }
 
-// Gas limit = simulated gas x 1.3; token gas price = native price / spot x 1.05.
-const GAS_HEADROOM = { num: 13n, den: 10n };
-const PRICE_HEADROOM = { num: 105n, den: 100n };
+// The simulation runs with an empty fee, so it never pays for the fee deduction, and a fee in
+// another token is swapped to the native one by the ante handler before the messages run. The
+// margins match the BZE dapps:
+//   gasLimit   = ceil(simulated x 1.5)                       (native fee)
+//   foreignGas = ceil(gasLimit x 1.5)                        (fee in another token)
+//   foreignFee = ceil(ceil(foreignGas x price) / spot x 1.1) (spot = native per token)
+const GAS_HEADROOM = { num: 15n, den: 10n };
+const FOREIGN_GAS_HEADROOM = { num: 15n, den: 10n };
+const FOREIGN_FEE_SLIPPAGE = { num: 11n, den: 10n };
 const MAX_PRICE_DIGITS = 40;
 
 function ceilDiv(a: bigint, b: bigint): bigint {
@@ -68,6 +82,20 @@ function parseGasPrice(amount: string): Rate {
   if (amount.length > MAX_PRICE_DIGITS)
     throw new UnexpectedResponseError('params.ValidatorMinGasFee.amount', 'too many digits');
   return { num: BigInt(whole + fraction), den: 10n ** BigInt(fraction.length) };
+}
+
+/**
+ * The fee in a token for `gas`: the native fee `ceil(gas x nativePrice)` converted at the spot
+ * ratio (`rate / nativePrice`), times the slippage margin, rounded up once more.
+ */
+function foreignFee(gas: bigint, nativePrice: Rate, rate: Rate): bigint {
+  // A zero gas price makes every fee zero (and the ratio undefined).
+  if (nativePrice.num === 0n) return 0n;
+  const native = ceilDiv(gas * nativePrice.num, nativePrice.den);
+  return ceilDiv(
+    native * rate.num * nativePrice.den * FOREIGN_FEE_SLIPPAGE.num,
+    rate.den * nativePrice.num * FOREIGN_FEE_SLIPPAGE.den,
+  );
 }
 
 /** The pool pairing the native denom with `denom`, whichever side each is on. */
@@ -94,7 +122,7 @@ export class FeeEstimator {
     options: FeeEstimatorOptions = {},
   ) {
     this.cache = options.cache;
-    this.cacheKey = `${options.cacheKeyPrefix ?? ''}fees:rates`;
+    this.cacheKey = `${options.cacheKeyPrefix ?? ''}fees:rates:v2`;
     this.tokens = options.tokens;
   }
 
@@ -133,8 +161,8 @@ export class FeeEstimator {
       // An empty side has no spot price (and would divide by zero).
       if (found.native === 0n || found.token === 0n) continue;
       rates.set(found.denom, {
-        num: nativePrice.num * found.token * PRICE_HEADROOM.num,
-        den: nativePrice.den * found.native * PRICE_HEADROOM.den,
+        num: nativePrice.num * found.token,
+        den: nativePrice.den * found.native,
       });
     }
 
@@ -149,19 +177,25 @@ export class FeeEstimator {
       this.chain.simulate(simulationTxBytes(params.bodyBytes, params.pubKey, params.sequence)),
       this.feeData(),
     ]);
-    const gasLimit = ceilDiv(simulation.gasUsed * GAS_HEADROOM.num, GAS_HEADROOM.den);
+    const nativeGas = ceilDiv(simulation.gasUsed * GAS_HEADROOM.num, GAS_HEADROOM.den);
+    const foreignGas = ceilDiv(nativeGas * FOREIGN_GAS_HEADROOM.num, FOREIGN_GAS_HEADROOM.den);
+    const nativePrice = data.rates.get(data.nativeDenom);
+    if (!nativePrice) throw new UnexpectedResponseError('fees.rates', 'no native gas price');
 
     const affordable: FeeOption[] = [];
     for (const [denom, rate] of data.rates) {
-      const amount = ceilDiv(gasLimit * rate.num, rate.den);
-      if ((params.balances.get(denom) ?? 0n) >= amount) affordable.push({ denom, amount });
+      const option =
+        denom === data.nativeDenom
+          ? { denom, amount: ceilDiv(nativeGas * rate.num, rate.den), gasLimit: nativeGas }
+          : { denom, amount: foreignFee(foreignGas, nativePrice, rate), gasLimit: foreignGas };
+      if ((params.balances.get(denom) ?? 0n) >= option.amount) affordable.push(option);
     }
     const options = await this.order(affordable, data.nativeDenom);
 
     const has = (denom: string | undefined): denom is string =>
       denom !== undefined && options.some((o) => o.denom === denom);
     const selected = [data.nativeDenom, params.preferred].find(has) ?? options[0]?.denom ?? null;
-    return { gasLimit, options, default: selected };
+    return { options, default: selected };
   }
 
   private async order(options: FeeOption[], native: string): Promise<FeeOption[]> {

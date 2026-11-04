@@ -104,8 +104,7 @@ export interface Prepared {
   rawJson: string;
   /** The JSON of each message on its own. */
   messageJson: string[];
-  gasLimit: bigint;
-  /** The fee tokens the signer can pay with, priced for `gasLimit`. */
+  /** The fee tokens the signer can pay with, each with the gas limit it pays for. */
   options: FeeChoice[];
   defaultFee: FeeChoice;
   locked: boolean;
@@ -132,7 +131,7 @@ function contactName(book: unknown[], address: string): string | null {
 function toChoices(estimate: FeeEstimate, infos: Map<string, FeeChoice>): FeeChoice[] {
   return estimate.options.flatMap((o) => {
     const info = infos.get(o.denom);
-    return info ? [{ ...info, amount: o.amount.toString() }] : [];
+    return info ? [{ ...info, amount: o.amount.toString(), gasLimit: o.gasLimit.toString() }] : [];
   });
 }
 
@@ -213,6 +212,7 @@ export async function prepareSign(
       infos.set(o.denom, {
         denom: o.denom,
         amount: '0',
+        gasLimit: '0',
         symbol: info.symbol,
         decimals: info.decimals,
         logo: info.logo,
@@ -247,7 +247,6 @@ export async function prepareSign(
       summary,
       rawJson: rawJson(verified.messages),
       messageJson: verified.messages.map(messageJsonOf),
-      gasLimit: estimate.gasLimit,
       options,
       defaultFee,
       locked: state !== 'unlocked',
@@ -265,6 +264,5 @@ export function detailsOf(p: Prepared): SignDetails {
     locked: p.locked,
     fee: p.defaultFee,
     options: p.options,
-    gasLimit: p.gasLimit.toString(),
   };
 }

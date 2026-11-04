@@ -53,7 +53,7 @@ export const home = {
   'home.switcher.star': 'Add {symbol} to preferred',
   'home.switcher.unstar': 'Remove {symbol} from preferred',
   'home.switcher.keepLast': 'Keep at least one preferred token',
-  'home.switcher.hint': 'Star a token to keep it at the top.',
+  'home.switcher.hint': 'Star a token so you can use it',
   'home.switcher.noMatch': 'No token matches "{query}".',
   'home.switcher.none': 'No token with this code on BeeZee',
   'home.switcher.failed': 'Could not load tokens. Try again.',

@@ -10,6 +10,8 @@ CHAIN_ID=beezee-1
 ACCOUNT_NUMBER=7
 SEQUENCE=3
 GAS=200000
+# A fee in another token pays for its swap to ubze: the wallet signs 1.5x the native limit.
+FOREIGN_GAS=300000
 ADDR1=bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p
 FACTORY=factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl
 
@@ -26,10 +28,11 @@ pubkey=$("$BZED" keys show signer "${keyring[@]}" --output json | jq -r '.pubkey
 addr0=$("$BZED" keys show signer -a "${keyring[@]}")
 
 # unsigned <file> <fees> <note> <send-args...>: one bank send, unsigned, to <file>.
+# The gas limit is $GAS unless the caller sets `gas`.
 unsigned() {
   local file=$1 fees=$2 note=$3
   shift 3
-  "$BZED" tx bank send signer "$@" --generate-only --chain-id "$CHAIN_ID" --gas "$GAS" \
+  "$BZED" tx bank send signer "$@" --generate-only --chain-id "$CHAIN_ID" --gas "${gas:-$GAS}" \
     --fees "$fees" --note "$note" "${keyring[@]}" >"$file"
 }
 
@@ -92,7 +95,7 @@ finish send-ubze-memo "bank send of 1,000,000 ubze with a memo" "$work/b.json"
 unsigned "$work/c.json" 2000ubze "" "$ADDR1" 250000"$FACTORY"
 finish send-factory-denom "bank send of a factory denom" "$work/c.json"
 
-unsigned "$work/d.json" 5000"$FACTORY" "" "$ADDR1" 1000000ubze
+gas=$FOREIGN_GAS unsigned "$work/d.json" 7858"$FACTORY" "" "$ADDR1" 1000000ubze
 finish fee-non-native "bank send with the fee paid in a factory denom" "$work/d.json"
 
 unsigned "$work/e1.json" 2000ubze "" "$ADDR1" 1000000ubze
