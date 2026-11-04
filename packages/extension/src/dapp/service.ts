@@ -35,7 +35,7 @@ export interface DappServiceDeps {
   deliverer: Deliverer;
   documents: Pick<DocumentLog, 'record' | 'removeTab'>;
   changes: Pick<AccountChanges, 'notify'>;
-  sites: Pick<SitesService, 'list' | 'change' | 'disconnect'>;
+  sites: Pick<SitesService, 'list' | 'current' | 'change' | 'disconnect'>;
   services: Pick<Services, 'activeNetwork'>;
   clock: { now(): number };
 }

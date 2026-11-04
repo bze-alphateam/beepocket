@@ -184,7 +184,12 @@ async function rig() {
     deliverer,
     documents,
     changes,
-    sites: new SitesService({ wallet, services, changes }),
+    sites: new SitesService({
+      wallet,
+      services,
+      changes,
+      tabs: { query: () => Promise.resolve([]) },
+    }),
     services,
     clock,
   });

@@ -10,6 +10,7 @@ import {
   type Method,
   type RequestOf,
   type Result,
+  type ConnectedSiteView,
   type TokenBalances,
   type WalletAddress,
 } from '../../protocol';
@@ -74,6 +75,10 @@ interface World {
   /** What `tokens.lastBalances` answers per denom (the worker's stored reads); none by default. */
   last: Record<string, string[]>;
   hidden: boolean;
+  /** What `sites.current` answers: the connected site in the tab the popup opened over. */
+  site: ConnectedSiteView | null;
+  /** Error code `sites.change` / `sites.disconnect` answer with, when set. */
+  sitesFail: string | null;
 }
 
 function setup(
@@ -94,6 +99,8 @@ function setup(
     failed: [],
     last: {},
     hidden: false,
+    site: null,
+    sitesFail: null,
     ...over,
   };
   const calls: { method: string; req: unknown }[] = [];
@@ -156,6 +163,18 @@ function setup(
     },
     'book.list': () => ok({ contacts: [], own: [] }),
     'sites.list': () => ok({ network: w.network, sites: [], addresses: [] }),
+    'sites.current': () => ok({ site: w.site, addresses: w.addresses }),
+    'sites.change': (r) => {
+      if (w.sitesFail !== null) return fail(w.sitesFail, 'refused');
+      const picked = w.addresses.find((a) => a.index === r.index);
+      if (w.site && picked) w.site = { ...w.site, label: picked.label, address: picked.address };
+      return ok({});
+    },
+    'sites.disconnect': () => {
+      if (w.sitesFail !== null) return fail(w.sitesFail, 'refused');
+      w.site = null;
+      return ok({});
+    },
   };
   const gates = new Map<string, Promise<void>>();
   const hold = (method: string) => {
@@ -176,12 +195,18 @@ function setup(
   const rejectOnce = (method: Method) => {
     rejecting.add(method);
   };
+  // A call answered `ok` with no value (a worker older or newer than the popup).
+  const empty = new Set<string>();
+  const answerEmpty = (method: Method) => {
+    empty.add(method);
+  };
   const client: Client = {
     call: vi.fn(async <M extends Method>(method: M, req: RequestOf<M>) => {
       // A call that rejects instead of answering (the worker's port went away).
       if (rejecting.delete(method)) throw new Error('port closed');
       calls.push({ method, req });
       await gates.get(method);
+      if (empty.has(method)) return { ok: true, value: undefined } as never;
       const h = handlers[method] as ((r: RequestOf<M>) => Result<unknown>) | undefined;
       return (h ? h(req) : fail('unknown_method', method)) as never;
     }),
@@ -268,7 +293,21 @@ function setup(
   const releaseAll = () => {
     for (const release of releases) release();
   };
-  return { host, hold, releaseAll, rejectOnce, w, calls, style, written, timers, tick, fire, seen };
+  return {
+    host,
+    hold,
+    releaseAll,
+    rejectOnce,
+    answerEmpty,
+    w,
+    calls,
+    style,
+    written,
+    timers,
+    tick,
+    fire,
+    seen,
+  };
 }
 
 const byLabel = (host: HTMLElement, label: string) =>
@@ -888,5 +927,104 @@ describe('races and guards', () => {
       await refresh?.();
     });
     expect(balanceCalls(s.calls)).toBe(before + 1);
+  });
+});
+
+describe('current site strip', () => {
+  const SITE: ConnectedSiteView = {
+    origin: 'https://testnet-dex.getbze.com',
+    label: 'Main',
+    address: addr(0, 'Main').address,
+    connectedAt: 1,
+  };
+  const strip = (host: HTMLElement) => byLabel(host, 'Connected site');
+
+  it('shows the connected site of the tab and the address it sees', async () => {
+    const s = setup({ site: SITE });
+    await s.tick();
+    expect(strip(s.host)?.textContent).toContain('testnet-dex.getbze.com');
+    expect(strip(s.host)?.textContent).toContain('Main');
+    expect(
+      byLabel(s.host, 'Change the address testnet-dex.getbze.com sees, now Main'),
+    ).not.toBeNull();
+  });
+
+  it('shows nothing when the tab is not a connected site', async () => {
+    const s = setup({ site: null });
+    await s.tick();
+    expect(s.calls.some((c) => c.method === 'sites.current')).toBe(true);
+    expect(strip(s.host)).toBeNull();
+    expect(byLabel(s.host, 'Disconnect testnet-dex.getbze.com')).toBeNull();
+  });
+
+  it('shows nothing when the worker cannot answer', async () => {
+    const s = setup({ site: SITE });
+    s.rejectOnce('sites.current');
+    await s.tick();
+    expect(strip(s.host)).toBeNull();
+    expect(text(s.host)).toContain('1,234.56789');
+  });
+
+  it('shows nothing when the worker answers without a value', async () => {
+    const s = setup({ site: SITE });
+    s.answerEmpty('sites.current');
+    await s.tick();
+    expect(strip(s.host)).toBeNull();
+    expect(text(s.host)).toContain('1,234.56789');
+  });
+
+  it('Change picks another address through sites.change and shows it', async () => {
+    const s = setup({ site: SITE });
+    await s.tick();
+    click(byLabel(s.host, 'Change the address testnet-dex.getbze.com sees, now Main'));
+    await s.tick();
+    const radios = s.host.querySelectorAll('[role="dialog"] [role=radio]');
+    expect(radios[0]?.getAttribute('aria-checked')).toBe('true');
+    click(radios[1] ?? null);
+    click(
+      [...s.host.querySelectorAll('[role="dialog"] button')].find(
+        (b) => b.textContent === 'Save',
+      ) ?? null,
+    );
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'sites.change').map((c) => c.req)).toEqual([
+      { origin: SITE.origin, index: 1 },
+    ]);
+    expect(s.host.querySelector('[role="dialog"]')).toBeNull();
+    expect(strip(s.host)?.textContent).toContain('Savings');
+  });
+
+  it('a refused Change keeps the sheet open with the reason', async () => {
+    const s = setup({ site: SITE, sitesFail: 'needs-password' });
+    await s.tick();
+    click(byLabel(s.host, 'Change the address testnet-dex.getbze.com sees, now Main'));
+    await s.tick();
+    click(s.host.querySelectorAll('[role="dialog"] [role=radio]')[1] ?? null);
+    click(
+      [...s.host.querySelectorAll('[role="dialog"] button')].find(
+        (b) => b.textContent === 'Save',
+      ) ?? null,
+    );
+    await s.tick();
+    expect(s.host.querySelector('[role="dialog"]')?.textContent).toContain('Unlock the wallet');
+  });
+
+  it('Disconnect forgets the site at once and the strip goes away', async () => {
+    const s = setup({ site: SITE });
+    await s.tick();
+    click(byLabel(s.host, 'Disconnect testnet-dex.getbze.com'));
+    await s.tick();
+    expect(s.calls.filter((c) => c.method === 'sites.disconnect').map((c) => c.req)).toEqual([
+      { origin: SITE.origin },
+    ]);
+    expect(strip(s.host)).toBeNull();
+  });
+
+  it('a refused Disconnect keeps the strip and says why', async () => {
+    const s = setup({ site: SITE, sitesFail: 'needs-password' });
+    await s.tick();
+    click(byLabel(s.host, 'Disconnect testnet-dex.getbze.com'));
+    await s.tick();
+    expect(strip(s.host)?.textContent).toContain('Unlock the wallet');
   });
 });

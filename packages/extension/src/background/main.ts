@@ -13,6 +13,7 @@ import {
   createDappService,
   dappSender,
   type DappService,
+  type ActiveTabsLike,
   type SenderLike,
   type TabsLike,
   type WindowsLike,
@@ -49,7 +50,9 @@ export interface BackgroundEnv extends PlatformEnv {
       sendMessage?: (message: unknown) => Promise<unknown>;
     };
     alarms: AlarmsLike & { onAlarm: AlarmEventLike };
+    /** `query` also finds the tab the toolbar popup opened over (`activeTab`). */
     tabs: TabsLike &
+      ActiveTabsLike &
       LinkTabsLike & { onRemoved: { addListener(listener: (tabId: number) => void): void } };
     windows: WindowsLike & {
       onRemoved: { addListener(listener: (windowId: number) => void): void };

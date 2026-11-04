@@ -14,6 +14,7 @@ function fields(payload: unknown): Record<string, unknown> | null {
 export function registerSitesHandlers(registry: HandlerRegistry, dapp: DappService): void {
   const sites = dapp.sites;
   registry.register('sites.list', { validate: () => ok({}), handle: () => sites.list() });
+  registry.register('sites.current', { validate: () => ok({}), handle: () => sites.current() });
   registry.register('sites.change', {
     validate: (payload) => {
       const p = fields(payload);

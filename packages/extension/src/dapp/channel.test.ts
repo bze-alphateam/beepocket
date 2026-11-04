@@ -90,6 +90,9 @@ async function rig() {
   const open = new Set<number>();
   const focused: number[] = [];
   const alarms = new Map<string, number>();
+  /** What `tabs.query` answers for the tab the popup opened over; an Error makes it reject. */
+  const active: { tabs: { url?: string }[] | Error } = { tabs: [] };
+  const queried: unknown[] = [];
   const build = () =>
     createDappService({ session, clock } as unknown as Platform, services, wallet, {
       alarms: {
@@ -103,6 +106,12 @@ async function rig() {
         },
       },
       tabs: {
+        query: (info) => {
+          queried.push(info);
+          return active.tabs instanceof Error
+            ? Promise.reject(active.tabs)
+            : Promise.resolve(active.tabs);
+        },
         sendMessage: (tabId, message, options) => {
           if (options?.documentId !== undefined && unreachable.has(options.documentId)) {
             return Promise.reject(new Error('no such document'));
@@ -169,6 +178,8 @@ async function rig() {
     local,
     storage,
     vault,
+    active,
+    queried,
     setNetwork: (id: NetworkId) => {
       network = id;
     },
@@ -601,6 +612,80 @@ describe('connected sites', () => {
       error: { code: 'needs-password' },
     });
     expect(pushes(t)).toEqual([]);
+  });
+
+  it('the current site is the connected site in the tab the popup opened over', async () => {
+    const t = await rig();
+    await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 2);
+    await connectSite(t, t.site(OTHER, 2, 'doc-2'), 0);
+    t.active.tabs = [{ url: `${ORIGIN}/trade?market=ubze#top` }];
+    const current = await t.dapp.sites.current();
+    if (!current.ok) throw new Error('current failed');
+    expect(current.value.site).toMatchObject({ origin: ORIGIN, label: 'Address 3' });
+    expect(current.value.addresses.map((a) => a.index)).toEqual([0, 1, 2]);
+    expect(t.queried).toEqual([{ active: true, lastFocusedWindow: true }]);
+  });
+
+  it.each([
+    ['a site that is not connected', [{ url: 'https://stranger.example/' }]],
+    ['a tab without a readable url', [{}]],
+    ['no tab at all', []],
+    ['a browser page', [{ url: 'chrome://settings' }]],
+    ['an extension page', [{ url: 'chrome-extension://abc/popup.html' }]],
+    ['a file', [{ url: 'file:///home/me/page.html' }]],
+    ['a malformed url', [{ url: 'not a url' }]],
+  ])('there is no current site for %s', async (_, tabs: { url?: string }[]) => {
+    const t = await rig();
+    await connectSite(t, t.site());
+    t.active.tabs = tabs;
+    const current = await t.dapp.sites.current();
+    expect(current.ok && current.value.site).toBeNull();
+  });
+
+  it.each([
+    ['drops the default port', 'https://x.com', 'https://x.com:443/path', true],
+    ['drops userinfo', 'https://x.com', 'https://u:p@x.com/', true],
+    ['lowercases the host', 'https://dex.getbze.com', 'https://DEX.GetBZE.com/trade', true],
+    ['punycodes an IDN host', 'https://xn--bcher-kva.example', 'https://bücher.example/', true],
+    ['keeps a non-default port distinct', 'https://x.com', 'https://x.com:8443/', false],
+    ['keeps the scheme distinct', 'https://x.com', 'http://x.com/', false],
+    ['keeps a local dev port', 'http://localhost:5173', 'http://localhost:5173/x?y=1', true],
+  ])('the tab url %s before matching', async (_, stored: string, url: string, matches: boolean) => {
+    const t = await rig();
+    await connectSite(t, t.site(stored));
+    t.active.tabs = [{ url }];
+    const current = await t.dapp.sites.current();
+    expect(current.ok && current.value.site?.origin).toBe(matches ? stored : undefined);
+  });
+
+  it('there is no current site when the tab query fails', async () => {
+    const t = await rig();
+    await connectSite(t, t.site());
+    t.active.tabs = new Error('no access');
+    const current = await t.dapp.sites.current();
+    expect(current.ok && current.value.site).toBeNull();
+  });
+
+  it('a site connected on the other network is not the current site', async () => {
+    const t = await rig();
+    await connectSite(t, t.site());
+    t.active.tabs = [{ url: `${ORIGIN}/` }];
+    t.setNetwork('testnet');
+    const current = await t.dapp.sites.current();
+    expect(current.ok && current.value.site).toBeNull();
+  });
+
+  it('the current site follows Change and Disconnect', async () => {
+    const t = await rig();
+    await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 0);
+    t.active.tabs = [{ url: ORIGIN }];
+    expect((await t.dapp.sites.change(ORIGIN, 1)).ok).toBe(true);
+    const changed = await t.dapp.sites.current();
+    expect(changed.ok && changed.value.site?.label).toBe('Address 2');
+    expect(pushes(t)).toEqual(['1:doc-1']);
+    expect((await t.dapp.sites.disconnect(ORIGIN)).ok).toBe(true);
+    const gone = await t.dapp.sites.current();
+    expect(gone.ok && gone.value.site).toBeNull();
   });
 
   it('a network switch pushes to every recorded document', async () => {

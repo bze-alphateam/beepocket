@@ -23,4 +23,5 @@ export const sites = {
   'sites.failed': 'The change could not be saved. Please try again.',
   'sites.needsUnlock': 'Unlock the wallet to change connected sites.',
   'sites.gone': 'This site is no longer connected.',
+  'sites.current.label': 'Connected site',
 } as const;
