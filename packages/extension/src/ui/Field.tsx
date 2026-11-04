@@ -9,7 +9,7 @@ export interface FieldProps {
   value: string;
   onInput: (value: string) => void;
   type?: 'text' | 'password' | undefined;
-  /** Monospace text for addresses and token codes. */
+  /** Monospace text for addresses and token denoms. */
   mono?: boolean | undefined;
   /** `md` 44 px, `lg` 48 px (Unlock), `amount` 52 px with the large bold amount text. */
   size?: 'md' | 'lg' | 'amount' | undefined;

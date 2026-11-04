@@ -717,7 +717,7 @@ export function Start(props: {
               ? `${t('onboarding.start.noSuchToken')} ${t('onboarding.start.noSuchTokenHint')}`
               : t(START_ERRORS[error])
         }
-        hint={refused ? t('app.pasteHint') : undefined}
+        hint={refused ? t('app.pasteHint') : t('onboarding.start.codeHint')}
         onInput={typed}
         trailing={
           <Button variant="ghost" label={t('onboarding.start.pasteLabel')} onClick={paste}>

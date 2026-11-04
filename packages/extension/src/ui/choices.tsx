@@ -114,7 +114,7 @@ export interface RadioCardOption<V extends string> {
   icon: IconName;
   /** Icon tile tone: `soft` accent (the recommended option) or `inset` neutral. */
   iconTone?: 'soft' | 'inset' | undefined;
-  /** Shown inside the card while it is picked (the token-code field on Ob-Start). */
+  /** Shown inside the card while it is picked (the token-denom field on Ob-Start). */
   body?: ComponentChildren;
 }
 
@@ -140,7 +140,7 @@ export function RadioCardGroup<V extends string>(props: RadioCardGroupProps<V>) 
       role="radiogroup"
       aria-label={props.label}
       onKeyDown={(e) => {
-        // Keys typed into a card's body (the token-code field) are the field's own.
+        // Keys typed into a card's body (the token-denom field) are the field's own.
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         rovingKeyDown(
           e,
