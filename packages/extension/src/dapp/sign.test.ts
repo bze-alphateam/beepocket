@@ -261,10 +261,10 @@ function request(options: DocOptions = {}) {
   };
 }
 
-const feeFor = (view: { fee: { denom: string; amount: string }; gasLimit: string }) => ({
+const feeFor = (view: { fee: { denom: string; amount: string; gasLimit: string } }) => ({
   denom: view.fee.denom,
   amount: view.fee.amount,
-  gasLimit: view.gasLimit,
+  gasLimit: view.fee.gasLimit,
 });
 
 async function review(t: Rig, options?: DocOptions) {
@@ -353,8 +353,7 @@ describe('signDirect review and approval', () => {
       origin: ORIGIN,
       locked: false,
       signer: { label: 'Main', address: MAIN.address },
-      fee: { denom: 'ubze', amount: '2000', symbol: 'BZE' },
-      gasLimit: '200000',
+      fee: { denom: 'ubze', amount: '2000', gasLimit: '200000', symbol: 'BZE' },
     });
     expect(r.view.summary.hero).toContain('1.00 BZE');
     expect(r.view.summary.memo).toBe('thanks');
@@ -406,7 +405,7 @@ describe('signDirect review and approval', () => {
     expect(
       await t.dapp.answer(r.id, {
         approve: true,
-        fee: { denom: 'uother', amount: '500', gasLimit: r.view.gasLimit },
+        fee: { denom: 'uother', amount: '500', gasLimit: r.view.fee.gasLimit },
       }),
     ).toMatchObject({ ok: false, error: { code: 'review-changed' } });
     await t.dapp.answer(r.id, {
@@ -425,7 +424,7 @@ describe('signDirect review and approval', () => {
     const r = await review(t);
     const res = await t.dapp.answer(r.id, {
       approve: true,
-      fee: { denom: 'ubze', amount: '1', gasLimit: r.view.gasLimit },
+      fee: { denom: 'ubze', amount: '1', gasLimit: r.view.fee.gasLimit },
     });
     expect(res).toMatchObject({ ok: false, error: { code: 'review-changed' } });
     expect(t.answerOf(r.id)).toBeUndefined();
@@ -440,7 +439,7 @@ describe('signDirect review and approval', () => {
     expect(
       await t.dapp.answer(r.id, {
         approve: true,
-        fee: { denom: 'unope', amount: '1', gasLimit: r.view.gasLimit },
+        fee: { denom: 'unope', amount: '1', gasLimit: r.view.fee.gasLimit },
       }),
     ).toMatchObject({ ok: false });
     expect(t.answerOf(r.id)).toBeUndefined();

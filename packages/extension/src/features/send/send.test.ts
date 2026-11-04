@@ -3,9 +3,6 @@ import { resolve } from 'node:path';
 import {
   BroadcastError,
   HttpStatusError,
-  buildAuthInfo,
-  buildBody,
-  encodeMsgSend,
   TransportError,
   txHash,
   NETWORKS,
@@ -211,8 +208,7 @@ describe('golden transactions', () => {
   const cases = [
     { name: 'send-ubze', denom: 'ubze', amount: '1', feeDenom: 'ubze' },
     { name: 'send-factory-denom', denom: FACTORY, amount: '0.25', feeDenom: 'ubze' },
-    // fee-non-native is left out: its fixture pays a foreign fee with the native gas limit,
-    // which no longer covers the fee swap (see 'pays for the fee swap' below).
+    { name: 'fee-non-native', denom: 'ubze', amount: '1', feeDenom: FACTORY },
   ];
   for (const c of cases) {
     it(`${c.name}: the reviewed quote is what the signer gets, byte for byte`, async () => {
@@ -251,11 +247,13 @@ describe('send.prepare', () => {
     expect(s.calls.simulate).toBeGreaterThanOrEqual(2);
   });
 
-  it('pays for the fee swap when the fee is in another token, and signs exactly that', async () => {
+  it('pays for the fee swap when the fee is in another token', async () => {
     const s = setup({ balances: { ubze: 100_000_000n, [FACTORY]: 100_000_000n } });
     const quote = await quoteOf(s, { feeDenom: FACTORY });
-    // 133,333 simulated -> 200,000 native -> 300,000 with the swap; 3,000 ubze is
-    // 7,142.86 uvdl at 21:50, plus 10% slippage -> 7,858.
+    // Gas: 133,333 simulated x 1.5 -> 200,000 for a ubze fee, x 1.5 again -> 300,000 with the
+    // swap. Fee: 300,000 x 0.01 = 3,000 ubze. The pool holds 21,000 ubze per 50,000 uvdl, so
+    // spot = 0.42 ubze per uvdl and 3,000 / 0.42 = 7,142.86 uvdl; x 1.1 slippage = 7,857.14,
+    // rounded up to 7,858.
     expect(quote.options).toMatchObject([
       { denom: 'ubze', amount: '2000', gasLimit: '200000' },
       { denom: FACTORY, amount: '7858', gasLimit: '300000' },
@@ -263,24 +261,7 @@ describe('send.prepare', () => {
     expect(quote.fee).toMatchObject({ denom: FACTORY, amount: '7858', gasLimit: '300000' });
     expect(quote.gasLimit).toBe('300000');
 
-    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
-    const bodyBytes = buildBody({
-      messages: [
-        encodeMsgSend({
-          fromAddress: SIGNER,
-          toAddress: RECIPIENT,
-          amount: [{ denom: 'ubze', amount: '1000000' }],
-        }),
-      ],
-    });
-    const authInfoBytes = buildAuthInfo({
-      pubKey: PUBKEY,
-      sequence: 3n,
-      fee: { amount: [{ denom: FACTORY, amount: '7858' }], gasLimit: 300_000n },
-    });
-    expect(s.signed).toEqual([
-      signDocBytes({ bodyBytes, authInfoBytes, chainId: NETWORK.chainId, accountNumber: 7n }),
-    ]);
+    // What gets signed is pinned byte for byte by the fee-non-native golden transaction.
   });
 
   it('sends max of a token that pays its own fee, leaving the larger foreign fee', async () => {

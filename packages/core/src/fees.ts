@@ -89,9 +89,9 @@ function parseGasPrice(amount: string): Rate {
  * ratio (`rate / nativePrice`), times the slippage margin, rounded up once more.
  */
 function foreignFee(gas: bigint, nativePrice: Rate, rate: Rate): bigint {
-  const native = ceilDiv(gas * nativePrice.num, nativePrice.den);
   // A zero gas price makes every fee zero (and the ratio undefined).
   if (nativePrice.num === 0n) return 0n;
+  const native = ceilDiv(gas * nativePrice.num, nativePrice.den);
   return ceilDiv(
     native * rate.num * nativePrice.den * FOREIGN_FEE_SLIPPAGE.num,
     rate.den * nativePrice.num * FOREIGN_FEE_SLIPPAGE.den,

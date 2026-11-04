@@ -264,6 +264,5 @@ export function detailsOf(p: Prepared): SignDetails {
     locked: p.locked,
     fee: p.defaultFee,
     options: p.options,
-    gasLimit: p.defaultFee.gasLimit,
   };
 }
