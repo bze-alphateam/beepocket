@@ -7,8 +7,8 @@ import {
   type ConnectedSiteView,
   type WalletAddress,
 } from '../../protocol';
-import { Banner, Icon } from '../../ui';
-import { ChangeSheet, siteName } from '../dapp/ConnectedSitesScreen';
+import { Banner } from '../../ui';
+import { ChangeSheet, SiteRow } from '../dapp/ConnectedSitesScreen';
 
 type Outcome = { ok: true } | { ok: false; error: { code: string } };
 
@@ -46,7 +46,6 @@ export function CurrentSite() {
   }, [load]);
 
   if (site === null) return null;
-  const name = siteName(site.origin);
 
   const run = async (call: () => Promise<Outcome>) => {
     if (busy) return;
@@ -64,35 +63,18 @@ export function CurrentSite() {
 
   return (
     <section class="bp-home-site" aria-label={t('sites.current.label')}>
-      <div class="bp-home-site-row">
-        <button
-          type="button"
-          class="bp-home-site-sees"
-          aria-haspopup="dialog"
-          aria-label={t('sites.change.label', { site: name, label: site.label })}
-          disabled={busy}
-          onClick={() => {
-            setError(null);
-            setChanging(true);
-          }}
-        >
-          <span class="bp-home-site-name">{name}</span>
-          <span aria-hidden="true">·</span>
-          <span class="bp-home-site-label">{site.label}</span>
-          <Icon name="chevron-down" size={12} strokeWidth={2.4} />
-        </button>
-        <button
-          type="button"
-          class="bp-home-site-disconnect"
-          aria-label={t('sites.disconnect.label', { site: name })}
-          disabled={busy}
-          onClick={() => {
-            void run(() => client.call('sites.disconnect', { origin: site.origin }));
-          }}
-        >
-          {t('sites.disconnect')}
-        </button>
-      </div>
+      <SiteRow
+        site={site}
+        busy={busy}
+        strip
+        onChange={() => {
+          setError(null);
+          setChanging(true);
+        }}
+        onDisconnect={() => {
+          void run(() => client.call('sites.disconnect', { origin: site.origin }));
+        }}
+      />
       {error !== null && !changing && <Banner tone="red">{error}</Banner>}
       {changing && (
         <ChangeSheet

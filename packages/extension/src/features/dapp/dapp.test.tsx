@@ -105,6 +105,16 @@ const base: Partial<Record<Method, Handler>> = {
 
 const button = (host: HTMLElement, name: string) =>
   [...host.querySelectorAll('button')].find((b) => b.textContent === name);
+/** The Details row of the sign screen (the whole request), not a message row. */
+const detailsRow = (host: HTMLElement) =>
+  [...host.querySelectorAll('button')].find((b) => b.textContent === en['dapp.sign.details']);
+const closeButton = (host: HTMLElement) =>
+  host.querySelector<HTMLButtonElement>(
+    `[role=dialog] button[aria-label="${en['app.sheet.close']}"]`,
+  );
+/** The open Details sheet, docked in the footer. */
+const detailsSheet = (host: HTMLElement) =>
+  host.querySelector('.bp-footer .bp-sheet-docked [role=dialog]');
 const feeRow = (host: HTMLElement) =>
   [...host.querySelectorAll('button')].find((b) =>
     b.getAttribute('aria-label')?.startsWith('Network fee'),
@@ -201,13 +211,28 @@ const SIGN: Extract<RequestView, { status: 'sign' }> = {
   summary: {
     level: 'normal',
     title: 'Send',
-    hero: 'Send 1 BZE',
+    hero: '1 BZE',
     sub: 'to Alex',
     rows: [
       ['To', 'bze1alex', 'mono'],
       ['Amount', '1 BZE'],
     ],
-    messages: [],
+    messages: [
+      {
+        typeUrl: '/cosmos.bank.v1beta1.MsgSend',
+        level: 'normal',
+        icon: 'send',
+        title: 'Send',
+        line: '1 BZE to Alex',
+        hero: '1 BZE',
+        sub: 'to Alex',
+        rows: [
+          ['To', 'bze1alex', 'mono'],
+          ['Amount', '1 BZE'],
+        ],
+        danger: null,
+      },
+    ],
     dangers: [],
     memo: 'thanks',
   },
@@ -237,16 +262,23 @@ function signRig(view: RequestView, extra: Partial<Record<Method, Handler>> = {}
 }
 
 describe('the sign screen', () => {
-  it('shows the site, the signer, the hero, the rows, the memo and the fee', async () => {
+  it('shows the domain, the signer, the hero and the fee, and keeps rows and memo in Details', async () => {
     const t = signRig(SIGN);
     await settle();
     const text = t.host.textContent;
-    expect(text).toContain('https://dex.getbze.com');
+    expect(t.host.querySelector('.bp-sign-domain')?.textContent).toBe('dex.getbze.com');
     expect(text).toContain('Main');
-    expect(text).toContain('Send 1 BZE');
-    expect(text).toContain('bze1alex');
-    expect(text).toContain('thanks');
+    expect(t.host.querySelector('.bp-sign-big')?.textContent).toBe('1 BZE');
+    expect(text).toContain('to Alex');
     expect(text).toContain('0.002 BZE');
+    expect(text).not.toContain('bze1alex');
+    expect(text).not.toContain('thanks');
+    fireEvent(detailsRow(t.host), 'click');
+    await settle();
+    const sheet = detailsSheet(t.host);
+    expect(sheet?.textContent).toContain('bze1alex');
+    expect(sheet?.textContent).toContain('thanks');
+    expect(sheet?.textContent).toContain('/cosmos.bank.v1beta1.MsgSend');
   });
 
   it('approves with the fee that is shown', async () => {
@@ -335,16 +367,43 @@ describe('the sign screen', () => {
     });
   });
 
-  it('opens the raw JSON sheet from Message details', async () => {
+  it('keeps Reject and Approve usable while Details is open, and closes it', async () => {
     const t = signRig(SIGN);
     await settle();
-    fireEvent(t.host.querySelector('.bp-ghost-row'), 'click');
+    expect(detailsSheet(t.host)).toBeNull();
+    fireEvent(detailsRow(t.host), 'click');
     await settle();
-    expect(document.body.textContent).toContain('/cosmos.bank.v1beta1.MsgSend');
-    expect(document.body.textContent).toContain(en['dapp.sign.rawNote']);
-    fireEvent(button(t.host, en['dapp.sign.rawBack']), 'click');
+    expect(detailsSheet(t.host)?.querySelector('pre')?.textContent).toContain(
+      '/cosmos.bank.v1beta1.MsgSend',
+    );
+    // The sheet sits in the footer, above the buttons: they are still there and enabled.
+    expect(disabled(t.host, 'Approve')).toBe(false);
+    expect(disabled(t.host, 'Reject')).toBe(false);
+    fireEvent(closeButton(t.host), 'click');
     await settle();
-    expect(document.body.textContent).not.toContain(en['dapp.sign.rawNote']);
+    expect(detailsSheet(t.host)).toBeNull();
+    fireEvent(detailsRow(t.host), 'click');
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', expect.objectContaining({ approve: true }));
+  });
+
+  it('shows a huge raw message cut until Show all', async () => {
+    const huge = `{"typeUrl":"/x.v1.MsgBig","value":"${'A'.repeat(30_000)}"}`;
+    const t = signRig({ ...SIGN, messageJson: [huge], rawJson: `[${huge}]` });
+    await settle();
+    fireEvent(detailsRow(t.host), 'click');
+    await settle();
+    const pre = () => detailsSheet(t.host)?.querySelector('pre')?.textContent ?? '';
+    expect(pre().length).toBe(20_001);
+    expect(pre().endsWith('…')).toBe(true);
+    const showAll = button(t.host, 'Show all (30 KB)');
+    expect(showAll).toBeDefined();
+    fireEvent(showAll, 'click');
+    await settle();
+    expect(pre()).toBe(huge);
+    expect(button(t.host, 'Show all (30 KB)')).toBeUndefined();
   });
 
   it('answers Reject with approve false and no fee', async () => {
@@ -397,7 +456,10 @@ async function signView(
     ...SIGN,
     summary,
     rawJson: rawJson(messages),
-    messageJson: messages.map((m) => rawJson([m])),
+    // One message each, as the worker sends it: the object, not a one-item array.
+    messageJson: messages.map((m) =>
+      JSON.stringify((JSON.parse(rawJson([m])) as unknown[])[0], null, 2),
+    ),
     locked: options.locked ?? false,
   };
 }
@@ -412,12 +474,23 @@ const tick = (host: HTMLElement) =>
 const ticked = (host: HTMLElement) => tick(host).getAttribute('aria-checked') === 'true';
 
 describe('the sign screen: risk levels', () => {
-  it('shows an unknown message with the amber line and its raw JSON open', async () => {
+  it('shows an unknown message by name with one amber line, and its raw message in Details', async () => {
     const t = signRig(await signView([nothingMsg()]));
     await settle();
+    expect(t.host.querySelector('.bp-sign-big')?.textContent).toBe('MsgNothing');
     expect(t.host.querySelector('[role=note]')?.textContent).toBe(en['dapp.sign.unknown']);
     expect(t.host.querySelector('[role=alert]')).toBeNull();
-    expect(t.host.querySelector('.bp-dapp-raw')?.textContent).toContain('/test.v1.MsgNothing');
+    expect(t.host.querySelector('pre')).toBeNull();
+    fireEvent(detailsRow(t.host), 'click');
+    await settle();
+    const sheet = detailsSheet(t.host);
+    expect(sheet?.querySelector('dd.bp-mono')?.textContent).toBe('/test.v1.MsgNothing');
+    expect(sheet?.querySelector('pre')?.textContent).toContain('/test.v1.MsgNothing');
+    // Four bytes the wallet has no decoder for: said on the screen and in Details.
+    expect(t.host.querySelector('.bp-sign-hero')?.textContent).toContain('Not decoded · 4 bytes');
+    expect([...(sheet?.querySelectorAll('dd') ?? [])].map((d) => d.textContent)).toContain(
+      'Not decoded · 4 bytes',
+    );
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
     expect(disabled(t.host, 'Approve')).toBe(false);
     expect(t.host.querySelector('[role=checkbox]')).toBeNull();
@@ -428,6 +501,11 @@ describe('the sign screen: risk levels', () => {
     await settle();
     expect(t.host.querySelectorAll('[role=alert]')).toHaveLength(1);
     expect(t.host.querySelector('[role=alert]')?.textContent).toContain('power over your address');
+    const view = await signView([grant()]);
+    const danger = view.summary.dangers[0];
+    expect(danger?.text.length).toBeGreaterThan(0);
+    // The risk sentence itself, not only the title, is in the red box.
+    expect(t.host.querySelector('[role=alert]')?.textContent).toContain(danger?.text);
     expect(ticked(t.host)).toBe(false);
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
     expect(disabled(t.host, 'Approve')).toBe(true);
@@ -508,34 +586,50 @@ describe('the sign screen: risk levels', () => {
     );
   });
 
-  it('numbers a normal and an unknown message and says both happen', async () => {
+  it('lists a normal and an unknown message one line each, and opens the details of each', async () => {
     const t = signRig(await signView([sendMsg(), nothingMsg()]));
     await settle();
-    const text = t.host.textContent;
-    expect(text).toContain(en['dapp.sign.together']);
-    expect(text).toContain(en['dapp.sign.together.two']);
-    expect(text).toContain('1 of 2');
-    expect(text).toContain('2 of 2');
-    const cards = [...t.host.querySelectorAll('.bp-dapp-card')];
-    expect(cards).toHaveLength(2);
-    expect(cards[0]?.className).toContain('bp-dapp-card-normal');
-    expect(cards[1]?.className).toContain('bp-dapp-card-unknown');
-    expect(cards[0]?.querySelector('.bp-dapp-raw')).toBeNull();
-    expect(cards[1]?.querySelector('.bp-dapp-raw')?.textContent).toContain('/test.v1.MsgNothing');
-    expect(
-      [...(cards[0]?.querySelectorAll('.bp-detail-label') ?? [])].map((d) => d.textContent),
-    ).toEqual(['To', 'Amount']);
-    expect(cards[0]?.textContent).toContain(OTHER);
-    expect(cards[0]?.textContent).toContain('1.00 BZE');
-    expect(cards[1]?.querySelectorAll('.bp-detail-label')).toHaveLength(0);
+    expect(t.host.querySelector('.bp-sign-big')?.textContent).toBe('2 actions');
+    expect(t.host.textContent).toContain(en['dapp.sign.together.two']);
+    const rows = [...t.host.querySelectorAll<HTMLButtonElement>('ol .bp-sign-row')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.className).toContain('bp-sign-row-normal');
+    expect(rows[1]?.className).toContain('bp-sign-row-unknown');
+    expect(rows[1]?.textContent).toContain('MsgNothing');
+    expect(rows[1]?.textContent).toContain(en['dapp.sign.unknownShort']);
+    expect(rows[1]?.textContent).toContain('Not decoded · 4 bytes');
+    expect(rows[0]?.textContent).not.toContain('Not decoded');
+    // One line each: no rows and no raw message on the screen itself.
+    expect(t.host.querySelector('dt')).toBeNull();
+    expect(t.host.querySelector('pre')).toBeNull();
+
+    fireEvent(rows[0], 'click');
+    await settle();
+    let sheet = detailsSheet(t.host);
+    expect([...(sheet?.querySelectorAll('dt') ?? [])].map((d) => d.textContent)).toEqual([
+      'Type',
+      'To',
+      'Amount',
+    ]);
+    expect(sheet?.textContent).toContain(OTHER);
+    expect(sheet?.textContent).toContain('1.00 BZE');
+    fireEvent(closeButton(t.host), 'click');
+    await settle();
+
+    fireEvent(rows[1], 'click');
+    await settle();
+    sheet = detailsSheet(t.host);
+    expect(sheet?.querySelector('dd.bp-mono')?.textContent).toBe('/test.v1.MsgNothing');
+    expect(sheet?.querySelector('pre')?.textContent).toContain('/test.v1.MsgNothing');
+    expect(sheet?.querySelector('pre')?.textContent).not.toContain('/cosmos.bank.v1beta1.MsgSend');
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
   });
 
   it('turns red and needs the tick when one of several messages is dangerous', async () => {
     const t = signRig(await signView([sendMsg(), grant()]));
     await settle();
-    expect(t.host.querySelectorAll('.bp-dapp-card-dangerous')).toHaveLength(1);
-    expect(t.host.querySelectorAll('.bp-dapp-card-normal')).toHaveLength(1);
+    expect(t.host.querySelectorAll('.bp-sign-row-dangerous')).toHaveLength(1);
+    expect(t.host.querySelectorAll('.bp-sign-row-normal')).toHaveLength(1);
     // One red box and one tick for the whole request; the riskiest message sets Approve's style.
     expect(t.host.querySelectorAll('[role=alert]')).toHaveLength(1);
     expect(t.host.querySelectorAll('[role=checkbox]')).toHaveLength(1);
@@ -561,7 +655,8 @@ describe('the sign screen: risk levels', () => {
     const t = signRig(await signView([sendMsg(), sendMsg(), sendMsg()]));
     await settle();
     expect(t.host.textContent).toContain(en['dapp.sign.together.many']);
-    expect(t.host.textContent).toContain('3 of 3');
+    expect(t.host.querySelector('.bp-sign-big')?.textContent).toBe('3 actions');
+    expect(t.host.querySelectorAll('ol .bp-sign-row')).toHaveLength(3);
   });
 
   it('asks for the password and the tick in the weak lock', async () => {

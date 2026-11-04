@@ -12,6 +12,7 @@ import {
   type WalletAddress,
 } from '../../protocol';
 import {
+  Avatar,
   Banner,
   BottomActions,
   Button,
@@ -20,9 +21,9 @@ import {
   RadioList,
   ScreenHeader,
   Sheet,
-  SiteCard,
   Spinner,
 } from '../../ui';
+import { useSiteIcons } from './site-icons';
 
 type Listing = ResponseOf<'sites.list'>;
 type Outcome = { ok: true } | { ok: false; error: { code: string } };
@@ -87,54 +88,55 @@ export function ChangeSheet(props: {
   );
 }
 
-/** One connected site (`W-Sites`): who it is, Disconnect, the address it sees and since when. */
-function SiteItem(props: {
+/**
+ * One connected site in one line: its icon, the whole domain (wrapped, never cut), the address
+ * it sees, then Change and Disconnect. The Connected sites list and Home's current-site strip.
+ */
+export function SiteRow(props: {
   site: ConnectedSiteView;
   busy: boolean;
   onChange: () => void;
   onDisconnect: () => void;
+  /** Home's strip: the row on its own inset background. */
+  strip?: boolean;
 }) {
   const { site } = props;
+  const icons = useSiteIcons();
   const name = siteName(site.origin);
-  const since = new Date(site.connectedAt).toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-  });
   return (
-    <li class="bp-sites-item">
-      <SiteCard
-        origin={site.origin}
-        size="md"
-        aside={
-          <button
-            type="button"
-            class="bp-sites-disconnect"
-            aria-label={t('sites.disconnect.label', { site: name })}
-            disabled={props.busy}
-            onClick={props.onDisconnect}
-          >
-            {t('sites.disconnect')}
-          </button>
-        }
+    <div class={props.strip === true ? 'bp-site-row bp-site-row-strip' : 'bp-site-row'}>
+      <Avatar
+        label={name.replace(/^https?:\/\//, '')}
+        kind="site"
+        size={20}
+        src={icons.url(site.origin)}
       />
+      <span class="bp-site-row-text">
+        <span class="bp-site-row-domain">{name}</span>
+        <span class="bp-site-row-who">
+          {site.label} · <span class="bp-mono">{shortAddress(site.address)}</span>
+        </span>
+      </span>
       <button
         type="button"
-        class="bp-sites-sees"
+        class="bp-site-row-btn"
         aria-haspopup="dialog"
         aria-label={t('sites.change.label', { site: name, label: site.label })}
         disabled={props.busy}
         onClick={props.onChange}
       >
-        <span class="bp-sites-sees-caption">{t('sites.sees')}</span>
-        <span class="bp-sites-sees-who">
-          <span class="bp-sites-sees-label">{site.label}</span>
-          <span class="bp-mono">{shortAddress(site.address)}</span>
-        </span>
-        <span class="bp-sites-sees-change">{t('sites.change')}</span>
-        <Icon name="chevron-right" size={14} strokeWidth={2.2} />
+        <Icon name="swap" size={16} strokeWidth={2} />
       </button>
-      <span class="bp-sites-since">{t('sites.since', { date: since })}</span>
-    </li>
+      <button
+        type="button"
+        class="bp-site-row-btn bp-site-row-x"
+        aria-label={t('sites.disconnect.label', { site: name })}
+        disabled={props.busy}
+        onClick={props.onDisconnect}
+      >
+        <Icon name="unlink" size={16} strokeWidth={2} />
+      </button>
+    </div>
   );
 }
 
@@ -190,7 +192,6 @@ export function ConnectedSitesScreen() {
       onBack={() => {
         navigate({ name: 'settings.main' });
       }}
-      right={listing && <span class="bp-sites-count">{listing.sites.length}</span>}
     />
   );
 
@@ -210,6 +211,7 @@ export function ConnectedSitesScreen() {
   }
 
   const { sites } = listing;
+  const testnet = listing.network === 'testnet';
   return (
     <Layout
       header={header}
@@ -231,26 +233,37 @@ export function ConnectedSitesScreen() {
       }
     >
       <main class="bp-sites">
-        <p class="bp-sites-sub">{t('sites.sub')}</p>
         {error !== null && changing === null && <Banner tone="red">{error}</Banner>}
         {sites.length === 0 ? (
-          <EmptyState icon="link" title={t('sites.empty')} sub={t('sites.empty.sub')} />
+          <EmptyState
+            icon="link"
+            title={t(testnet ? 'sites.empty.testnet' : 'sites.empty.mainnet')}
+            sub={t('sites.empty.sub')}
+          />
         ) : (
-          <ul class="bp-sites-list">
-            {sites.map((site) => (
-              <SiteItem
-                key={site.origin}
-                site={site}
-                busy={busy}
-                onChange={() => {
-                  setChanging(site);
-                }}
-                onDisconnect={() => {
-                  void run([disconnect(site.origin)]);
-                }}
-              />
-            ))}
-          </ul>
+          <>
+            <p class={testnet ? 'bp-sites-net bp-sites-net-testnet' : 'bp-sites-net'}>
+              {t(testnet ? 'sites.net.testnet' : 'sites.net.mainnet', {
+                count: String(sites.length),
+              })}
+            </p>
+            <ul class="bp-sites-list">
+              {sites.map((site) => (
+                <li key={site.origin}>
+                  <SiteRow
+                    site={site}
+                    busy={busy}
+                    onChange={() => {
+                      setChanging(site);
+                    }}
+                    onDisconnect={() => {
+                      void run([disconnect(site.origin)]);
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </main>
       {changing !== null && (

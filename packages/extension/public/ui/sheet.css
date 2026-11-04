@@ -33,6 +33,17 @@
   height: 568px;
 }
 
+/* A sheet inside the footer: it ends where the footer starts; the frame clips its backdrop. */
+.bp-sheet-docked {
+  inset: auto 0 100% 0;
+  height: 100vh;
+}
+
+.bp-sheet-docked > .bp-sheet {
+  max-height: 452px;
+  border-bottom: 1px solid var(--bp-line);
+}
+
 .bp-sheet-head {
   flex: none;
   display: flex;
