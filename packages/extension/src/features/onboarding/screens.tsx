@@ -501,8 +501,11 @@ export function PasswordStep(props: {
         gap={14}
         title={t('onboarding.replace.title')}
         footer={
+          // Keyed: Preact re-renders before a click's default action, so a reused <button>
+          // would become the form's submit button and send the form again.
           <BottomActions row>
             <Button
+              key="replace-cancel"
               variant="secondary"
               disabled={busy}
               onClick={() => {
@@ -512,6 +515,7 @@ export function PasswordStep(props: {
               {t('onboarding.replace.cancel')}
             </Button>
             <Button
+              key="replace-confirm"
               variant="danger"
               disabled={!understood || busy}
               onClick={() => {
@@ -550,7 +554,12 @@ export function PasswordStep(props: {
       hint={t('onboarding.password.hint')}
       footer={
         <BottomActions>
-          <Button type="submit" form={PASSWORD_FORM} disabled={!ready || busy}>
+          <Button
+            key="password-submit"
+            type="submit"
+            form={PASSWORD_FORM}
+            disabled={!ready || busy}
+          >
             {t('onboarding.continue')}
           </Button>
         </BottomActions>

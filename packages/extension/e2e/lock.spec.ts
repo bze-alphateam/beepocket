@@ -127,7 +127,8 @@ test('"Forgot it?" then Back keeps the wallet; an import replaces it only once c
   );
   await expect(replace).toBeDisabled();
   // Cancel goes back to the password step; nothing was replaced.
-  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByLabel('Repeat password')).toBeVisible();
   const stillLocked = await page.evaluate((): Promise<unknown> =>
     chrome.runtime.sendMessage({ method: 'wallet.state', payload: {} }),

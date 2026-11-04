@@ -730,7 +730,9 @@ describe('storage safety', () => {
       return original(items);
     };
     value(await t.call('wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE }));
-    value(await t.call('wallet.importWallet', { password: PASSWORD, mnemonic: PHRASE }));
+    value(
+      await t.call('wallet.importWallet', { password: PASSWORD, mnemonic: PHRASE, replace: true }),
+    );
     const withVault = calls.filter((keys) => keys.includes('vault'));
     expect(withVault).toHaveLength(2);
     for (const keys of withVault) expect(keys).toContain('profile');
