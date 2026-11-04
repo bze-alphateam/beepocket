@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { startRelay } from './relay';
 import { PAGE_CHANNEL, WALLET_CHANNEL } from './wire';
 
-/** `id: undefined` is a script left behind by an extension reload or update. */
-function rig(ack: () => Promise<unknown>, id: string | undefined = 'me') {
+/** `orphaned`: a script left behind by an extension reload or update (no runtime id). */
+function rig(ack: () => Promise<unknown>, opts: { orphaned?: boolean } = {}) {
   const messages: ((event: { source: unknown; data: unknown }) => void)[] = [];
   const posted: { message: unknown; origin: string }[] = [];
   const win = {
@@ -21,7 +21,7 @@ function rig(ack: () => Promise<unknown>, id: string | undefined = 'me') {
   let fromWorker: ((message: unknown, sender: { id?: string }) => void) | undefined;
   const sendMessage = vi.fn(ack);
   startRelay(win, {
-    id,
+    id: opts.orphaned === true ? undefined : 'me',
     sendMessage,
     onMessage: {
       addListener: (l) => {
@@ -123,7 +123,7 @@ describe('the relay', () => {
     });
     thrown.page(request);
     // Its runtime id is gone too: nothing is sent at all.
-    const orphan = rig(() => Promise.resolve({ accepted: true }), undefined);
+    const orphan = rig(() => Promise.resolve({ accepted: true }), { orphaned: true });
     orphan.page(request);
     expect(orphan.sendMessage).not.toHaveBeenCalled();
     for (const t of [thrown, orphan]) {

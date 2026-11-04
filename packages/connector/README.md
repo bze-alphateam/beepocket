@@ -33,6 +33,6 @@ const key = await beepocket?.connect('beezee-1');
 - Disconnecting is done in the wallet's Settings, so `disconnect` does nothing.
 - Account changes arrive as the window event `beepocket_keystorechange` (the wallet emits `accountChanged`) or through `provider.on('accountChanged', …)`.
 - Provider errors carry a `code`: `rejected`, `locked-timeout`, `not-connected`, `wrong-chain`, `invalid-request`, `expired` or `unavailable`.
-- `unavailable` means the page cannot reach the wallet: the extension was updated or reloaded under the open page, or it did not take the request within 5 seconds. Every request ends: one the wallet took and never answered fails with `unavailable` after 11 minutes (the wallet itself ends waiting requests with `expired` after 10). Ask the user to reload the page. Through interchain-kit, a `signDirect` or `sendTx` that fails with `unavailable` also emits `accountChanged`, so the account refresh fails and the wallet shows as disconnected.
+- `unavailable` means the page cannot reach the wallet: the extension was updated or reloaded under the open page, or it did not take the request within 10 seconds. Every request ends: one the wallet took and never answered fails with `unavailable` after 11 minutes (the wallet itself ends waiting requests with `expired` after 10). Ask the user to reload the page. Through interchain-kit, a `signDirect` or `sendTx` that fails with `unavailable` also emits `accountChanged`, so the account refresh fails and the wallet shows as disconnected.
 
 MIT licensed.

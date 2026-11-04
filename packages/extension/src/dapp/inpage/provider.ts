@@ -15,8 +15,11 @@ import {
 
 export const PROVIDER_VERSION = '1.0.0';
 
-/** How long a request may go without the wallet's ack before it ends with `unavailable`. */
-export const ACK_TIMEOUT_MS = 5_000;
+/**
+ * How long a request may go without the wallet's ack before it ends with `unavailable`. Waking
+ * a suspended worker can take several seconds on a slow PC.
+ */
+export const ACK_TIMEOUT_MS = 10_000;
 /**
  * How long an acked request may wait for its answer: the wallet's own 10-minute expiry plus a
  * minute. Past it the answer was lost on the way, and the request ends with `unavailable`.

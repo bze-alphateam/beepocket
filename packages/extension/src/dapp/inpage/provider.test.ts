@@ -234,7 +234,8 @@ describe('liveness: every request ends', () => {
     t.deliver({ channel: WALLET_CHANNEL, id: t.posted[n]?.id, ack: true });
   };
 
-  it('rejects unavailable when the wallet does not take the request in time', async () => {
+  it('rejects unavailable when the wallet does not take the request in 10 s', async () => {
+    expect(ACK_TIMEOUT_MS).toBe(10_000);
     vi.useFakeTimers();
     const t = rig();
     const promise = t.provider.getKey('beezee-1').catch((e: unknown) => e);
