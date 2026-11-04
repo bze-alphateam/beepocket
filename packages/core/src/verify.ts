@@ -1,3 +1,4 @@
+import { GOVERNANCE_ONLY } from './governance';
 import { decodeAny } from './decode';
 import type { Network } from './net';
 import { BinaryReader, WireType } from './proto/binary';
@@ -57,10 +58,13 @@ const SIGNER_FIELDS = [
   'depositor',
   'sender',
   'delegatorAddress',
+  'publisher',
+  'signer',
 ] as const;
 /**
- * Types the wallet has no decoder for but whose signer is a plain string field at a fixed
- * number (IBC transfer `sender`, staking and distribution `delegator_address`).
+ * Signers as a plain string field at a fixed number (IBC transfer `sender`, staking and
+ * distribution `delegator_address`), for when these types have no decoder. They all decode
+ * today, so `SIGNER_FIELDS` finds their signer; this is the fallback if a codec is dropped.
  */
 const RAW_SIGNER_FIELD: Record<string, number> = {
   '/ibc.applications.transfer.v1.MsgTransfer': 4,
@@ -179,6 +183,9 @@ export function verifySignRequest(input: VerifyInput): VerifyResult {
 
   const messageSigners: (string[] | null)[] = [];
   for (const msg of messages) {
+    // Signed by the gov module only: a wallet user never signs one, whatever it decodes to.
+    if (GOVERNANCE_ONLY.has(msg.typeUrl))
+      return fail('multi-signer', 'A message can only be signed by governance');
     try {
       messageSigners.push(signersOf(msg));
     } catch {

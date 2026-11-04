@@ -8,7 +8,7 @@ correctness is proven byte-for-byte against `bzed` in `../golden.test.ts`.
 
 ESLint and Prettier ignore this directory (generated code). `tsc` includes it, but the files
 that carry the original telescope `//@ts-nocheck` line are not type-checked (the trimmed
-`cosmos/gov/v1/` files are).
+`cosmos/gov/v1/` files are; the trimmed staking and distribution files keep the line).
 
 ## Files
 
@@ -29,9 +29,20 @@ prepended, except where noted. The copied files still import `GlobalDecoderRegis
 - `cosmos/staking/v1beta1/authz.ts`, `ibc/applications/transfer/v1/authz.ts`
 - `bze/burner/params.ts`, `bze/burner/tx.ts`
 - `bze/tradebin/v2/params.ts`, `bze/tradebin/tx.ts`
+- `bze/rewards/params.ts`, `bze/rewards/tx.ts`
+- `bze/tokenfactory/denom_branding.ts`, `bze/tokenfactory/tx.ts`
+- `bze/cointrunk/params.ts` (the `Decimal` import points at the local `decimal.ts`),
+  `bze/cointrunk/tx.ts`
+- `ibc/core/client/v1/client.ts`, `ibc/applications/transfer/v1/tx.ts`
 - `cosmos/gov/v1/tx.ts`: trimmed to `MsgVote` and `MsgVoteResponse` (the full file pulls in
   upgrade, distribution, params and cointrunk proposal types)
 - `cosmos/gov/v1/gov.ts`: trimmed to the `VoteOption` enum and its JSON helpers
+- `cosmos/staking/v1beta1/tx.ts`: trimmed to `MsgDelegate`, `MsgBeginRedelegate`,
+  `MsgUndelegate`, `MsgCancelUnbondingDelegation` and their responses (the full file pulls in
+  validator, tendermint and pubkey types); keeps the `//@ts-nocheck` line
+- `cosmos/distribution/v1beta1/tx.ts`: trimmed to `MsgSetWithdrawAddress`,
+  `MsgWithdrawDelegatorReward` and their responses (the full file pulls in the distribution
+  params); keeps the `//@ts-nocheck` line
 
 ## Hand-written stand-ins
 

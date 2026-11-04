@@ -195,6 +195,19 @@ describe('verifySignRequest', () => {
     expect(code(request({}, [send('')]))).toBe('multi-signer');
   });
 
+  it.each([
+    '/bze.txfeecollector.MsgUpdateParams',
+    '/bze.tradebin.MsgUpdateParams',
+    '/bze.tradebin.MsgHaltDenoms',
+    '/bze.cointrunk.MsgSavePublisher',
+  ])('multi-signer: %s is signed by governance only, never by the wallet', (typeUrl) => {
+    // Some of these have no decoder, so their signer would otherwise go unchecked.
+    expect(code(request({}, [{ typeUrl, value: new Uint8Array([10, 1, 65]) }]))).toBe(
+      'multi-signer',
+    );
+    expect(code(request({}, [send(), { typeUrl, value: new Uint8Array() }]))).toBe('multi-signer');
+  });
+
   it('lets a message type the wallet cannot decode through (the chain checks its signer)', () => {
     const unknown: AnyMsg = {
       typeUrl: '/cosmos.slashing.v1beta1.MsgUnjail',
@@ -339,6 +352,27 @@ describe('verifySignRequest signers of types without a decoder', () => {
     ]);
     const msg: AnyMsg = { typeUrl: '/ibc.applications.transfer.v1.MsgTransfer', value };
     expect(code(request({}, [msg]))).toBe('multi-signer');
+  });
+});
+
+describe('verifySignRequest signers of decoded types', () => {
+  it.each([
+    ['/bze.cointrunk.MsgAddArticle', 1],
+    ['/ibc.applications.transfer.v1.MsgUpdateParams', 1],
+    ['/cosmos.staking.v1beta1.MsgCancelUnbondingDelegation', 1],
+    ['/cosmos.distribution.v1beta1.MsgSetWithdrawAddress', 1],
+  ])('%s: the signer field is the connected address or the request is refused', (url, no) => {
+    expect(code(request({}, [stringMsg(url, no, ME)]))).toBe('ok');
+    expect(code(request({}, [stringMsg(url, no, OTHER)]))).toBe('multi-signer');
+  });
+
+  it('does not take the new rewards address for a signer', () => {
+    const value = new Uint8Array([
+      ...stringMsg('x', 1, ME).value,
+      ...stringMsg('x', 2, OTHER).value,
+    ]);
+    const msg: AnyMsg = { typeUrl: '/cosmos.distribution.v1beta1.MsgSetWithdrawAddress', value };
+    expect(code(request({}, [msg]))).toBe('ok');
   });
 });
 

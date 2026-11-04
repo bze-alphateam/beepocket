@@ -62,7 +62,7 @@ const cancelOrder = (): [string, string] => [
   ),
 ];
 /** A message type BeePocket has never heard of. */
-const unknown = (): [string, string] => ['/bze.cointrunk.MsgPayPublisherRespect', '0a03616263'];
+const unknown = (): [string, string] => ['/cosmwasm.wasm.v1.MsgExecuteContract', '0a03616263'];
 
 /**
  * Over the walker's read-only node: accounts, simulation, broadcast, the BZE / PAGE pool and

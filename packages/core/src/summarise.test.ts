@@ -14,20 +14,41 @@ import {
 import { GenericAuthorization } from './proto/cosmos/authz/v1beta1/authz';
 import { MsgExec, MsgGrant } from './proto/cosmos/authz/v1beta1/tx';
 import { SendAuthorization } from './proto/cosmos/bank/v1beta1/authz';
-import { MsgSend } from './proto/cosmos/bank/v1beta1/tx';
 import { BasicAllowance, PeriodicAllowance } from './proto/cosmos/feegrant/v1beta1/feegrant';
 import { MsgGrantAllowance } from './proto/cosmos/feegrant/v1beta1/tx';
 import { VoteOption } from './proto/cosmos/gov/v1/gov';
 import { MsgVote } from './proto/cosmos/gov/v1/tx';
-import { MsgFundBurner, MsgJoinRaffle } from './proto/bze/burner/tx';
+import {
+  MsgFundBurner,
+  MsgJoinRaffle,
+  MsgMoveIbcLockedCoins,
+  MsgStartRaffle,
+} from './proto/bze/burner/tx';
 import {
   MsgAddLiquidity,
   MsgCancelOrder,
+  MsgCreateLiquidityPool,
+  MsgCreateMarket,
   MsgCreateOrder,
   MsgFillOrders,
   MsgMultiSwap,
   MsgRemoveLiquidity,
 } from './proto/bze/tradebin/tx';
+import * as rewards from './proto/bze/rewards/tx';
+import * as factory from './proto/bze/tokenfactory/tx';
+import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
+import { MsgMultiSend, MsgSend } from './proto/cosmos/bank/v1beta1/tx';
+import {
+  MsgBeginRedelegate,
+  MsgCancelUnbondingDelegation,
+  MsgDelegate,
+  MsgUndelegate,
+} from './proto/cosmos/staking/v1beta1/tx';
+import {
+  MsgSetWithdrawAddress,
+  MsgWithdrawDelegatorReward,
+} from './proto/cosmos/distribution/v1beta1/tx';
+import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
 import { Any } from './proto/google/protobuf/any';
 
 const ME = 'bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g';
@@ -116,8 +137,9 @@ const grant = (expiration?: Date) =>
       ...(expiration ? { expiration } : {}),
     },
   });
-const delegate: AnyMsg = {
-  typeUrl: '/cosmos.staking.v1beta1.MsgDelegate',
+/** A type outside BZE's modules and the cosmos/ibc types its dapps send. */
+const wasm: AnyMsg = {
+  typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
   value: new Uint8Array([1, 2, 3]),
 };
 
@@ -168,6 +190,12 @@ describe('Swap', () => {
       ['You get at least', '318.20 USDC'],
     ]);
     expect(s.level).toBe('normal');
+  });
+
+  it('marks a route through a pool it cannot find as unknown', async () => {
+    const s = await run([swap(['pool-nowhere'], 'ubze', USDC)]);
+    expect(s.level).toBe('unknown');
+    expect(s.messages[0]?.level).toBe('unknown');
   });
 
   it('lists every hop of a multi-pool route', async () => {
@@ -551,11 +579,11 @@ describe('dangerous messages', () => {
 
 describe('unknown messages', () => {
   it('shows the last segment of the type url and nothing else', async () => {
-    const s = await run([delegate]);
+    const s = await run([wasm]);
     expect(s.level).toBe('unknown');
-    expect(s.title).toBe('MsgDelegate');
+    expect(s.title).toBe('MsgExecuteContract');
     expect(s.hero).toBe('Unknown message');
-    expect(s.sub).toBe('/cosmos.staking.v1beta1.MsgDelegate');
+    expect(s.sub).toBe('/cosmwasm.wasm.v1.MsgExecuteContract');
     expect(s.rows).toEqual([]);
     expect(s.messages[0]).toMatchObject({ level: 'unknown', icon: 'unknown' });
   });
@@ -604,10 +632,10 @@ describe('several messages', () => {
 
   it('takes the riskiest level: dangerous over unknown over normal', async () => {
     expect((await run([send(), send()])).level).toBe('normal');
-    expect((await run([send(), delegate])).level).toBe('unknown');
-    expect((await run([send(), delegate, grant()])).level).toBe('dangerous');
+    expect((await run([send(), wasm])).level).toBe('unknown');
+    expect((await run([send(), wasm, grant()])).level).toBe('dangerous');
     expect((await run([grant(), send()])).level).toBe('dangerous');
-    expect((await run([delegate, send()])).level).toBe('unknown');
+    expect((await run([wasm, send()])).level).toBe('unknown');
   });
 
   it('collects every red-box text', async () => {
@@ -643,7 +671,9 @@ describe('failing lookups', () => {
     ];
     const s = await summarise(all, ctx);
     expect(s.messages).toHaveLength(6);
-    expect(s.level).toBe('normal');
+    // Without its pools the swap's route can't be proven, so the request is not plain normal.
+    expect(s.messages[1]?.level).toBe('unknown');
+    expect(s.level).toBe('unknown');
     expect(s.messages[0]?.line).toContain('1,000,000,000 ubze (base units)');
   });
 
@@ -674,8 +704,8 @@ describe('rawJson', () => {
   });
 
   it('keeps the bytes of a message it cannot decode', () => {
-    const parsed = JSON.parse(rawJson([delegate])) as unknown;
-    expect(parsed).toEqual([{ typeUrl: delegate.typeUrl, unknown: true, value: 'AQID' }]);
+    const parsed = JSON.parse(rawJson([wasm])) as unknown;
+    expect(parsed).toEqual([{ typeUrl: wasm.typeUrl, unknown: true, value: 'AQID' }]);
   });
 
   it('shows bytes that do not decode as their type', () => {
@@ -788,5 +818,495 @@ describe('memo', () => {
   it('is part of a multi-message summary too', async () => {
     const s = await summarise([send(), send()], context(), { memo: 'both' });
     expect(s.memo).toBe('both');
+  });
+});
+
+const VALOPER = 'bzevaloper1q8t5x0yvl9jzx5pq4m3vvrmkz8cndhqk7g2uxy';
+const VALOPER2 = 'bzevaloper1vtad8680vhdfqvxx0f2yaxa6agdylelmh5r3ql';
+const NOBLE = 'noble1r5v5srda7xfth3hn2s26txvrcrntldjuh9m7ad';
+const short = (a: string) => `${a.slice(0, 8)}…${a.slice(-6)}`;
+const bze = (amount: string) => ({ denom: 'ubze', amount });
+
+/** One realistic sample of every BZE and cosmos/ibc type the wallet summarises. */
+const SAMPLES: Record<string, AnyMsg> = {
+  [MsgCreateMarket.typeUrl]: pack(MsgCreateMarket, { creator: ME, base: VDL, quote: 'ubze' }),
+  [MsgCreateLiquidityPool.typeUrl]: pack(MsgCreateLiquidityPool, {
+    creator: ME,
+    base: VDL,
+    quote: 'ubze',
+    fee: '0.003',
+    initialBase: '1000000000',
+    initialQuote: '500000000',
+  }),
+  [rewards.MsgJoinStaking.typeUrl]: pack(rewards.MsgJoinStaking, {
+    creator: ME,
+    rewardId: '7',
+    amount: '500000000',
+  }),
+  [rewards.MsgExitStaking.typeUrl]: pack(rewards.MsgExitStaking, { creator: ME, rewardId: '7' }),
+  [rewards.MsgClaimStakingRewards.typeUrl]: pack(rewards.MsgClaimStakingRewards, {
+    creator: ME,
+    rewardId: '7',
+  }),
+  [rewards.MsgCreateStakingReward.typeUrl]: pack(rewards.MsgCreateStakingReward, {
+    creator: ME,
+    prizeAmount: '1000000',
+    prizeDenom: VDL,
+    stakingDenom: 'ubze',
+    duration: '30',
+    minStake: '0',
+    lock: '1',
+  }),
+  [rewards.MsgUpdateStakingReward.typeUrl]: pack(rewards.MsgUpdateStakingReward, {
+    creator: ME,
+    rewardId: '7',
+    duration: '10',
+  }),
+  [rewards.MsgDeleteStakingReward.typeUrl]: pack(rewards.MsgDeleteStakingReward, {
+    creator: ME,
+    rewardId: '7',
+  }),
+  [rewards.MsgDistributeStakingRewards.typeUrl]: pack(rewards.MsgDistributeStakingRewards, {
+    creator: ME,
+    rewardId: '7',
+    amount: '5000',
+  }),
+  [rewards.MsgCreateTradingReward.typeUrl]: pack(rewards.MsgCreateTradingReward, {
+    creator: ME,
+    prizeAmount: '2000000',
+    prizeDenom: 'ubze',
+    duration: '7',
+    marketId: BZE_USDC.id,
+    slots: '3',
+  }),
+  [rewards.MsgActivateTradingReward.typeUrl]: pack(rewards.MsgActivateTradingReward, {
+    creator: ME,
+    rewardId: '4',
+  }),
+  [rewards.MsgCreateDenomReward.typeUrl]: pack(rewards.MsgCreateDenomReward, {
+    creator: ME,
+    denom: VDL,
+  }),
+  [rewards.MsgJoinDenomReward.typeUrl]: pack(rewards.MsgJoinDenomReward, {
+    creator: ME,
+    denom: VDL,
+    amount: '500000000',
+  }),
+  [rewards.MsgExitDenomReward.typeUrl]: pack(rewards.MsgExitDenomReward, {
+    creator: ME,
+    denom: VDL,
+  }),
+  [rewards.MsgClaimDenomRewards.typeUrl]: pack(rewards.MsgClaimDenomRewards, {
+    creator: ME,
+    denom: VDL,
+  }),
+  [rewards.MsgCreateDenomRewardSchedule.typeUrl]: pack(rewards.MsgCreateDenomRewardSchedule, {
+    creator: ME,
+    denom: VDL,
+    prizeDenom: 'ubze',
+    dailyAmount: '1000000',
+    duration: '30',
+  }),
+  [rewards.MsgUpdateDenomRewardSchedule.typeUrl]: pack(rewards.MsgUpdateDenomRewardSchedule, {
+    creator: ME,
+    denom: VDL,
+    scheduleId: '2',
+    duration: '5',
+  }),
+  [rewards.MsgDistributeDenomRewards.typeUrl]: pack(rewards.MsgDistributeDenomRewards, {
+    creator: ME,
+    denom: VDL,
+    prizeDenom: 'ubze',
+    amount: '1000000000',
+  }),
+  [factory.MsgCreateDenom.typeUrl]: pack(factory.MsgCreateDenom, { creator: ME, subdenom: 'uvdl' }),
+  [factory.MsgMint.typeUrl]: pack(factory.MsgMint, { creator: ME, coins: `10000000000${VDL}` }),
+  [factory.MsgBurn.typeUrl]: pack(factory.MsgBurn, { creator: ME, coins: `1000000${VDL}` }),
+  [factory.MsgChangeAdmin.typeUrl]: pack(factory.MsgChangeAdmin, {
+    creator: ME,
+    denom: VDL,
+    newAdmin: ALEX,
+  }),
+  [factory.MsgSetDenomMetadata.typeUrl]: pack(factory.MsgSetDenomMetadata, {
+    creator: ME,
+    metadata: {
+      base: VDL,
+      display: 'VDL',
+      name: 'Vidulum',
+      symbol: 'VDL',
+      description: 'The Vidulum token',
+      denomUnits: [
+        { denom: VDL, exponent: 0, aliases: [] },
+        { denom: 'VDL', exponent: 6, aliases: [] },
+      ],
+      uri: '',
+      uriHash: '',
+    },
+  }),
+  [factory.MsgSetDenomBranding.typeUrl]: pack(factory.MsgSetDenomBranding, {
+    creator: ME,
+    denom: VDL,
+    branding: {
+      font: 'Inter',
+      light: { background: '#ffffff', text: '#000000', primary: '#f5b800', secondary: '#1a1a1a' },
+    },
+  }),
+  [MsgStartRaffle.typeUrl]: pack(MsgStartRaffle, {
+    creator: ME,
+    pot: '1000000000',
+    duration: '7',
+    chances: '100',
+    ratio: '0.5',
+    ticketPrice: '1000000',
+    denom: VDL,
+  }),
+  [MsgMoveIbcLockedCoins.typeUrl]: pack(MsgMoveIbcLockedCoins, { creator: ME, denom: USDC }),
+  [MsgAddArticle.typeUrl]: pack(MsgAddArticle, {
+    publisher: ME,
+    title: 'BZE ships v8.2',
+    url: 'https://news.example/bze-v8-2',
+    picture: 'https://news.example/cover.png',
+  }),
+  [MsgPayPublisherRespect.typeUrl]: pack(MsgPayPublisherRespect, {
+    creator: ME,
+    address: ALEX,
+    amount: '100000000ubze',
+  }),
+  [MsgMultiSend.typeUrl]: pack(MsgMultiSend, {
+    inputs: [{ address: ME, coins: [bze('1200000000')] }],
+    outputs: [ALEX, STRANGER, ME, NOBLE].map((address) => ({
+      address,
+      coins: [bze('300000000')],
+    })),
+  }),
+  [MsgDelegate.typeUrl]: pack(MsgDelegate, {
+    delegatorAddress: ME,
+    validatorAddress: VALOPER,
+    amount: bze('500000000'),
+  }),
+  [MsgUndelegate.typeUrl]: pack(MsgUndelegate, {
+    delegatorAddress: ME,
+    validatorAddress: VALOPER,
+    amount: bze('500000000'),
+  }),
+  [MsgBeginRedelegate.typeUrl]: pack(MsgBeginRedelegate, {
+    delegatorAddress: ME,
+    validatorSrcAddress: VALOPER,
+    validatorDstAddress: VALOPER2,
+    amount: bze('500000000'),
+  }),
+  [MsgCancelUnbondingDelegation.typeUrl]: pack(MsgCancelUnbondingDelegation, {
+    delegatorAddress: ME,
+    validatorAddress: VALOPER,
+    amount: bze('500000000'),
+    creationHeight: 21_000_000n,
+  }),
+  [MsgSetWithdrawAddress.typeUrl]: pack(MsgSetWithdrawAddress, {
+    delegatorAddress: ME,
+    withdrawAddress: ALEX,
+  }),
+  [MsgWithdrawDelegatorReward.typeUrl]: pack(MsgWithdrawDelegatorReward, {
+    delegatorAddress: ME,
+    validatorAddress: VALOPER,
+  }),
+  [MsgTransfer.typeUrl]: pack(MsgTransfer, {
+    sourcePort: 'transfer',
+    sourceChannel: 'channel-3',
+    token: { denom: USDC, amount: '25000000' },
+    sender: ME,
+    receiver: NOBLE,
+    timeoutTimestamp: 1_800_000_000_000_000_000n,
+  }),
+};
+
+const GOVERNANCE_ONLY: [string, string][] = [
+  ['/bze.burner.MsgUpdateParams', 'Update burner settings'],
+  ['/bze.cointrunk.MsgUpdateParams', 'Update CoinTrunk settings'],
+  ['/bze.rewards.MsgUpdateParams', 'Update rewards settings'],
+  ['/bze.tokenfactory.MsgUpdateParams', 'Update token factory settings'],
+  ['/bze.tradebin.MsgUpdateParams', 'Update tradebin settings'],
+  ['/bze.txfeecollector.MsgUpdateParams', 'Update fee collector settings'],
+  ['/bze.tradebin.MsgHaltDenoms', 'Halt trading of tokens'],
+  ['/bze.tradebin.MsgUnhaltDenoms', 'Resume trading of tokens'],
+  ['/bze.cointrunk.MsgAcceptDomain', 'Change an accepted news domain'],
+  ['/bze.cointrunk.MsgSavePublisher', 'Save a CoinTrunk publisher'],
+];
+
+const sample = (typeUrl: string): AnyMsg => {
+  const msg = SAMPLES[typeUrl];
+  if (!msg) throw new Error(`no sample for ${typeUrl}`);
+  return msg;
+};
+
+describe('BZE and cosmos message summaries', () => {
+  it.each([
+    [MsgCreateMarket.typeUrl, 'create', 'Create market · VDL/BZE · a new order book'],
+    [
+      MsgCreateLiquidityPool.typeUrl,
+      'liquidity',
+      'Create pool · VDL/BZE · 1,000.00 VDL + 500.00 BZE',
+    ],
+    [rewards.MsgJoinStaking.typeUrl, 'stake', 'Stake · 500000000 (base units) · in reward 7'],
+    [rewards.MsgExitStaking.typeUrl, 'stake', 'Unstake · Your stake · from reward 7'],
+    [
+      rewards.MsgClaimStakingRewards.typeUrl,
+      'rewards',
+      'Claim rewards · Your rewards · from reward 7',
+    ],
+    [
+      rewards.MsgCreateStakingReward.typeUrl,
+      'rewards',
+      'Create staking reward · 30.00 VDL · over 30 days, for BZE stakers',
+    ],
+    [
+      rewards.MsgUpdateStakingReward.typeUrl,
+      'rewards',
+      'Extend staking reward · Reward 7 · by 10 days',
+    ],
+    [
+      rewards.MsgDeleteStakingReward.typeUrl,
+      'rewards',
+      'Delete staking reward · Reward 7 · a staking reward you created',
+    ],
+    [
+      rewards.MsgDistributeStakingRewards.typeUrl,
+      'rewards',
+      'Top up staking reward · 5000 (base units) · reward 7',
+    ],
+    [
+      rewards.MsgCreateTradingReward.typeUrl,
+      'rewards',
+      'Create trading reward · 6.00 BZE · on BZE/USDC for 7 days',
+    ],
+    [
+      rewards.MsgActivateTradingReward.typeUrl,
+      'rewards',
+      'Activate trading reward · Reward 4 · starts the trading reward',
+    ],
+    [
+      rewards.MsgCreateDenomReward.typeUrl,
+      'rewards',
+      'Create holder reward · VDL · rewards for holders who lock it',
+    ],
+    [rewards.MsgJoinDenomReward.typeUrl, 'stake', 'Lock · 500.00 VDL · for holder rewards'],
+    [rewards.MsgExitDenomReward.typeUrl, 'stake', 'Unlock · VDL · from holder rewards'],
+    [
+      rewards.MsgClaimDenomRewards.typeUrl,
+      'rewards',
+      'Claim holder rewards · VDL · your rewards for holding it',
+    ],
+    [
+      rewards.MsgCreateDenomRewardSchedule.typeUrl,
+      'rewards',
+      'Schedule holder rewards · 30.00 BZE · 1.00 BZE a day for 30 days, to VDL holders',
+    ],
+    [
+      rewards.MsgUpdateDenomRewardSchedule.typeUrl,
+      'rewards',
+      'Extend holder rewards · Schedule 2 · for VDL holders, by 5 days',
+    ],
+    [
+      rewards.MsgDistributeDenomRewards.typeUrl,
+      'rewards',
+      'Pay holder rewards · 1,000.00 BZE · to VDL holders',
+    ],
+    [factory.MsgCreateDenom.typeUrl, 'create', 'Create token · uvdl · you become its admin'],
+    [factory.MsgMint.typeUrl, 'create', 'Mint · 10,000.00 VDL · new tokens, as token admin'],
+    [factory.MsgBurn.typeUrl, 'burn', 'Burn · 1.00 VDL · as token admin'],
+    [
+      factory.MsgSetDenomMetadata.typeUrl,
+      'edit',
+      'Set token details · VDL · Vidulum, VDL, 6 decimals',
+    ],
+    [
+      factory.MsgSetDenomBranding.typeUrl,
+      'edit',
+      'Set brand colours · VDL · colours and font of the token',
+    ],
+    [MsgStartRaffle.typeUrl, 'raffle', 'Start raffle · VDL raffle · ticket price 1.00 VDL'],
+    [MsgMoveIbcLockedCoins.typeUrl, 'burn', 'Move locked IBC coins · USDC · to the burner'],
+    [
+      MsgAddArticle.typeUrl,
+      'article',
+      'Publish article · BZE ships v8.2 · https://news.example/bze-v8-2',
+    ],
+    [MsgPayPublisherRespect.typeUrl, 'send', 'Pay respect · 100.00 BZE · to Alex'],
+    [MsgMultiSend.typeUrl, 'send', 'Send · 1,200.00 BZE · to 4 addresses'],
+    [MsgDelegate.typeUrl, 'stake', `Delegate · 500.00 BZE · to ${short(VALOPER)}`],
+    [MsgUndelegate.typeUrl, 'stake', `Undelegate · 500.00 BZE · from ${short(VALOPER)}`],
+    [
+      MsgBeginRedelegate.typeUrl,
+      'stake',
+      `Move stake · 500.00 BZE · ${short(VALOPER)} → ${short(VALOPER2)}`,
+    ],
+    [
+      MsgWithdrawDelegatorReward.typeUrl,
+      'rewards',
+      `Claim staking rewards · Your rewards · from ${short(VALOPER)}`,
+    ],
+    [
+      MsgCancelUnbondingDelegation.typeUrl,
+      'stake',
+      `Cancel unstaking · 500.00 BZE · back to ${short(VALOPER)}`,
+    ],
+    [
+      MsgSetWithdrawAddress.typeUrl,
+      'rewards',
+      `Change rewards address · ${ALEX} · Your future staking rewards go there`,
+    ],
+    [
+      MsgTransfer.typeUrl,
+      'send',
+      `Send · 25.00 USDC · to ${short(NOBLE)} on another chain · channel-3`,
+    ],
+  ])('summarises %s', async (typeUrl, icon, line) => {
+    const s = await run([sample(typeUrl)]);
+    expect(headline(s)).toBe(line);
+    expect(s.level).toBe('normal');
+    expect(s.messages[0]?.icon).toBe(icon);
+  });
+
+  it.each(GOVERNANCE_ONLY)('gives %s one governance line', async (typeUrl, action) => {
+    // The bytes are not read: these are signed by the gov module, not by a wallet user.
+    const s = await run([{ typeUrl, value: new Uint8Array([1, 2, 3]) }]);
+    expect(headline(s)).toBe(`Governance · ${action} · governance`);
+    expect(s.level).toBe('normal');
+    expect(s.messages[0]?.icon).toBe('settings');
+  });
+
+  it('never falls back to "unknown" for any BZE or cosmos/ibc type it summarises', async () => {
+    const all: AnyMsg[] = [
+      ...Object.values(SAMPLES),
+      ...GOVERNANCE_ONLY.map(([typeUrl]) => ({ typeUrl, value: new Uint8Array() })),
+    ];
+    expect(Object.keys(SAMPLES)).toHaveLength(36);
+    const s = await run(all);
+    for (const [i, m] of s.messages.entries()) {
+      const typeUrl = all[i]?.typeUrl ?? '';
+      expect(m.icon, typeUrl).not.toBe('unknown');
+      expect(m.hero, typeUrl).not.toBe('Unknown message');
+      expect(m.title, typeUrl).not.toBe(typeUrl.split('.').pop());
+      // Handing a token's admin to another address is the one dangerous type here.
+      expect(m.level, typeUrl).toBe(
+        typeUrl === factory.MsgChangeAdmin.typeUrl ? 'dangerous' : 'normal',
+      );
+    }
+    expect(s.level).toBe('dangerous');
+  });
+
+  it('shows what a staking reward costs in total and per day', async () => {
+    const s = await run([sample(rewards.MsgCreateStakingReward.typeUrl)]);
+    expect(s.rows).toEqual([
+      ['Prize per day', '1.00 VDL'],
+      ['Duration', '30 days'],
+      ['Staked token', 'BZE'],
+      ['Minimum stake', '0.00 BZE'],
+      ['Lock after unstaking', '1 day'],
+      ['You pay', "30.00 VDL + the chain's creation fee"],
+    ]);
+  });
+
+  it("never shows a reward total without the chain's creation fee", async () => {
+    for (const typeUrl of [
+      rewards.MsgCreateStakingReward.typeUrl,
+      rewards.MsgCreateTradingReward.typeUrl,
+      rewards.MsgCreateDenomRewardSchedule.typeUrl,
+    ]) {
+      const s = await run([sample(typeUrl)]);
+      const pay = s.rows.find(([label]) => label === 'You pay');
+      expect(pay?.[1], typeUrl).toMatch(/ \+ the chain's creation fee$/);
+    }
+  });
+
+  it("makes handing a token's admin to another address dangerous", async () => {
+    const s = await run([sample(factory.MsgChangeAdmin.typeUrl)]);
+    expect(headline(s)).toBe('Hand over admin · VDL · to Alex');
+    expect(s.level).toBe('dangerous');
+    expect(s.messages[0]?.icon).toBe('admin');
+    expect(s.dangers).toEqual([
+      {
+        title: 'This gives Alex control of VDL',
+        text: "They can mint and change VDL. You can't undo this.",
+      },
+    ]);
+  });
+
+  it('says extending a reward costs more, without a number it cannot know', async () => {
+    const staking = await run([sample(rewards.MsgUpdateStakingReward.typeUrl)]);
+    expect(staking.rows).toContainEqual(['Cost', "The reward's daily prize × 10 days"]);
+    const holders = await run([sample(rewards.MsgUpdateDenomRewardSchedule.typeUrl)]);
+    expect(holders.rows).toContainEqual(['Cost', "The schedule's daily amount × 5 days"]);
+  });
+
+  it('says giving up a token admin stops minting, and stays normal', async () => {
+    const s = await run([pack(factory.MsgChangeAdmin, { creator: ME, denom: VDL, newAdmin: '' })]);
+    expect(headline(s)).toBe('Give up admin · VDL · no one can mint it or change it after this');
+    expect(s.level).toBe('normal');
+  });
+
+  it('shows the memo of an IBC transfer', async () => {
+    const memo = '{"forward":{"receiver":"osmo1abc","channel":"channel-0"}}';
+    const s = await run([
+      pack(MsgTransfer, {
+        sourcePort: 'transfer',
+        sourceChannel: 'channel-3',
+        token: { denom: USDC, amount: '25000000' },
+        sender: ME,
+        receiver: NOBLE,
+        memo,
+      }),
+    ]);
+    expect(s.rows).toContainEqual(['Memo', memo]);
+  });
+
+  it('bounds an article title and strips invisible characters from it', async () => {
+    const title = `Big\u202Enews ${'x'.repeat(300)}`;
+    const s = await run([pack(MsgAddArticle, { publisher: ME, title, url: 'https://a.example' })]);
+    expect(Array.from(s.hero).length).toBeLessThanOrEqual(81);
+    expect(s.hero).not.toContain('\u202E');
+  });
+
+  it('lists each multi-send output with its contact name', async () => {
+    const s = await run([sample(MsgMultiSend.typeUrl)]);
+    expect(s.rows[0]).toEqual(['Alex', '300.00 BZE']);
+    expect(s.rows).toHaveLength(4);
+  });
+
+  it('is unknown when an amount it must read does not parse', async () => {
+    const cases = [
+      pack(factory.MsgMint, { creator: ME, coins: 'lots' }),
+      pack(MsgPayPublisherRespect, { creator: ME, address: ALEX, amount: '' }),
+      pack(rewards.MsgJoinStaking, { creator: ME, rewardId: '7', amount: '-5' }),
+      pack(rewards.MsgCreateStakingReward, {
+        creator: ME,
+        prizeAmount: 'many',
+        prizeDenom: VDL,
+        stakingDenom: 'ubze',
+        duration: '30',
+        minStake: '0',
+        lock: '1',
+      }),
+      pack(MsgDelegate, { delegatorAddress: ME, validatorAddress: VALOPER }),
+      pack(MsgTransfer, { sourceChannel: 'channel-3', sender: ME, receiver: NOBLE }),
+    ];
+    for (const msg of cases) {
+      const s = await run([msg]);
+      expect(s.level, msg.typeUrl).toBe('unknown');
+      expect(s.messages[0]?.icon, msg.typeUrl).not.toBe('unknown');
+    }
+  });
+
+  it('pretty-prints the new types in the details sheet', () => {
+    const parsed = JSON.parse(rawJson([sample(MsgDelegate.typeUrl)])) as unknown;
+    expect(parsed).toEqual([
+      {
+        typeUrl: MsgDelegate.typeUrl,
+        value: {
+          delegatorAddress: ME,
+          validatorAddress: VALOPER,
+          amount: { denom: 'ubze', amount: '500000000' },
+        },
+      },
+    ]);
   });
 });

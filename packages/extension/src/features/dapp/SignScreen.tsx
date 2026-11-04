@@ -46,6 +46,13 @@ const ICONS: Record<MsgIcon, IconName> = {
   raffle: 'ticket',
   vote: 'check',
   grant: 'grant',
+  stake: 'stake',
+  rewards: 'rewards',
+  create: 'plus',
+  admin: 'key',
+  edit: 'pencil',
+  article: 'book',
+  settings: 'sliders',
   unknown: 'question',
 };
 

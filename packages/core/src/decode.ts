@@ -18,6 +18,12 @@ import * as transferAuthz from './proto/ibc/applications/transfer/v1/authz';
 import * as govMsgs from './proto/cosmos/gov/v1/tx';
 import * as tradebinMsgs from './proto/bze/tradebin/tx';
 import * as burnerMsgs from './proto/bze/burner/tx';
+import * as rewardsMsgs from './proto/bze/rewards/tx';
+import * as tokenfactoryMsgs from './proto/bze/tokenfactory/tx';
+import * as cointrunkMsgs from './proto/bze/cointrunk/tx';
+import * as stakingMsgs from './proto/cosmos/staking/v1beta1/tx';
+import * as distributionMsgs from './proto/cosmos/distribution/v1beta1/tx';
+import * as transferMsgs from './proto/ibc/applications/transfer/v1/tx';
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -57,6 +63,12 @@ for (const mod of [
   govMsgs,
   tradebinMsgs,
   burnerMsgs,
+  rewardsMsgs,
+  tokenfactoryMsgs,
+  cointrunkMsgs,
+  stakingMsgs,
+  distributionMsgs,
+  transferMsgs,
 ]) {
   for (const exported of Object.values(mod)) {
     if (isCodec(exported)) codecs.set(exported.typeUrl, exported);
