@@ -69,6 +69,11 @@ export interface EstimateParams {
    * token the fee in another token is simulated with when it can pay and the payer holds it.
    */
   preferred?: string;
+  /**
+   * What the transaction's own messages take of each token (a send's amount), when the caller
+   * knows it. A fee coin is simulated in a token only when one unit is left next to it.
+   */
+  spent?: Map<string, bigint>;
 }
 
 /** Where symbols come from when sorting options; `TokenResolver` fits. */
@@ -367,13 +372,15 @@ export class FeeEstimator {
   /**
    * Simulates the transaction and prices its fee in every denom the payer can pay with. It runs
    * at most two simulations, side by side: one with a fee of one native base unit, and one with
-   * a fee of one unit of another token the payer holds (`preferred` when it qualifies, else the
-   * first in option order). Native options come from the first, every other from the second.
+   * a fee of one unit of another token the payer has a unit of to spare after `spent`
+   * (`preferred` when it qualifies, else the first in option order). Native options come from the first, every other from the second.
    * One failing leaves its options out; both failing (or the native one, when the other did not
    * run) throws the native one's error.
    */
   async estimate(params: EstimateParams): Promise<FeeEstimate> {
-    const held = (denom: string) => (params.balances.get(denom) ?? 0n) >= 1n;
+    const left = (denom: string) =>
+      (params.balances.get(denom) ?? 0n) - (params.spent?.get(denom) ?? 0n);
+    const held = (denom: string) => left(denom) >= 1n;
     const simulateWith = (fee: { denom: string; amount: string }[]) =>
       this.chain
         .simulate(simulationTxBytes(params.bodyBytes, params.pubKey, params.sequence, fee))
@@ -382,8 +389,8 @@ export class FeeEstimator {
     // simulations start once it is read.
     const data = await this.feeData();
     const native = data.nativeDenom;
-    // A payer without the native token cannot fund a fee coin in it: no fee, as it cannot pay
-    // a native fee anyway.
+    // A payer with no native unit to spare cannot fund a fee coin in it: no fee, as it cannot
+    // pay a native fee anyway.
     const nativeRun = settle(simulateWith(held(native) ? [{ denom: native, amount: '1' }] : []));
     const representative = await this.representative(data, params, held);
     const foreignRun =

@@ -30,10 +30,11 @@ The transaction is simulated with a real fee of one unit, so the chain measures 
 costs instead of the wallet guessing it. At most two simulations run, side by side, with a gas
 limit of 0:
 
-1. **With a fee of 1 ubze.** A payer that holds no BZE is simulated with no fee: it cannot
-   pay in BZE anyway.
+1. **With a fee of 1 ubze.** A payer with no BZE left after what the transaction itself sends
+   is simulated with no fee: it cannot pay in BZE anyway.
 2. **With a fee of 1 unit of one other token**, when some other token can pay fees and the
-   payer holds at least one unit of it: the selected fee token when it is one of those (on a
+   payer has at least one unit of it left after what the transaction itself sends (a send of
+   a token's whole balance never makes that token the fee coin): the selected fee token when it is one of those (on a
    send the token picked on the fee sheet, else the token being sent; on a site request the
    site's fee token), else the first of them in option order.
 
@@ -58,8 +59,8 @@ against BZE. So the second simulation stands for all of them. From the gas each 
 Every step rounds up. The margins match the BZE dapps.
 
 When the second simulation fails, only BZE options are offered. When the first fails and the
-second passed, only the other tokens are offered (sending the whole BZE balance leaves nothing
-for a 1 ubze fee coin). When no simulation passes, the estimate fails with the node's message.
+second passed, only the other tokens are offered. When no simulation passes, the estimate fails
+with the node's message.
 
 ## 3. Wallet sends: the pre-selected fee
 
@@ -76,21 +77,22 @@ simulated again with that amount. Its first simulation sends one unit less than 
 so the one-unit fee coin fits. (At a zero gas price the fee is 0, so a max send paid in the
 sent token keeps no unit for that coin and its simulation fails.)
 
-Sending the whole balance when only that token can pay asks the user to leave room for the fee.
+Sending the whole balance (typed, or max of a single unit) when nothing else can pay asks the
+user to leave room for the fee.
 
 ## 4. Site requests: the pre-selected fee
 
 - **The site sends a fee:** it is the default and is signed exactly as sent, gas limit
   included. It is still shown with a warning when:
   - its gas limit is below what the simulation with a fee in its token's kind used (the
-    transaction would run out of gas and the fee would still be charged). When that
-    simulation failed, the other one is used;
+    transaction would run out of gas and the fee would still be charged);
   - it is below the chain minimum;
   - it is more than 3 times the wallet's own estimate in that token (priced on that token's
     simulation).
 - **The site's fee is dropped**, the wallet picks its own and says so, when it has more than one
   coin, an amount that is not a whole number, a token that cannot pay fees (section 1) or cannot
-  be shown, or more than the balance.
+  be shown, more than the balance, or no passing simulation with a fee in its token's kind
+  (section 2): nothing measured its path.
 - **The site sends no fee** (none, an empty or all-zero amount, or a zero gas limit): BZE when
   the address can pay it, else the first token that can.
 - The fee sheet always lists the wallet's own options next to the site's fee.

@@ -910,7 +910,7 @@ describe('signDirect with a fee the site set', () => {
     expect(bze.view.fee).toMatchObject({ gasUsed: '150000' });
   });
 
-  it('checks a fee in another token against the BZE simulation when its own failed', async () => {
+  it('drops a site fee in another token when no simulation in another token passed', async () => {
     const t = await rig();
     await t.connect();
     t.node.balances = new Map([
@@ -923,9 +923,11 @@ describe('signDirect with a fee the site set', () => {
         options: FEES.options.slice(0, 1),
         simulated: { native: 150_000n, foreign: null },
       });
+    // Enough gas for the BZE simulation, but nothing measured a fee in another token.
     const r = await review(t, site([['uother', 400n]], 180_000n));
-    expect(r.view.siteFee).toEqual({ status: 'ok' });
-    expect(r.view.fee).toMatchObject({ denom: 'uother', gasUsed: '150000' });
+    expect(r.view.siteFee).toEqual({ status: 'unusable' });
+    expect(r.view.fee).toMatchObject({ denom: 'ubze', amount: '2000', gasLimit: '200000' });
+    expect(r.view.options.every((o) => o.setBy === undefined)).toBe(true);
   });
 
   it('calls any fee high when the wallets own estimate is zero', async () => {

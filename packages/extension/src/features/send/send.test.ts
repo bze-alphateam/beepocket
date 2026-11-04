@@ -354,6 +354,30 @@ describe('send.prepare', () => {
     expect(s.simulatedFees.slice(reviewed)).toEqual([[], [`${OTHER}:1`]]);
   });
 
+  it('keeps another token as the fee when the whole balance of the sent token goes', async () => {
+    const s = setup({
+      balances: { [FACTORY]: 1_000_000n, [OTHER]: 1_000_000n },
+      pools: [
+        [FACTORY, 21_000_000_000n, 50_000_000_000n],
+        [OTHER, 21_000_000_000n, 50_000_000_000n],
+      ],
+    });
+    // 1 VDL is the whole VDL balance: GOLD, not VDL, is simulated as the fee.
+    const quote = await quoteOf(s, { denom: FACTORY, amount: '1' });
+    expect(quote.options.map((o) => o.denom)).toEqual([OTHER]);
+    expect(quote.fee.denom).toBe(OTHER);
+    expect(s.simulatedFees).toEqual([[], [`${OTHER}:1`]]);
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+  });
+
+  it('asks to leave room for the fee on a max send of a single unit', async () => {
+    const s = setup({ balances: { ubze: 1n } });
+    expect(await s.call('send.prepare', prepareReq({ amount: '', max: true }))).toMatchObject({
+      ok: false,
+      error: { code: 'amount-leaves-no-fee' },
+    });
+  });
+
   it('simulates a max BZE send one unit short, so the 1 ubze fee coin fits', async () => {
     const s = setup({ balances: { ubze: 5_000_000n } });
     const quote = await quoteOf(s, { amount: '', max: true });

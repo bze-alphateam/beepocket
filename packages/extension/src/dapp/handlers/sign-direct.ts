@@ -1,4 +1,10 @@
-import { feePricing, priceGasOverride, signDocBytes, withWalletFee } from '@beepocket/core';
+import {
+  feePricing,
+  priceGasOverride,
+  signDocBytes,
+  simulatedGasFor,
+  withWalletFee,
+} from '@beepocket/core';
 import { ErrorCodes, fail, ok, WalletErrorCodes } from '../../protocol';
 import { SendErrorCodes, type ReviewedFee } from '../../protocol';
 import { multiplierOf } from '../../features/send/override';
@@ -8,7 +14,6 @@ import { bigintToWire, bytesToWire, DappErrorCodes } from '../wire';
 import type { TxDeps } from './env';
 import {
   detailsOf,
-  gasUsedFor,
   prepareSign,
   validateSignParams,
   type Prepared,
@@ -117,9 +122,11 @@ function overrideFee(
   const { override } = reviewed;
   const pricing = feePricing(p.feeData, reviewed.denom);
   if (!override || !pricing || override.gasLimit !== reviewed.gasLimit) return null;
+  const gasUsed = simulatedGasFor(p.simulated, pricing.native);
+  if (gasUsed === null) return null;
   const priced = priceGasOverride({
     pricing,
-    gasUsed: gasUsedFor(p.simulated, pricing.native),
+    gasUsed,
     gasLimit: BigInt(override.gasLimit),
     gasPrice: multiplierOf(override.gasPrice),
     spendable: p.balances.get(reviewed.denom) ?? 0n,

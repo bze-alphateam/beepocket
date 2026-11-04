@@ -185,17 +185,6 @@ function siteFeeOf(
   return { coins: fee.amount, gasLimit: fee.gasLimit };
 }
 
-/**
- * The gas a fee in the native token or another one is checked against: the simulation with a
- * fee in its kind, else the other one (a site's fee can be in a token whose simulation failed).
- * The estimator throws when neither passed.
- */
-export function gasUsedFor(simulated: SimulatedGas, native: boolean): bigint {
-  const gas = simulatedGasFor(simulated, native) ?? simulatedGasFor(simulated, !native);
-  if (gas === null) throw new Error('no simulation passed');
-  return gas;
-}
-
 /** Rounded half up. */
 function roundedRatio(num: bigint, den: bigint): number {
   return Number((num * 2n + den) / (den * 2n));
@@ -208,7 +197,7 @@ const HIGH_FEE_TIMES = 3n;
  * The site's fee as an option, with what the wallet makes of it; `null` option when it cannot
  * be paid. `walletAmount` is the wallet's own estimate in the same token, when it has one;
  * `simulated` is what the simulations of this transaction used: the site's gas limit is checked
- * against the one with a fee in its token's kind (the other one when that one failed).
+ * against the one with a fee in its token's kind, and the fee is unusable when that one failed.
  */
 function checkSiteFee(
   fee: SiteFee,
@@ -224,7 +213,9 @@ function checkSiteFee(
   const amount = BigInt(coin.amount);
   const minimum = minimumFee(data, coin.denom, fee.gasLimit);
   if (minimum === null || (balances.get(coin.denom) ?? 0n) < amount) return unusable;
-  const gasUsed = gasUsedFor(estimate.simulated, coin.denom === data.nativeDenom);
+  // Without a passing simulation in its kind of token nothing measured the site's fee path.
+  const gasUsed = simulatedGasFor(estimate.simulated, coin.denom === data.nativeDenom);
+  if (gasUsed === null) return unusable;
   const option: FeeChoice = {
     ...info,
     amount: amount.toString(),

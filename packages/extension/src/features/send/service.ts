@@ -155,9 +155,9 @@ export class SendService {
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       const estimate = await this.estimate(ctx, pubKey, req, amount);
       if (!estimate.ok) {
-        // The whole balance leaves nothing for a fee coin of the sent token, so its simulation
-        // fails; when no other token could be simulated either, say what to do about it.
-        if (typed === balance && estimate.error.code === SendErrorCodes.simulationFailed) {
+        // The whole balance (typed, or max of a single unit) leaves nothing for a fee coin of the
+        // sent token; when no other token could be simulated either, say what to do about it.
+        if (amount === balance && estimate.error.code === SendErrorCodes.simulationFailed) {
           return fail(LEAVES_NO_FEE.code, LEAVES_NO_FEE.message);
         }
         return estimate;
@@ -250,6 +250,7 @@ export class SendService {
         balances: ctx.balances,
         // The reviewed fee's token is the one its kind of fee is simulated with.
         preferred: req.feeDenom,
+        spent: new Map([[req.denom, amount]]),
       }),
     );
     if (!estimate.ok) return estimate;
@@ -405,8 +406,10 @@ export class SendService {
         pubKey,
         sequence: ctx.sequence,
         balances: ctx.balances,
-        // A picked fee token is the one a fee in another token is simulated with.
+        // A picked fee token is the one a fee in another token is simulated with. The amount is
+        // spent first, so a token with no unit left next to it is never simulated as the fee.
         preferred: req.feeDenom ?? req.denom,
+        spent: new Map([[req.denom, amount]]),
       }),
     );
   }

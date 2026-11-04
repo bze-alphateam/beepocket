@@ -277,6 +277,45 @@ describe('FeeEstimator.estimate', () => {
     expect(simulatedFees(notHeld)).toEqual([[`${NATIVE}:1`], [`${X}:1`]]);
   });
 
+  it('simulates no fee coin in a token the transaction itself spends to the last unit', async () => {
+    const pools = [deepPool, pool(NATIVE, Y, 1_000_000_000_000n, 500_000_000_000n)];
+    const chain = chainWith(pools);
+    await estimator(chain).estimate({
+      bodyBytes: body,
+      pubKey,
+      sequence: 7n,
+      balances: new Map([
+        [NATIVE, 10_000n],
+        [X, 10_000n],
+        [Y, 10_000n],
+      ]),
+      preferred: X,
+      spent: new Map([
+        [NATIVE, 10_000n],
+        [X, 10_000n],
+      ]),
+    });
+    // No BZE left: no fee for the native kind; X spent: Y stands for the other tokens.
+    expect(simulatedFees(chain)).toEqual([[], [`${Y}:1`]]);
+    // One unit left is enough.
+    const spare = chainWith(pools);
+    await estimator(spare).estimate({
+      bodyBytes: body,
+      pubKey,
+      sequence: 7n,
+      balances: new Map([
+        [NATIVE, 10_000n],
+        [X, 10_000n],
+      ]),
+      preferred: X,
+      spent: new Map([
+        [NATIVE, 9_999n],
+        [X, 9_999n],
+      ]),
+    });
+    expect(simulatedFees(spare)).toEqual([[`${NATIVE}:1`], [`${X}:1`]]);
+  });
+
   it('picks the representative in symbol order when a symbol source is given', async () => {
     const tokens = {
       resolve: vi.fn((denom: string) => Promise.resolve({ symbol: denom === X ? 'ZED' : 'ALPHA' })),
