@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { deriveAccount } from '@beepocket/core';
+import { decodeAuthInfo, decodeTxRaw, deriveAccount } from '@beepocket/core';
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
@@ -22,13 +22,15 @@ const fixture = (name: string): unknown =>
 
 interface Node {
   broadcasts: number;
+  /** The `tx_bytes` of every broadcast, base64. */
+  txs: string[];
   /** The raw log the next broadcast is rejected with; null accepts it. */
   reject: string | null;
 }
 
 /** Plays a BZE node: the main address holds 100 BZE, simulation costs 150,000 gas. */
 async function mockNode(context: BrowserContext): Promise<Node> {
-  const node: Node = { broadcasts: 0, reject: null };
+  const node: Node = { broadcasts: 0, txs: [], reject: null };
   await context.route('https://rest.getbze.com/**', (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -66,6 +68,7 @@ async function mockNode(context: BrowserContext): Promise<Node> {
         return route.fulfill({ json: { gas_info: { gas_wanted: '0', gas_used: '150000' } } });
       case '/cosmos/tx/v1beta1/txs': {
         node.broadcasts++;
+        node.txs.push((request.postDataJSON() as { tx_bytes: string }).tx_bytes);
         const code = node.reject === null ? 0 : 13;
         return route.fulfill({
           json: {
@@ -111,7 +114,11 @@ async function call(page: Page, method: string, payload: unknown): Promise<void>
   await page.evaluate((m): Promise<unknown> => chrome.runtime.sendMessage(m), { method, payload });
 }
 
-async function openSend(context: BrowserContext, extensionId: string): Promise<Page> {
+async function openSend(
+  context: BrowserContext,
+  extensionId: string,
+  review = true,
+): Promise<Page> {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
   await call(page, 'wallet.createWallet', { password: PASSWORD, mnemonic: PHRASE });
@@ -122,7 +129,7 @@ async function openSend(context: BrowserContext, extensionId: string): Promise<P
   await page.getByRole('button', { name: 'Choose Alex' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'address book' })).toContainText('Alex');
   await page.getByRole('textbox', { name: 'Amount' }).fill('1');
-  await page.getByRole('button', { name: 'Review', exact: true }).click();
+  if (review) await page.getByRole('button', { name: 'Review', exact: true }).click();
   return page;
 }
 
@@ -162,4 +169,45 @@ test("shows the node's message when the fee is too low and Try again works", asy
   await page.getByRole('button', { name: 'Confirm and send' }).click();
   await expect(page.getByRole('heading', { name: 'Sent' })).toBeVisible();
   expect(node.broadcasts).toBe(2);
+});
+
+test('sends with an Advanced gas limit and price, signed exactly as reviewed', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(90_000);
+  const node = await mockNode(context);
+  const page = await openSend(context, extensionId, false);
+
+  // 150,000 simulated: Auto is 225,000 gas. 300,000 gas at 2 × 0.01 ubze is 6,000 ubze.
+  const feeRow = page.getByRole('button', { name: /^Network fee about/ });
+  await expect(feeRow).toContainText('0.00225 BZE');
+  await feeRow.click();
+  await page.getByRole('button', { name: /^Advanced: gas limit and price/ }).click();
+  const gas = page.getByRole('textbox', { name: 'Gas limit' });
+  await expect(gas).toHaveValue('225,000');
+  await gas.fill('100000');
+  await expect(page.getByText('At least 150,000, the gas the simulation used.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Done' })).toBeDisabled();
+  await gas.fill('300000');
+  await page.getByRole('radio', { name: /^×2/ }).click();
+  await expect(page.locator('.bp-gas-fee')).toContainText('0.006 BZE');
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  await expect(feeRow).toContainText('Custom gas');
+  await expect(feeRow).toContainText('0.006 BZE');
+  await page.getByRole('button', { name: 'Review', exact: true }).click();
+  await expect(page.getByText('300,000 · custom')).toBeVisible();
+  await expect(page.getByText('0.02 ubze/gas · ×2')).toBeVisible();
+  await expect(page.getByText('1.006 BZE')).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm and send' }).click();
+  await expect(page.getByRole('heading', { name: 'Sent' })).toBeVisible();
+
+  const [tx] = node.txs;
+  if (tx === undefined) throw new Error('nothing was broadcast');
+  const { authInfoBytes } = decodeTxRaw(Uint8Array.from(Buffer.from(tx, 'base64')));
+  expect(decodeAuthInfo(authInfoBytes).fee).toEqual({
+    amount: [{ denom: 'ubze', amount: '6000' }],
+    gasLimit: '300000',
+  });
 });

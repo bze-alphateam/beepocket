@@ -911,3 +911,89 @@ describe('signDirect with a fee the site set', () => {
     expect(signedFee(t, r.id)).toMatchObject({ amount: [{ denom: 'ubze', amount: '2500' }] });
   });
 });
+
+describe('signDirect with Advanced gas limit and price', () => {
+  const site = (coins: [string, bigint][], gasLimit: bigint): DocOptions => ({
+    requestFee: { coins, gasLimit },
+  });
+  const signedFee = (t: Rig, id: string) =>
+    decodeAuthInfo(bytesFromWire(t.signedOf(id).signed.authInfoBytes)).fee;
+  // The rig simulates 150,000 gas at 0.01 ubze per gas: the BZE bounds are 150,000 (the
+  // simulation), 225,000 (the estimate) and 2,250,000 (ten times it).
+  const custom = (amount: string, gasLimit: string, gasPrice: 1 | 2 | 3 = 1) => ({
+    denom: 'ubze',
+    amount,
+    gasLimit,
+    override: { gasLimit, gasPrice },
+  });
+
+  it('gives the screen what Advanced needs: the simulation, pricing and balances', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t);
+    expect(r.view.gasUsed).toBe('150000');
+    expect(r.view.options[0]).toMatchObject({
+      denom: 'ubze',
+      balance: '100000000',
+      pricing: { native: true, nativePrice: { num: '1', den: '100' } },
+    });
+  });
+
+  it('signs the settings when they price to exactly the reviewed fee', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t);
+    // 300,000 gas x 0.02 = 6,000 ubze.
+    const res = await t.dapp.answer(r.id, { approve: true, fee: custom('6000', '300000', 2) });
+    expect(res.ok).toBe(true);
+    expect(signedFee(t, r.id)).toEqual({
+      amount: [{ denom: 'ubze', amount: '6000' }],
+      gasLimit: '300000',
+    });
+  });
+
+  it('allows a limit between the simulation and the estimate', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t);
+    await t.dapp.answer(r.id, { approve: true, fee: custom('1500', '150000') });
+    expect(signedFee(t, r.id)).toMatchObject({ gasLimit: '150000' });
+  });
+
+  it('refuses settings that do not price to the fee, or fall outside the bounds or the balance', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t);
+    const refused = [
+      custom('5999', '300000', 2),
+      custom('6000', '300000', 3),
+      // One below the simulation and one above ten times the estimate, both priced right.
+      custom('1500', '149999'),
+      custom('22501', '2250001'),
+      { ...custom('6000', '300000', 2), gasLimit: '300001' },
+      { ...custom('6000', '300000', 2), denom: 'ufree' },
+    ];
+    for (const fee of refused) {
+      expect(await t.dapp.answer(r.id, { approve: true, fee })).toMatchObject({
+        ok: false,
+        error: { code: 'review-changed' },
+      });
+    }
+    t.node.balances = new Map([['ubze', 5_999n]]);
+    expect(
+      await t.dapp.answer(r.id, { approve: true, fee: custom('6000', '300000', 2) }),
+    ).toMatchObject({ ok: false, error: { code: 'review-changed' } });
+  });
+
+  it("replaces a site's fee with one priced for the user's settings", async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, site([['ubze', 1_200n]], 120_000n));
+    expect(r.view.siteFee).toEqual({ status: 'gas' });
+    await t.dapp.answer(r.id, { approve: true, fee: custom('2250', '225000') });
+    expect(signedFee(t, r.id)).toEqual({
+      amount: [{ denom: 'ubze', amount: '2250' }],
+      gasLimit: '225000',
+    });
+  });
+});

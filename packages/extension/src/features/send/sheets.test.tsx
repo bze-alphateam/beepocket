@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { FeeChoice } from '../../protocol/send';
+import type { FeeChoice, FeeOverride } from '../../protocol/send';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { feeKey, FeeSheet } from './Sheets';
 
@@ -59,5 +59,176 @@ describe('FeeSheet with a fee a site set', () => {
     fireEvent(rows[1], 'click');
     expect(onPick).toHaveBeenCalledWith('ubze');
     expect(feeKey(sameToken)).not.toBe(feeKey(own));
+  });
+});
+
+const NATIVE_PRICING = {
+  native: true,
+  nativePrice: { num: '1', den: '100' },
+  rate: { num: '1', den: '100' },
+};
+// 133,333 simulated: the BZE estimate is 200,000 gas for 2,000 ubze at 0.01 ubze per gas.
+const priced: FeeChoice = { ...own, balance: '100000000', pricing: NATIVE_PRICING };
+
+const gasField = (host: HTMLElement): HTMLInputElement => {
+  const label = [...host.querySelectorAll('label')].find((l) => l.textContent === 'Gas limit');
+  const input =
+    label && host.querySelector<HTMLInputElement>(`#${label.getAttribute('for') ?? ''}`);
+  if (!input) throw new Error('no gas limit field');
+  return input;
+};
+const typeGas = (host: HTMLElement, value: string) => {
+  const input = gasField(host);
+  input.value = value;
+  fireEvent(input, 'input');
+};
+const byText = (host: HTMLElement, text: string): HTMLButtonElement => {
+  const b = [...host.querySelectorAll('button')].find((x) => x.textContent.trim() === text);
+  if (!b) throw new Error(`no button ${text}`);
+  return b;
+};
+/** A gas price pick: its labels (×2) repeat the quick picks', so look only among the prices. */
+const priceButton = (host: HTMLElement, text: string): HTMLButtonElement => {
+  const b = [...host.querySelectorAll('.bp-gas-prices button')].find(
+    (x) => x.textContent.trim() === text,
+  );
+  if (!(b instanceof HTMLButtonElement)) throw new Error(`no price ${text}`);
+  return b;
+};
+const feeLine = (host: HTMLElement) => host.querySelector('.bp-gas-fee strong')?.textContent;
+
+function advancedSheet(
+  options: {
+    option?: FeeChoice;
+    applied?: FeeOverride | null;
+    spendable?: bigint;
+    prefill?: string;
+  } = {},
+) {
+  const onApply = vi.fn();
+  const option = options.option ?? priced;
+  const { host } = render(
+    <FeeSheet
+      open
+      options={[option]}
+      selected={feeKey(option)}
+      onPick={() => undefined}
+      onClose={() => undefined}
+      advanced={{
+        gasUsed: 133_333n,
+        applied: options.applied ?? null,
+        spendable: () => options.spendable ?? 100_000_000n,
+        holder: 'Main',
+        onApply,
+        prefill: options.prefill,
+      }}
+    />,
+  );
+  return { host, onApply };
+}
+const openAdvanced = (host: HTMLElement) => {
+  const row = [...host.querySelectorAll('button')].find((b) =>
+    b.getAttribute('aria-label')?.startsWith('Advanced'),
+  );
+  fireEvent(row, 'click');
+};
+
+describe('FeeSheet Advanced', () => {
+  it('opens from the last row on the estimate and prices any limit and price live', () => {
+    const { host, onApply } = advancedSheet();
+    expect(host.textContent).toContain('Gas limit 200,000');
+    openAdvanced(host);
+    expect(host.querySelector('h2')?.textContent).toBe('Advanced');
+    expect(host.textContent).toContain('Paid in BZE');
+    expect(host.textContent).toContain("Auto = BeePocket's estimate, 200,000 · simulated 133,333");
+    expect(gasField(host).value).toBe('200,000');
+    expect(feeLine(host)).toBe('≈ 0.002 BZE');
+    typeGas(host, '300,000');
+    expect(feeLine(host)).toBe('≈ 0.003 BZE');
+    fireEvent(priceButton(host, '×2'), 'click');
+    expect(priceButton(host, '×2').getAttribute('aria-checked')).toBe('true');
+    expect(host.textContent).toContain('0.02 ubze per gas');
+    expect(feeLine(host)).toBe('≈ 0.006 BZE');
+    fireEvent(byText(host, 'Done'), 'click');
+    expect(onApply).toHaveBeenCalledWith({ gasLimit: '300000', gasPrice: 2 });
+  });
+
+  it('gives back no settings when the estimate and the minimum price are kept', () => {
+    const { host, onApply } = advancedSheet({ applied: { gasLimit: '300000', gasPrice: 2 } });
+    expect(host.textContent).toContain('Gas 300,000 · custom');
+    openAdvanced(host);
+    fireEvent(byText(host, 'Auto'), 'click');
+    fireEvent(priceButton(host, 'Minimum'), 'click');
+    fireEvent(byText(host, 'Done'), 'click');
+    expect(onApply).toHaveBeenCalledWith(null);
+  });
+
+  it('warns below the estimate and refuses below the simulation, above the cap or the balance', () => {
+    const { host } = advancedSheet({ spendable: 5_000n });
+    openAdvanced(host);
+    const done = () => byText(host, 'Done').disabled;
+    typeGas(host, '150000');
+    expect(host.textContent).toContain('Below the estimate of 200,000');
+    expect(done()).toBe(false);
+    typeGas(host, '133332');
+    expect(host.textContent).toContain('At least 133,333, the gas the simulation used.');
+    expect(gasField(host).getAttribute('aria-invalid')).toBe('true');
+    expect(feeLine(host)).toBe('—');
+    expect(done()).toBe(true);
+    typeGas(host, '2000001');
+    expect(host.textContent).toContain('At most 2,000,000, 10× the estimate.');
+    expect(done()).toBe(true);
+    // 600,000 gas is 6,000 ubze: more than the 5,000 that may be spent.
+    typeGas(host, '600000');
+    expect(host.textContent).toContain('Main holds 0.005 BZE, too little for this fee.');
+    expect(done()).toBe(true);
+    typeGas(host, '');
+    expect(host.textContent).toContain('Enter a gas limit, or pick Auto.');
+    expect(done()).toBe(true);
+  });
+
+  it('offers quick picks from the estimate and turns off the ones the balance cannot pay', () => {
+    const { host } = advancedSheet({ spendable: 5_000n });
+    openAdvanced(host);
+    expect(byText(host, 'Auto').getAttribute('aria-pressed')).toBe('true');
+    fireEvent(byText(host, '×1.5'), 'click');
+    expect(gasField(host).value).toBe('300,000');
+    fireEvent(byText(host, '×2'), 'click');
+    expect(gasField(host).value).toBe('400,000');
+    // x5 is 1,000,000 gas (10,000 ubze) and Max 2,000,000: both above the 5,000 left.
+    expect(byText(host, '×5').disabled).toBe(true);
+    expect(byText(host, 'Max').disabled).toBe(true);
+  });
+
+  it("starts a site's fee from its own gas and says that changing it replaces the fee", () => {
+    const siteFee: FeeChoice = {
+      ...priced,
+      amount: '1200',
+      gasLimit: '120000',
+      setBy: 'https://dex.example',
+    };
+    const { host, onApply } = advancedSheet({ option: siteFee });
+    expect(host.textContent).toContain('Gas 120,000 · set by site');
+    openAdvanced(host);
+    expect(feeLine(host)).toBe('≈ 0.0012 BZE');
+    expect(host.textContent).toContain(
+      'https://dex.example set 120,000, below the simulated 133,333. It may run out of gas.',
+    );
+    fireEvent(byText(host, 'Auto'), 'click');
+    expect(host.textContent).toContain('This replaces the fee https://dex.example set.');
+    expect(feeLine(host)).toBe('≈ 0.002 BZE');
+    fireEvent(byText(host, 'Done'), 'click');
+    expect(onApply).toHaveBeenCalledWith({ gasLimit: '200000', gasPrice: 1 });
+  });
+
+  it('opens straight on Advanced with a prefilled limit ("Raise gas")', () => {
+    const { host } = advancedSheet({ prefill: '200000' });
+    expect(host.querySelector('h2')?.textContent).toBe('Advanced');
+    expect(gasField(host).value).toBe('200,000');
+  });
+
+  it('has no Advanced row for a token it cannot price', () => {
+    const { host } = advancedSheet({ option: own });
+    expect(host.textContent).not.toContain('Advanced');
   });
 });
