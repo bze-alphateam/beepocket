@@ -1,7 +1,7 @@
 import type { DenomBranding } from '@beepocket/core';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
-import type { ListedToken, WalletAddress } from '../../protocol';
+import { WalletErrorCodes, type ListedToken, type WalletAddress } from '../../protocol';
 import { useClient } from '../../popup/client-context';
 import { AppearanceToggle } from '../../popup/appearance';
 import { Layout } from '../../popup/Layout';
@@ -43,6 +43,11 @@ export interface SettingsTarget {
   name: 'settings.main';
 }
 
+/** Settings › Preferred tokens, which asks the password when saving needs it. */
+export interface PickTokensTarget {
+  name: 'settings.pickTokens';
+}
+
 /** The send flow's route (registered by the send feature). */
 export interface SendTarget {
   name: 'send';
@@ -64,7 +69,9 @@ const COPIED_MS = 1800;
 export function Home() {
   const client = useClient();
   const env = useHomeEnv();
-  const { route, navigate } = useRoute<HomeRoute | SettingsTarget | SendTarget>();
+  const { route, navigate } = useRoute<
+    HomeRoute | SettingsTarget | PickTokensTarget | SendTarget
+  >();
   const arrival = route.name === 'home.main' ? route : undefined;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
@@ -93,6 +100,11 @@ export function Home() {
     if (tokens.ok && tokens.value.length === 0) {
       // A new wallet starts with BZE as its one preferred token.
       list = await client.call('tokens.add', { denom: 'ubze' });
+      // Weak lock: the list cannot be written here; the token picker asks the password.
+      if (!list.ok && list.error.code === WalletErrorCodes.needsPassword) {
+        navigate({ name: 'settings.pickTokens' });
+        return;
+      }
     }
     const first = list.ok ? list.value[0] : undefined;
     if (!ctx.ok || !list.ok || !addresses.ok || !first) {
@@ -108,7 +120,7 @@ export function Home() {
     setDenom((current) =>
       current !== null && list.value.some((x) => x.denom === current) ? current : first.denom,
     );
-  }, [client]);
+  }, [client, navigate]);
 
   useEffect(() => {
     void load();

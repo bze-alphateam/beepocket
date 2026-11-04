@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { WalletErrorCodes } from '../../protocol';
 import { useClient } from '../../popup/client-context';
 import { useRoute } from '../../popup/router';
 import { homeTarget, rootTarget } from '../lock/targets';
@@ -12,13 +13,24 @@ import {
   phraseOf,
   Start,
   Tokens,
+  UnlockStep,
+  type AddOutcome,
   Welcome,
   type StepFrame,
   type WelcomeLink,
 } from './screens';
 import type { OnboardingRoute } from './routes';
 
-type StepName = 'welcome' | 'phrase' | 'confirm' | 'import' | 'password' | 'start' | 'tokens';
+type StepName =
+  | 'welcome'
+  | 'phrase'
+  | 'confirm'
+  | 'import'
+  | 'password'
+  | 'start'
+  | 'tokens'
+  // Off the flow: the picks met the weak lock and wait for the password.
+  | 'unlock';
 type Path = 'create' | 'import';
 
 const FLOWS: Record<Path, StepName[]> = {
@@ -48,6 +60,9 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
   const [importRejected, setImportRejected] = useState(false);
   // A token denom that found a token makes the token step unnecessary.
   const [codeFound, setCodeFound] = useState(false);
+  // The picks a weak lock stopped; saved again once the password is in.
+  const [pending, setPending] = useState<string[]>([]);
+  const [unlockFailed, setUnlockFailed] = useState(false);
   // Onboarding is also reached over a wallet ("Forgot it?" on the lock screen): then the way
   // back leads to the state routing (unlock), not to a first-run Welcome. Unknown counts as one.
   const [walletExists, setWalletExists] = useState<boolean | null>(null);
@@ -136,19 +151,25 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
     setStep('start');
   };
 
-  const addAll = async (denoms: string[]): Promise<boolean> => {
+  const addAll = async (denoms: string[]): Promise<AddOutcome> => {
     // A failed attempt may have added some tokens: a retry only adds what is still missing.
     const current = await client.call('tokens.preferred', {});
-    if (!current.ok) return false;
+    if (!current.ok) return 'failed';
     let last = current.value;
     for (const denom of denoms) {
       if (last.some((tok) => tok.denom === denom)) continue;
       const res = await client.call('tokens.add', { denom });
-      if (!res.ok) return false;
+      if (!res.ok && res.error.code === WalletErrorCodes.needsPassword) {
+        setPending(denoms);
+        setUnlockFailed(false);
+        setStep('unlock');
+        return 'unlock';
+      }
+      if (!res.ok) return 'failed';
       last = res.value;
     }
     home();
-    return true;
+    return 'done';
   };
 
   switch (step) {
@@ -245,6 +266,19 @@ export function Onboarding({ route }: { route: OnboardingRoute }) {
             },
           }}
           onFinish={addAll}
+        />
+      );
+    case 'unlock':
+      return (
+        <UnlockStep
+          frame={{ index: flow.length - 1, total: flow.length }}
+          failed={unlockFailed}
+          onUnlocked={() => {
+            setUnlockFailed(false);
+            void addAll(pending).then((outcome) => {
+              setUnlockFailed(outcome === 'failed');
+            });
+          }}
         />
       );
   }

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { ListedToken, TokenBalances } from '../../protocol';
-import { TokenErrorCodes } from '../../protocol';
+import { TokenErrorCodes, WalletErrorCodes } from '../../protocol';
 import { useClient } from '../../popup/client-context';
 import { Avatar, ListGroup, ListRow, SearchField, Sheet, StarButton } from '../../ui';
+import { PasswordGate } from '../lock/PasswordGate';
 import { loadBalancesFor } from './data';
 import { amountText, tokenColor } from './format';
 
@@ -17,6 +18,8 @@ export interface SwitcherProps {
   onTokens: (tokens: ListedToken[]) => void;
   onClose: () => void;
 }
+
+type StarMethod = 'tokens.add' | 'tokens.remove';
 
 interface Group {
   title: string;
@@ -38,6 +41,8 @@ export function Switcher(props: SwitcherProps) {
   const [found, setFound] = useState<ListedToken[] | null>(null);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState(false);
+  // A star refused in weak lock: retried once the password is in.
+  const [pending, setPending] = useState<{ method: StarMethod; denom: string } | null>(null);
   const [balances, setBalances] = useState<Map<string, TokenBalances | null>>(new Map());
   const seq = useRef(0);
 
@@ -49,6 +54,7 @@ export function Switcher(props: SwitcherProps) {
     setFound(null);
     setMissing(false);
     setError(false);
+    setPending(null);
     setBalances(new Map());
     void client.call('tokens.search', { query: '' }).then((res) => {
       if (!live) return;
@@ -114,9 +120,11 @@ export function Switcher(props: SwitcherProps) {
     }
   };
 
-  const change = async (method: 'tokens.add' | 'tokens.remove', denom: string) => {
+  const change = async (method: StarMethod, denom: string) => {
+    setPending(null);
     const res = await client.call(method, { denom });
     if (res.ok) props.onTokens(res.value);
+    else if (res.error.code === WalletErrorCodes.needsPassword) setPending({ method, denom });
     else setError(true);
   };
 
@@ -186,7 +194,20 @@ export function Switcher(props: SwitcherProps) {
       title={t('home.switcher.title')}
       height="tall"
       onClose={props.onClose}
-      actions={<p class="bp-home-switcher-hint">{t('home.switcher.hint')}</p>}
+      actions={
+        pending === null ? (
+          <p class="bp-home-switcher-hint">{t('home.switcher.hint')}</p>
+        ) : (
+          <PasswordGate
+            label={t('home.switcher.unlock')}
+            labelIcon="lock"
+            submitLabel={t('home.switcher.unlockSubmit')}
+            onUnlocked={() => {
+              void change(pending.method, pending.denom);
+            }}
+          />
+        )
+      }
     >
       <div class="bp-home-switcher">
         <SearchField

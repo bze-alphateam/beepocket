@@ -44,9 +44,12 @@ export interface TokensProtocol {
   'tokens.lookup': { req: { code: string }; res: TokenInfo };
   /** The user's picks for the active network, in order. */
   'tokens.preferred': { req: Record<string, never>; res: ListedToken[] };
-  /** Appends at the end; adding a present token changes nothing. Answers the new list. */
+  /**
+   * Appends at the end; adding a present token changes nothing. Answers the new list. The list is
+   * in the encrypted profile: `needs-password` in weak lock, `wallet_locked` when locked.
+   */
   'tokens.add': { req: { denom: string }; res: ListedToken[] };
-  /** Refuses to remove the last token. Answers the new list. */
+  /** Refuses to remove the last token. Answers the new list. Lock errors as `tokens.add`. */
   'tokens.remove': { req: { denom: string }; res: ListedToken[] };
   /** Over ubze and every denom held on any address; the only method that may return unpicked tokens. */
   'tokens.search': { req: { query: string }; res: TokenSearch };

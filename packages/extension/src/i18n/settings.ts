@@ -14,6 +14,9 @@ export const settings = {
   'settings.tokens.save': 'Save',
   'settings.tokens.selected': '{count} selected',
   'settings.tokens.none': 'Pick at least one token.',
+  'settings.tokens.unlock': 'Unlock and save',
+  'settings.tokens.unlockHint':
+    'Your preferred tokens are saved in your wallet, so BeePocket needs your password.',
   'settings.timers': 'Lock timers',
   'settings.weakLock': 'Lock sending after',
   'settings.weakLock.hint': 'Asks for the password again before signing.',

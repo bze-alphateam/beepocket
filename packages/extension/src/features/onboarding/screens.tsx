@@ -36,6 +36,7 @@ import {
   TokenRow,
   WordGrid,
 } from '../../ui';
+import { PasswordGate } from '../lock/PasswordGate';
 import { tokenLook, TokenPicker } from '../tokens/TokenPicker';
 import { useOnboardingEnv } from './env';
 import { useRandom } from './random';
@@ -49,6 +50,12 @@ export interface StepFrame {
   /** ← in the header; absent once going back makes no sense (the wallet exists). */
   onBack?: (() => void) | undefined;
 }
+
+/**
+ * How saving the picked tokens ended: saved (Home opens), failed (the step says so) or stopped by
+ * the weak lock (the flow moves to the password step).
+ */
+export type AddOutcome = 'done' | 'failed' | 'unlock';
 
 /** The frame of every step after Welcome: header, title block, body, pinned actions. */
 function Step(
@@ -625,7 +632,7 @@ export function Start(props: {
   warn?: boolean;
   /** A code found a token: the token step drops out of the flow. */
   onFound: (found: boolean) => void;
-  onOpen: (denom: string) => Promise<boolean>;
+  onOpen: (denom: string) => Promise<AddOutcome>;
   onPick: () => void;
 }) {
   const client = useClient();
@@ -690,7 +697,7 @@ export function Start(props: {
   const open = async () => {
     if (!found) return;
     setBusy(true);
-    setError((await props.onOpen(found.denom)) ? null : 'failed');
+    setError((await props.onOpen(found.denom)) === 'failed' ? 'failed' : null);
     setBusy(false);
   };
   const look = found ? tokenLook(found, scheme) : null;
@@ -792,7 +799,7 @@ export function Start(props: {
 
 export function Tokens(props: {
   frame: StepFrame;
-  onFinish: (denoms: string[]) => Promise<boolean>;
+  onFinish: (denoms: string[]) => Promise<AddOutcome>;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [finishFailed, setFinishFailed] = useState(false);
@@ -818,9 +825,9 @@ export function Tokens(props: {
             onClick={() => {
               setBusy(true);
               setFinishFailed(false);
-              void props.onFinish(selected).then((done) => {
+              void props.onFinish(selected).then((outcome) => {
                 setBusy(false);
-                setFinishFailed(!done);
+                setFinishFailed(outcome === 'failed');
               });
             }}
           >
@@ -834,6 +841,31 @@ export function Tokens(props: {
         onToggle={toggle}
         notice={finishFailed && <Banner tone="red">{t('app.error.generic')}</Banner>}
       />
+    </Step>
+  );
+}
+
+/**
+ * The wallet weak-locked while the tokens were being picked: saving them writes the encrypted
+ * profile, so the password comes first, then the picks are saved.
+ */
+export function UnlockStep(props: { frame: StepFrame; failed: boolean; onUnlocked: () => void }) {
+  return (
+    <Step
+      {...props.frame}
+      title={t('onboarding.unlock.title')}
+      hint={t('onboarding.unlock.hint')}
+      footer={
+        <div class="bp-bottom">
+          <PasswordGate
+            submitLabel={t('onboarding.unlock.submit')}
+            labelIcon="lock"
+            onUnlocked={props.onUnlocked}
+          />
+        </div>
+      }
+    >
+      {props.failed && <Banner tone="red">{t('app.error.generic')}</Banner>}
     </Step>
   );
 }
