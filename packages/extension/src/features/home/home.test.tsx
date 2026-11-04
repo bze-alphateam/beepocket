@@ -195,12 +195,18 @@ function setup(
   const rejectOnce = (method: Method) => {
     rejecting.add(method);
   };
+  // A call answered `ok` with no value (a worker older or newer than the popup).
+  const empty = new Set<string>();
+  const answerEmpty = (method: Method) => {
+    empty.add(method);
+  };
   const client: Client = {
     call: vi.fn(async <M extends Method>(method: M, req: RequestOf<M>) => {
       // A call that rejects instead of answering (the worker's port went away).
       if (rejecting.delete(method)) throw new Error('port closed');
       calls.push({ method, req });
       await gates.get(method);
+      if (empty.has(method)) return { ok: true, value: undefined } as never;
       const h = handlers[method] as ((r: RequestOf<M>) => Result<unknown>) | undefined;
       return (h ? h(req) : fail('unknown_method', method)) as never;
     }),
@@ -287,7 +293,21 @@ function setup(
   const releaseAll = () => {
     for (const release of releases) release();
   };
-  return { host, hold, releaseAll, rejectOnce, w, calls, style, written, timers, tick, fire, seen };
+  return {
+    host,
+    hold,
+    releaseAll,
+    rejectOnce,
+    answerEmpty,
+    w,
+    calls,
+    style,
+    written,
+    timers,
+    tick,
+    fire,
+    seen,
+  };
 }
 
 const byLabel = (host: HTMLElement, label: string) =>
@@ -940,6 +960,14 @@ describe('current site strip', () => {
   it('shows nothing when the worker cannot answer', async () => {
     const s = setup({ site: SITE });
     s.rejectOnce('sites.current');
+    await s.tick();
+    expect(strip(s.host)).toBeNull();
+    expect(text(s.host)).toContain('1,234.56789');
+  });
+
+  it('shows nothing when the worker answers without a value', async () => {
+    const s = setup({ site: SITE });
+    s.answerEmpty('sites.current');
     await s.tick();
     expect(strip(s.host)).toBeNull();
     expect(text(s.host)).toContain('1,234.56789');

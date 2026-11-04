@@ -33,9 +33,12 @@ export function CurrentSite() {
 
   const load = useCallback(async () => {
     // A worker that cannot answer (its port went away) just means no strip.
+    // An empty or malformed answer reads the same: nothing to show.
     const r = await client.call('sites.current', {}).catch(() => null);
-    setSite(r?.ok ? r.value.site : null);
-    setAddresses(r?.ok ? r.value.addresses : []);
+    const answer: { site?: ConnectedSiteView | null; addresses?: WalletAddress[] } | undefined =
+      r?.ok ? r.value : undefined;
+    setSite(answer?.site ?? null);
+    setAddresses(answer?.addresses ?? []);
   }, [client]);
 
   useEffect(() => {
