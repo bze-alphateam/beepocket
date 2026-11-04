@@ -107,6 +107,8 @@ describe('App', () => {
     };
     const answers: Record<string, unknown> = {
       'wallet.state': { state: 'unlocked', retryAt: null },
+      'addtoken.current': { status: 'none' },
+      'dapp.queue': { head: null, count: 0, origins: [] },
       'home.context': { network: 'mainnet', brandThemes: true },
       'tokens.preferred': [bze],
       'wallet.addresses': { addresses: [] },

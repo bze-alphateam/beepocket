@@ -127,6 +127,7 @@ async function rig() {
           return Promise.resolve({ id: created.length });
         },
         get: (id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('no window'))),
+        getLastFocused: () => Promise.reject(new Error('no window')),
         update: (id) => {
           focused.push(id);
           return Promise.resolve({});

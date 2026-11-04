@@ -176,6 +176,7 @@ async function rig() {
           return Promise.resolve({ id: created.length });
         },
         get: (id) => (open.has(id) ? Promise.resolve({}) : Promise.reject(new Error('gone'))),
+        getLastFocused: () => Promise.resolve({}),
         update: () => Promise.resolve({}),
       },
       session,

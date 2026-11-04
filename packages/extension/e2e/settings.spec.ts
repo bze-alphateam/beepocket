@@ -99,7 +99,9 @@ test('home settings sheet, Testnet toggle with pill, and the reveal sheet in the
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.locator('.bp-pill')).toHaveCount(0);
 
-  await page.getByRole('switch', { name: /Testnet/ }).check();
+  // A click, not check(): the switch leaves the screen for "Pick your tokens" (no testnet
+  // tokens yet), and check() hangs re-reading the state of a switch that is gone.
+  await page.getByRole('switch', { name: /Testnet/ }).click();
   await expect(page.getByText('Pick your tokens')).toBeVisible();
   await expect(page.locator('.bp-pill')).toHaveText('Testnet');
   expect(await call(page, 'network.get', {})).toEqual({ ok: true, value: { id: 'testnet' } });

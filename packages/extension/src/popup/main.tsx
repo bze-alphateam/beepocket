@@ -5,10 +5,18 @@ import { SystemClock } from '@beepocket/core';
 import { RuntimeClient } from '../protocol/client';
 import { AppearanceState, applyTheme, LocalAppearanceCache } from '../theme';
 import { LockEnvProvider, RuntimeStateEvents } from '../features/lock';
-import { initialRouteFor } from '../features';
+import { initialRouteFor, isWalletWindow } from '../features';
 import { App } from './App';
 import { AppearanceProvider } from './appearance';
 import { ClientProvider } from './client-context';
+import { fitWalletWindow } from './fit-window';
+
+// A wallet window fills its viewport, so the pinned footer stays on screen whatever the frame
+// around it, and grows itself to the intended inner 360 × 600.
+if (isWalletWindow(window.location.search)) {
+  document.documentElement.dataset.window = '';
+  void fitWalletWindow(window, chrome.windows).catch(() => undefined);
+}
 
 const client = new RuntimeClient(chrome.runtime);
 const appearance = new AppearanceState(window.matchMedia('(prefers-color-scheme: dark)'), {

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { chromium, test as base, type BrowserContext } from '@playwright/test';
+import { chromium, test as base, type BrowserContext, type Worker } from '@playwright/test';
 
 const extensionPath = resolve(import.meta.dirname, '../dist');
 
@@ -14,6 +14,11 @@ export const test = base.extend<{ context: BrowserContext; extensionId: string }
       headless: true,
       args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
     });
+    // Headless Chromium has no toolbar to anchor the popup to, so the suites drive the wallet
+    // window, the fallback: every service worker (a restarted one too) gets an openPopup that
+    // rejects. The popup screens are covered by opening popup.html in a tab.
+    context.on('serviceworker', (worker) => void noToolbarPopup(worker));
+    for (const worker of context.serviceWorkers()) await noToolbarPopup(worker);
     await use(context);
     await context.close();
     rmSync(userDataDir, { recursive: true, force: true });
@@ -26,3 +31,13 @@ export const test = base.extend<{ context: BrowserContext; extensionId: string }
 });
 
 export const expect = test.expect;
+
+async function noToolbarPopup(worker: Worker): Promise<void> {
+  await worker
+    .evaluate(() => {
+      Object.assign(chrome.action, {
+        openPopup: () => Promise.reject(new Error('No toolbar in e2e.')),
+      });
+    })
+    .catch(() => undefined);
+}

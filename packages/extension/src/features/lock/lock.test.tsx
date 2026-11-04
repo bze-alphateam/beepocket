@@ -77,6 +77,8 @@ const stubs = {
   'lock.unlock': () => null,
   'onboarding.welcome': () => null,
   'onboarding.import': () => null,
+  'dapp.request': () => <p>request screen</p>,
+  'addtoken.main': () => null,
 };
 
 function setup(
@@ -318,7 +320,67 @@ describe('state routing', () => {
       </ClientProvider>,
     );
     await flush();
+    await flush();
+    await flush();
     expect(route.name).toBe(expected);
+  });
+
+  it.each([
+    ['unlocked', 1, 'none', 'dapp.request'],
+    ['weakLocked', 2, 'none', 'dapp.request'],
+    ['locked', 1, 'none', 'lock.unlock'],
+    ['unlocked', 0, 'none', 'home.main'],
+    ['locked', 0, 'link', 'addtoken.main'],
+    ['uninitialised', 0, 'link', 'addtoken.main'],
+    ['unlocked', 1, 'link', 'addtoken.main'],
+  ] as const)(
+    '%s with %i requests and link %s opens %s (the toolbar popup shows what waits)',
+    async (state, count, link, expected) => {
+      let route: RouteBase = { name: 'lock.root' };
+      const { client } = fakeClient({
+        'wallet.state': stateReply(state),
+        'dapp.queue': () =>
+          ok({ head: count > 0 ? 'https://a.example' : null, count, origins: [] }),
+        'addtoken.current': () =>
+          ok(
+            link === 'link'
+              ? { status: 'link', source: 'link', code: 'ubze', host: null, known: false }
+              : { status: 'none' },
+          ),
+      });
+      render(
+        <ClientProvider client={client}>
+          <LockEnvProvider clock={new FakeClock()} events={new FakeEvents()}>
+            <Router table={{ ...stubs, 'lock.root': StateRoot }} initial={{ name: 'lock.root' }}>
+              <Probe onRoute={(r) => (route = r)} />
+            </Router>
+          </LockEnvProvider>
+        </ClientProvider>,
+      );
+      await flush();
+      await flush();
+      await flush();
+      expect(route.name).toBe(expected);
+    },
+  );
+
+  it('leaves the request screen in place when the worker pushes a full lock', async () => {
+    let route: RouteBase = { name: 'dapp.request' };
+    const events = new FakeEvents();
+    const { client } = fakeClient({ 'wallet.state': stateReply('unlocked') });
+    render(
+      <ClientProvider client={client}>
+        <LockEnvProvider clock={new FakeClock()} events={events}>
+          <Router table={{ ...stubs }} initial={{ name: 'dapp.request' }}>
+            <StateSupervisor />
+            <Probe onRoute={(r) => (route = r)} />
+          </Router>
+        </LockEnvProvider>
+      </ClientProvider>,
+    );
+    await flush();
+    events.push('locked');
+    expect(route.name).toBe('dapp.request');
   });
 
   it('switches to the unlock screen when the worker pushes a full lock', async () => {
@@ -472,7 +534,7 @@ describe('WaitingRequests', () => {
     );
   });
 
-  it('shows the card on the unlock screen, and opens the request window after unlocking', async () => {
+  it('shows the card on the unlock screen, and continues to the request in place after unlocking', async () => {
     const close = vi.spyOn(window, 'close').mockImplementation(() => undefined);
     const { host, call } = setup(
       {
@@ -488,8 +550,10 @@ describe('WaitingRequests', () => {
     type(host, 'right');
     await submit(host);
     await flush();
-    expect(call).toHaveBeenCalledWith('dapp.open', {});
-    expect(close).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(host.textContent).toContain('request screen');
+    expect(call).not.toHaveBeenCalledWith('dapp.open', {});
+    expect(close).not.toHaveBeenCalled();
     close.mockRestore();
   });
 });

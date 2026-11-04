@@ -19,6 +19,7 @@ import {
   type WindowsLike,
 } from '../dapp';
 import { DAPP_EXPIRY_ALARM } from '../dapp/requests';
+import { ChromeToolbarPopup, type ActionLike, type ContextsLike } from '../platform/toolbar-popup';
 import { AddTokenService, linkSender, type LinkTabsLike } from '../features/addtoken';
 import { registerHandlers } from './handlers';
 import { HandlerRegistry } from './registry';
@@ -38,7 +39,9 @@ export interface MessageEventLike {
 
 export interface BackgroundEnv extends PlatformEnv {
   chrome: PlatformEnv['chrome'] & {
-    runtime: {
+    /** Opens the toolbar popup for a request; missing on browsers without `openPopup`. */
+    action?: ActionLike | undefined;
+    runtime: ContextsLike & {
       id?: string | undefined;
       onMessage: MessageEventLike;
       /** Fires on install and update; the add-a-token link looks for open tabs on install. */
@@ -192,15 +195,18 @@ async function createRegistry(env: BackgroundEnv): Promise<Started> {
       void sent?.catch(() => undefined);
     },
   );
+  const popup = new ChromeToolbarPopup(env.chrome.action, env.chrome.runtime);
   const dapp = createDappService(platform, services, wallet, {
     tabs: env.chrome.tabs,
     windows: env.chrome.windows,
     alarms: new ChromeAlarms(env.chrome.alarms),
+    popup,
   });
   const addToken = new AddTokenService({
     session: platform.session,
     windows: env.chrome.windows,
     tabs: env.chrome.tabs,
+    popup,
   });
   const registry = new HandlerRegistry();
   registerHandlers(registry, { platform, services, wallet, dapp, addToken });
