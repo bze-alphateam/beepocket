@@ -585,6 +585,8 @@ describe('Advanced gas limit and price', () => {
     expect(sentFee(s.sent[0])).toEqual({
       amount: [{ denom: 'ubze', amount: '6000' }],
       gasLimit: '300000',
+      payer: '',
+      granter: '',
     });
   });
 
@@ -669,6 +671,8 @@ describe('Advanced gas limit and price', () => {
     expect(sentFee(s.sent[0])).toEqual({
       amount: [{ denom: FACTORY, amount: '15715' }],
       gasLimit: '300000',
+      payer: '',
+      granter: '',
     });
   });
 

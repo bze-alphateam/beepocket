@@ -209,5 +209,7 @@ test('sends with an Advanced gas limit and price, signed exactly as reviewed', a
   expect(decodeAuthInfo(authInfoBytes).fee).toEqual({
     amount: [{ denom: 'ubze', amount: '6000' }],
     gasLimit: '300000',
+    payer: '',
+    granter: '',
   });
 });

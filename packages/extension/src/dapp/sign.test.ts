@@ -949,6 +949,8 @@ describe('signDirect with Advanced gas limit and price', () => {
     expect(signedFee(t, r.id)).toEqual({
       amount: [{ denom: 'ubze', amount: '6000' }],
       gasLimit: '300000',
+      payer: '',
+      granter: '',
     });
   });
 
@@ -994,6 +996,8 @@ describe('signDirect with Advanced gas limit and price', () => {
     expect(signedFee(t, r.id)).toEqual({
       amount: [{ denom: 'ubze', amount: '2250' }],
       gasLimit: '225000',
+      payer: '',
+      granter: '',
     });
   });
 });
