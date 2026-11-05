@@ -222,6 +222,95 @@ describe('FeeSheet Advanced', () => {
     expect(onApply).toHaveBeenCalledWith({ gasLimit: '200000', gasPrice: 1 });
   });
 
+  // The site's 195,000 is under the wallet's 200,000 estimate but above the 166,666 simulated:
+  // its own simulation's margin, no reason to warn. Its 2,500 ubze is not 195,000 x 0.01.
+  const siteBelowEstimate: FeeChoice = {
+    ...priced,
+    amount: '2500',
+    gasLimit: '195000',
+    setBy: 'https://dex.example',
+  };
+  const SITE_HELP = 'Set by https://dex.example · Auto would be 200,000';
+  const BELOW = 'Below the estimate of 200,000';
+  const warned = (host: HTMLElement) =>
+    host.querySelector('.bp-gas-note') !== null || host.querySelector('.bp-gas-warn') !== null;
+
+  it("keeps a site's gas limit the site's when only the gas price changes", () => {
+    const { host, onApply } = advancedSheet({ option: siteBelowEstimate });
+    openAdvanced(host);
+    expect(host.textContent).toContain(SITE_HELP);
+    expect(feeLine(host)).toBe('≈ 0.0025 BZE');
+    fireEvent(priceButton(host, '×2'), 'click');
+    expect(gasField(host).value).toBe('195,000');
+    expect(host.textContent).toContain(SITE_HELP);
+    expect(host.textContent).not.toContain(BELOW);
+    expect(warned(host)).toBe(false);
+    // The site's limit at the new price: 195,000 x 0.02 = 3,900 ubze.
+    expect(feeLine(host)).toBe('≈ 0.0039 BZE');
+    expect(host.textContent).toContain('This replaces the fee https://dex.example set.');
+    fireEvent(priceButton(host, '×3'), 'click');
+    expect(host.textContent).toContain(SITE_HELP);
+    expect(warned(host)).toBe(false);
+    expect(feeLine(host)).toBe('≈ 0.00585 BZE');
+    fireEvent(byText(host, 'Done'), 'click');
+    expect(onApply).toHaveBeenCalledWith({ gasLimit: '195000', gasPrice: 3 });
+  });
+
+  it("gives the site's own fee back when the price returns to the minimum", () => {
+    const { host, onApply } = advancedSheet({
+      option: siteBelowEstimate,
+      applied: { gasLimit: '195000', gasPrice: 2 },
+    });
+    // The list's Advanced row: the gas limit is still the site's.
+    expect(host.textContent).toContain('Gas 195,000 · set by site');
+    expect(host.textContent).not.toContain('195,000 · custom');
+    openAdvanced(host);
+    expect(feeLine(host)).toBe('≈ 0.0039 BZE');
+    fireEvent(priceButton(host, 'Minimum'), 'click');
+    // The site's 2,500, not a recomputed 1,950.
+    expect(feeLine(host)).toBe('≈ 0.0025 BZE');
+    expect(host.textContent).toContain('Only change these if a transaction failed.');
+    fireEvent(byText(host, 'Done'), 'click');
+    expect(onApply).toHaveBeenCalledWith(null);
+  });
+
+  it("warns below the estimate only for a limit the user picked or typed on a site's fee", () => {
+    const { host } = advancedSheet({ option: siteBelowEstimate });
+    openAdvanced(host);
+    fireEvent(priceButton(host, '×2'), 'click');
+    const picks: [string, string][] = [
+      ['Auto', '200,000'],
+      ['×1.5', '300,000'],
+      ['×2', '400,000'],
+      ['×5', '1,000,000'],
+      ['Max', '2,000,000'],
+    ];
+    for (const [pick, gas] of picks) {
+      fireEvent(byText(host, pick), 'click');
+      expect(gasField(host).value).toBe(gas);
+      expect(warned(host)).toBe(false);
+      expect(host.textContent).toContain("Auto = BeePocket's estimate, 200,000");
+    }
+    typeGas(host, '180000');
+    expect(host.textContent).toContain(BELOW);
+    expect(warned(host)).toBe(true);
+    // Typing the site's own limit again gives it back to the site.
+    typeGas(host, '195000');
+    expect(host.textContent).toContain(SITE_HELP);
+    expect(warned(host)).toBe(false);
+    expect(feeLine(host)).toBe('≈ 0.0039 BZE');
+  });
+
+  it("refuses a new price on a site's limit below the simulated gas", () => {
+    const tooLow: FeeChoice = { ...siteBelowEstimate, amount: '1200', gasLimit: '120000' };
+    const { host } = advancedSheet({ option: tooLow });
+    openAdvanced(host);
+    expect(host.textContent).toContain('https://dex.example set 120,000, below the simulated');
+    fireEvent(priceButton(host, '×2'), 'click');
+    expect(host.textContent).toContain('At least 166,666, the gas the simulation used.');
+    expect(byText(host, 'Done').disabled).toBe(true);
+  });
+
   it('opens straight on Advanced with a prefilled limit ("Raise gas")', () => {
     const { host } = advancedSheet({ prefill: '200000' });
     expect(host.querySelector('h2')?.textContent).toBe('Advanced');

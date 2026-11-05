@@ -62,11 +62,14 @@ export function applyOverride(
     gasPrice: multiplierOf(override.gasPrice),
     spendable,
   });
+  // A new price keeps the site's gas limit the site's: the site simulated with its own margin,
+  // so being under the wallet's estimate is no reason to warn (docs/fees.md §5).
+  const siteGas = option.setBy !== undefined && override.gasLimit === option.gasLimit;
   return {
     fee: { ...option, amount: priced.amount.toString(), gasLimit: override.gasLimit },
     customGas: override.gasLimit !== option.gasLimit,
     gasPrice: override.gasPrice,
-    status: priced.status,
+    status: siteGas && priced.status === 'warn' ? 'ok' : priced.status,
     bounds: priced.bounds,
   };
 }
@@ -185,7 +188,7 @@ export function Advanced(props: AdvancedProps) {
               ? t('send.gas.siteLow', { site, gas: fmt(BigInt(own)), used: fmt(gasUsed) })
               : status === 'warn'
                 ? t('send.gas.warn', { estimate: fmt(bounds.estimate) })
-                : site !== undefined && untouched
+                : site !== undefined && text === own
                   ? t('send.gas.help.site', { site, estimate: fmt(bounds.estimate) })
                   : t('send.gas.help', { estimate: fmt(bounds.estimate), used: fmt(gasUsed) });
   const tone = refused ? 'bad' : status === 'warn' || status === 'site' ? 'warn' : 'plain';

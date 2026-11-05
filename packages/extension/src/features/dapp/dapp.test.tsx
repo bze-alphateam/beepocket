@@ -440,6 +440,179 @@ describe('the sign screen', () => {
     });
   });
 
+  it("keeps a site's gas limit under a new gas price, with no below-estimate warning", async () => {
+    const PRICING = {
+      native: true,
+      nativePrice: { num: '1', den: '100' },
+      rate: { num: '1', den: '100' },
+    };
+    // 195,000 is under the wallet's 200,000 estimate, above the 166,666 simulated.
+    const site = {
+      ...SIGN.fee,
+      amount: '2500',
+      gasLimit: '195000',
+      balance: '100000000',
+      pricing: PRICING,
+      setBy: 'https://dex.getbze.com',
+    };
+    const own = { ...SIGN.fee, balance: '100000000', pricing: PRICING };
+    const t = signRig({ ...SIGN, fee: site, options: [site, own] });
+    await settle();
+    const openSheet = async () => {
+      fireEvent(feeRow(t.host), 'click');
+      await settle();
+      fireEvent(
+        [...document.querySelectorAll('button')].find((b) =>
+          b.getAttribute('aria-label')?.startsWith('Advanced'),
+        ),
+        'click',
+      );
+      await settle();
+    };
+    const price = (text: string) =>
+      [...document.querySelectorAll('.bp-gas-prices button')].find((b) => b.textContent === text);
+    await openSheet();
+    fireEvent(price('×2'), 'click');
+    fireEvent(button(document.body, 'Done'), 'click');
+    await settle();
+    expect(t.host.textContent).not.toContain('below the estimate');
+    // Only the price is custom: no gas limit row, the price row is there.
+    expect(t.host.textContent).not.toContain('195,000 · custom');
+    expect(t.host.textContent).toContain('0.02 ubze/gas · ×2');
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      approve: true,
+      // The site's limit at 0.02 ubze per gas.
+      fee: {
+        denom: 'ubze',
+        amount: '3900',
+        gasLimit: '195000',
+        override: { gasLimit: '195000', gasPrice: 2 },
+      },
+    });
+  });
+
+  it("signs the site's own fee again after the price goes back to the minimum", async () => {
+    const PRICING = {
+      native: true,
+      nativePrice: { num: '1', den: '100' },
+      rate: { num: '1', den: '100' },
+    };
+    const site = {
+      ...SIGN.fee,
+      amount: '2500',
+      gasLimit: '195000',
+      balance: '100000000',
+      pricing: PRICING,
+      setBy: 'https://dex.getbze.com',
+    };
+    const other = {
+      denom: 'uother',
+      amount: '500',
+      gasLimit: '300000',
+      gasUsed: '250000',
+      symbol: 'OTH',
+      decimals: 6,
+      balance: '100000000',
+    };
+    const t = signRig({ ...SIGN, fee: site, options: [site, other] });
+    await settle();
+    const advanced = async () => {
+      fireEvent(feeRow(t.host), 'click');
+      await settle();
+      fireEvent(
+        [...document.querySelectorAll('button')].find((b) =>
+          b.getAttribute('aria-label')?.startsWith('Advanced'),
+        ),
+        'click',
+      );
+      await settle();
+    };
+    const price = (text: string) =>
+      [...document.querySelectorAll('.bp-gas-prices button')].find((b) => b.textContent === text);
+    await advanced();
+    fireEvent(price('×2'), 'click');
+    fireEvent(button(document.body, 'Done'), 'click');
+    await settle();
+    await advanced();
+    fireEvent(price('Minimum'), 'click');
+    fireEvent(button(document.body, 'Done'), 'click');
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    // Exactly the site's 2,500, not 195,000 x 0.01 recomputed.
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      approve: true,
+      fee: { denom: 'ubze', amount: '2500', gasLimit: '195000' },
+    });
+  });
+
+  it('drops the Advanced settings when another fee token is picked', async () => {
+    const PRICING = {
+      native: true,
+      nativePrice: { num: '1', den: '100' },
+      rate: { num: '1', den: '100' },
+    };
+    const site = {
+      ...SIGN.fee,
+      amount: '2500',
+      gasLimit: '195000',
+      balance: '100000000',
+      pricing: PRICING,
+      setBy: 'https://dex.getbze.com',
+    };
+    const t = signRig({
+      ...SIGN,
+      fee: site,
+      options: [
+        site,
+        {
+          denom: 'uother',
+          amount: '500',
+          gasLimit: '300000',
+          gasUsed: '250000',
+          symbol: 'OTH',
+          decimals: 6,
+        },
+      ],
+    });
+    await settle();
+    fireEvent(feeRow(t.host), 'click');
+    await settle();
+    fireEvent(
+      [...document.querySelectorAll('button')].find((b) =>
+        b.getAttribute('aria-label')?.startsWith('Advanced'),
+      ),
+      'click',
+    );
+    await settle();
+    fireEvent(
+      [...document.querySelectorAll('.bp-gas-prices button')].find((b) => b.textContent === '×2'),
+      'click',
+    );
+    fireEvent(button(document.body, 'Done'), 'click');
+    await settle();
+    fireEvent(feeRow(t.host), 'click');
+    await settle();
+    fireEvent(
+      [...document.querySelectorAll('button')].find((b) =>
+        b.getAttribute('aria-label')?.startsWith('OTH'),
+      ),
+      'click',
+    );
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      approve: true,
+      fee: { denom: 'uother', amount: '500', gasLimit: '300000' },
+    });
+  });
+
   it('keeps Reject and Approve usable while Details is open, and closes it', async () => {
     const t = signRig(SIGN);
     await settle();
