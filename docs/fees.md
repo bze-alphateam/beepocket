@@ -110,6 +110,14 @@ Available for sends and site requests, for the selected fee token.
   these.
 - **Refused:** a gas limit outside the range, or a fee the address cannot afford (for a send in
   the fee's own token: the balance less the amount sent).
+- **A site's gas limit stays the site's** until the user picks or types another one. A gas price
+  pick only re-prices it (gas limit × price, rounded up) and replaces the site's fee. It keeps
+  the "Set by <site>" wording and is never warned about for being below the wallet's estimate:
+  the site simulated with its own margin, so a small gap is simulation noise. The only site-limit
+  threshold is the gas the simulation used (section 4); with a new price a limit below it is
+  refused, like any other. The below-estimate warning is for a limit the user picked or typed.
+- Going back to the site's gas limit and the minimum price gives the site's own fee back,
+  exactly as it sent it.
 - Settings that no longer fit after a new simulation reset to the estimate, with a notice.
 
 ## 6. Before signing

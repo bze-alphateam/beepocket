@@ -125,6 +125,13 @@ export function FeeSheet(props: {
   }
   const gas = shown ? formatAmount(BigInt(shown.fee.gasLimit), 0) : '';
   const custom = advanced !== undefined && advanced.applied !== null;
+  // A new price alone leaves a site's gas limit the site's.
+  const siteGas = picked?.setBy !== undefined && shown?.customGas !== true;
+  const hint = siteGas
+    ? t('send.gas.hint.site', { gas })
+    : custom
+      ? t('send.gas.hint.custom', { gas })
+      : t('send.gas.hint', { gas });
   return (
     <Sheet open={props.open} title={t('send.fee.title')} onClose={props.onClose}>
       <div class="bp-send-options">
@@ -167,11 +174,7 @@ export function FeeSheet(props: {
             type="button"
             class="bp-gas-row"
             aria-label={t('send.gas.advanced.label', {
-              hint: custom
-                ? t('send.gas.hint.custom', { gas })
-                : picked.setBy !== undefined
-                  ? t('send.gas.hint.site', { gas })
-                  : t('send.gas.hint', { gas }),
+              hint,
             })}
             onClick={() => {
               setStep('advanced');
@@ -179,12 +182,10 @@ export function FeeSheet(props: {
           >
             <Icon name="sliders" size={16} />
             <span class="bp-gas-row-title">{t('send.gas.advanced')}</span>
-            <span class={custom ? 'bp-gas-row-hint bp-gas-row-custom' : 'bp-gas-row-hint'}>
-              {custom
-                ? t('send.gas.hint.custom', { gas })
-                : picked.setBy !== undefined
-                  ? t('send.gas.hint.site', { gas })
-                  : t('send.gas.hint', { gas })}
+            <span
+              class={custom && !siteGas ? 'bp-gas-row-hint bp-gas-row-custom' : 'bp-gas-row-hint'}
+            >
+              {hint}
             </span>
             <Icon name="chevron-right" size={16} />
           </button>
