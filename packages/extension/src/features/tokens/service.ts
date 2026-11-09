@@ -1,5 +1,6 @@
 import {
   InvalidDenomError,
+  isLpDenom,
   LP_DECIMALS,
   NATIVE_DENOM,
   type TokenResolver,
@@ -70,6 +71,8 @@ export class TokenService {
 
   async lookup(code: string): Promise<Result<TokenInfo>> {
     try {
+      // LP shares are a by-product of providing liquidity, not a token the wallet manages.
+      if (isLpDenom(code)) return noSuchToken();
       if (code !== NATIVE_DENOM && !(await this.resolver.tokenCodeExists(code))) {
         return noSuchToken();
       }
@@ -81,13 +84,18 @@ export class TokenService {
   }
 
   async preferred(): Promise<Result<ListedToken[]>> {
-    return ok(await this.resolveAll(await this.deps.preferred.get(this.deps.network)));
+    return ok(await this.resolveAll(await this.savedTokens()));
+  }
+
+  /** The saved list without LP shares (older wallets may still hold some). */
+  private async savedTokens(): Promise<string[]> {
+    return (await this.deps.preferred.get(this.deps.network)).filter((d) => !isLpDenom(d));
   }
 
   async add(denom: string): Promise<Result<ListedToken[]>> {
     const found = await this.lookup(denom);
     if (!found.ok) return found;
-    const current = await this.deps.preferred.get(this.deps.network);
+    const current = await this.savedTokens();
     if (!current.includes(denom)) {
       const saved = await this.deps.preferred.set(this.deps.network, [...current, denom]);
       if (!saved.ok) return saved;
@@ -96,7 +104,7 @@ export class TokenService {
   }
 
   async remove(denom: string): Promise<Result<ListedToken[]>> {
-    const current = await this.deps.preferred.get(this.deps.network);
+    const current = await this.savedTokens();
     if (!current.includes(denom)) return this.preferred();
     if (current.length === 1) {
       return fail(TokenErrorCodes.lastToken, 'At least one token must stay in the list.');
@@ -122,7 +130,7 @@ export class TokenService {
         continue;
       }
       for (const [denom, amount] of Object.entries(entry.balances)) {
-        if (BigInt(amount) > 0n) held.add(denom);
+        if (BigInt(amount) > 0n && !isLpDenom(denom)) held.add(denom);
       }
     }
     const tokens = await this.resolveAll([...held]);
@@ -234,7 +242,7 @@ function kindOf(denom: string): TokenInfo['kind'] {
   if (denom === NATIVE_DENOM) return 'native';
   if (denom.startsWith('factory/')) return 'factory';
   if (denom.startsWith('ibc/')) return 'ibc';
-  if (denom.startsWith('ulp/') || denom.startsWith('ulp_')) return 'lp';
+  if (isLpDenom(denom)) return 'lp';
   return 'other';
 }
 

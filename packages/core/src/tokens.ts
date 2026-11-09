@@ -58,11 +58,16 @@ const TIMED_OUT = Symbol('timed out');
 /** How long Scan is not asked again for a logo after it failed to answer. */
 const LOGO_RETRY_MS = 60_000;
 
+/** Tradebin pool shares (`ulp/…`, `ulp_…`). */
+export function isLpDenom(denom: string): boolean {
+  return denom.startsWith('ulp/') || denom.startsWith('ulp_');
+}
+
 function kindOf(denom: string): TokenKind {
   if (denom === NATIVE_DENOM) return 'native';
   if (denom.startsWith('factory/')) return 'factory';
   if (denom.startsWith('ibc/')) return 'ibc';
-  if (denom.startsWith('ulp/') || denom.startsWith('ulp_')) return 'lp';
+  if (isLpDenom(denom)) return 'lp';
   return 'other';
 }
 

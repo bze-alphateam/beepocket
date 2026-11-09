@@ -22,6 +22,9 @@ import type { PreferredTokensStore, WalletAddress, WalletAddresses } from './por
 import { ok, WalletErrorCodes, type TokenSearch } from '../../protocol';
 
 const FACTORY = 'factory/bze1abc/gold';
+const LP_SLASH = 'ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209';
+const LP_UNDERSCORE =
+  'ulp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze';
 const IBC = 'ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2';
 const BRANDING: DenomBranding = {
   font: 'inter',
@@ -311,6 +314,36 @@ describe('preferred tokens', () => {
     expect(t.prefs.get('mainnet')).toEqual([FACTORY]);
   });
 
+  it('hides saved LP shares and keeps the order of the rest', async () => {
+    const t = setup({ preferred: [LP_SLASH, FACTORY, LP_UNDERSCORE, 'ubze'] });
+    const r = await t.call<TokenInfo[]>('tokens.preferred');
+    expect(r.ok && r.value.map((x) => x.denom)).toEqual([FACTORY, 'ubze']);
+  });
+
+  it('shows an empty list, like a wallet with no picks, when only LP shares were saved', async () => {
+    const t = setup({ preferred: [LP_SLASH, LP_UNDERSCORE] });
+    expect(await t.call('tokens.preferred')).toEqual({ ok: true, value: [] });
+  });
+
+  it('refuses to add LP shares like an unknown token', async () => {
+    const t = setup({ preferred: ['ubze'] });
+    for (const denom of [LP_SLASH, LP_UNDERSCORE]) {
+      expect(await t.call('tokens.add', { denom })).toMatchObject({
+        ok: false,
+        error: { code: 'no-such-token' },
+      });
+    }
+    expect(t.prefs.get('mainnet')).toEqual(['ubze']);
+  });
+
+  it('counts only visible tokens for the last-token guard', async () => {
+    const t = setup({ preferred: [LP_SLASH, 'ubze'] });
+    expect(await t.call('tokens.remove', { denom: 'ubze' })).toMatchObject({
+      ok: false,
+      error: { code: 'last-token' },
+    });
+  });
+
   it('keeps the lists of the two networks apart', async () => {
     const t = setup({ preferred: ['ubze'] });
     t.useNetwork('testnet');
@@ -482,6 +515,19 @@ describe('tokens.search', () => {
   it('offers ubze alone before any address exists', async () => {
     const r = await setup().call<TokenSearch>('tokens.search', { query: '' });
     expect(r.ok && r.value.tokens.map((x) => x.denom)).toEqual(['ubze']);
+  });
+
+  it('never offers LP shares, even held ones', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.balances.bze1a = new Map([
+      [LP_SLASH, 5n],
+      [LP_UNDERSCORE, 9n],
+      [FACTORY, 7n],
+    ]);
+    const r = await t.call<TokenSearch>('tokens.search', { query: '' });
+    expect(r.ok && r.value.tokens.map((x) => x.denom).sort()).toEqual(['ubze', FACTORY].sort());
+    const byDenom = await t.call<TokenSearch>('tokens.search', { query: 'ulp' });
+    expect(byDenom.ok && byDenom.value.tokens).toEqual([]);
   });
 
   it('matches symbol, name and denom case-insensitively over held tokens', async () => {
@@ -692,13 +738,11 @@ describe('wired to the wallet profile', () => {
 
 describe('tokens.lookup through the real REST and Scan clients', () => {
   // What mainnet answered for one denom of each kind but factory (covered above): an IBC token,
-  // a pool's LP shares, and an LP denom whose pool pairs an IBC token with ubze.
+  // a pool's LP shares and an LP denom whose pool pairs an IBC token with ubze (both refused).
   const recorded = JSON.parse(
     readFileSync(join(import.meta.dirname, '../../../test/fixtures/token-codes.json'), 'utf8'),
   ) as { responses: Record<string, { status: number; body: unknown }> };
   const SHERPA = 'ibc/02EE50AB3A4B7540FA001B24CB75E688016F65547CABE885EA184338440080B2';
-  const LP = 'ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209';
-  const LP_IBC = 'ulp_ibc/82931180F0962712BFABB189083A94C77EA90E269ABFC6D310AF922B2B14E011_ubze';
 
   function setupLive() {
     const network = NETWORKS.mainnet;
@@ -778,12 +822,10 @@ describe('tokens.lookup through the real REST and Scan clients', () => {
     });
   });
 
-  it.each([LP, LP_IBC])('finds LP shares by their code (%s)', async (denom) => {
-    const r = await setupLive().lookup(denom);
-    // Bank metadata says 6 decimals for LP shares; Scan's registry says 12, which is right.
-    expect(r).toMatchObject({
-      ok: true,
-      value: { denom, kind: 'lp', decimals: 12, source: 'scan' },
+  it.each([LP_SLASH, LP_UNDERSCORE])('refuses LP shares by their code (%s)', async (denom) => {
+    expect(await setupLive().lookup(denom)).toMatchObject({
+      ok: false,
+      error: { code: 'no-such-token' },
     });
   });
 
