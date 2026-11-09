@@ -342,6 +342,13 @@ const text = (host: HTMLElement) => host.textContent;
 const click = (el: Element | null) => {
   fireEvent(el, 'click');
 };
+/** Settings › Configuration › Advanced, where the Testnet switch lives. */
+const openAdvanced = async (s: { host: HTMLElement; tick: () => Promise<void> }) => {
+  for (const name of [/^Configuration/, /^Advanced/]) {
+    click([...s.host.querySelectorAll('button')].find((b) => name.test(b.textContent)) ?? null);
+    await s.tick();
+  }
+};
 const balanceCalls = (calls: { method: string }[]) =>
   calls.filter((c) => c.method === 'tokens.balances').length;
 
@@ -562,11 +569,12 @@ describe('header', () => {
     expect(byLabel(two.host, 'Switch token, current BZE')).not.toBeNull();
   });
 
-  it('shows the testnet pill, the appearance and settings buttons, and no lock button', async () => {
+  it('shows the testnet pill and the settings button, and no appearance or lock button', async () => {
     const s = setup({ network: 'testnet' });
     await s.tick();
     expect(text(s.host)).toContain('Testnet');
-    expect(byLabel(s.host, 'Switch to light mode')).not.toBeNull();
+    expect(byLabel(s.host, 'Switch to light mode')).toBeNull();
+    expect(byLabel(s.host, 'Settings')).not.toBeNull();
     expect(byLabel(s.host, 'Lock wallet')).toBeNull();
     click(byLabel(s.host, 'Settings'));
     await s.tick();
@@ -582,6 +590,7 @@ describe('header', () => {
     expect(s.host.querySelector('.bp-pill')).toBeNull();
     click(byLabel(s.host, 'Settings'));
     await s.tick();
+    await openAdvanced(s);
     const testnet = [...s.host.querySelectorAll('[role="switch"]')].find((x) =>
       x.textContent.includes('Testnet'),
     );
@@ -811,6 +820,7 @@ describe('balances while reading', () => {
     const release = s.hold('tokens.balances');
     click(byLabel(s.host, 'Settings'));
     await s.tick();
+    await openAdvanced(s);
     click(
       [...s.host.querySelectorAll('[role="switch"]')].find((x) =>
         x.textContent.includes('Testnet'),

@@ -28,6 +28,8 @@ export interface SettingsSheetProps {
   onClose: () => void;
   /** Something Home shows changed (network, brand themes): Home reads its data again. */
   onChanged: () => void;
+  /** The level to open at: Configuration when coming back from Connected sites. */
+  initialPanel?: 'main' | 'configuration';
 }
 
 /** What the rows show; read each time the sheet opens. */
@@ -39,7 +41,19 @@ interface Data {
   sites: number;
 }
 
-type Panel = 'main' | 'timers' | 'book' | 'reveal';
+/** Where in the tree the sheet is; closing a level goes to its parent (`PARENT`). */
+type Panel =
+  'main' | 'configuration' | 'appearance' | 'security' | 'advanced' | 'timers' | 'book' | 'reveal';
+
+const PARENT: Record<Exclude<Panel, 'main'>, Panel> = {
+  configuration: 'main',
+  appearance: 'configuration',
+  security: 'configuration',
+  advanced: 'configuration',
+  timers: 'security',
+  reveal: 'security',
+  book: 'main',
+};
 
 const APPEARANCES: readonly { value: Appearance; label: string }[] = [
   { value: 'dark', label: t('settings.appearance.dark') },
@@ -92,17 +106,18 @@ function LockRow(props: {
 }
 
 /**
- * Settings, a sheet over Home (`W-Settings`). Rows that open something else replace this sheet
- * with theirs (lock timers, address book, recovery phrase) and come back to it on close; only
- * one sheet is ever open. Closing the whole thing drops the phrase with the reveal sheet.
+ * Settings, a sheet over Home (`W-Settings`): Manage tokens, Configuration (Appearance, Connected
+ * sites, Security, Advanced), Address book and Lock wallet. Each level opens as its own sheet,
+ * only one at a time, and closing it goes back exactly one level. Closing the whole thing drops
+ * the phrase with the reveal sheet.
  */
-export function SettingsSheet({ open, onClose, onChanged }: SettingsSheetProps) {
+export function SettingsSheet({ open, onClose, onChanged, initialPanel }: SettingsSheetProps) {
   const client = useClient();
   const env = useSettingsEnv();
   const appearanceState = useAppearance();
   const lockWallet = useLock();
   const { navigate } = useRoute<RouteBase>();
-  const [panel, setPanel] = useState<Panel>('main');
+  const [panel, setPanel] = useState<Panel>(initialPanel ?? 'main');
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,70 +199,65 @@ export function SettingsSheet({ open, onClose, onChanged }: SettingsSheetProps) 
     void load();
   };
 
+  const back = (from: Exclude<Panel, 'main'>) => () => {
+    setPanel(PARENT[from]);
+  };
+
   if (panel === 'book') {
     return (
-      <AddressBookSheet
-        open
-        mode="manage"
-        onClose={() => {
-          setPanel('main');
-        }}
-        onChanged={() => void load()}
-      />
+      <AddressBookSheet open mode="manage" onClose={back('book')} onChanged={() => void load()} />
     );
   }
-  if (panel === 'reveal') {
-    return (
-      <RevealPhrase
-        onClose={() => {
-          setPanel('main');
-        }}
-      />
-    );
-  }
+  if (panel === 'reveal') return <RevealPhrase onClose={back('reveal')} />;
 
   const banner = error !== null && <Banner tone="red">{error}</Banner>;
 
-  if (panel === 'timers' && data) {
-    return (
-      <Sheet
-        open
-        title={t('settings.timers')}
-        onClose={() => {
-          setPanel('main');
-        }}
-      >
+  /** A nested level: its own sheet, the error banner on top, one step back on close. */
+  const level = (
+    from: Exclude<Panel, 'main' | 'book' | 'reveal'>,
+    title: string,
+    content: (d: Data) => ComponentChildren,
+  ) => (
+    <Sheet open title={title} onClose={back(from)}>
+      {failed ? (
+        <Banner tone="red">{t('settings.loadFailed')}</Banner>
+      ) : !data ? (
+        <Spinner />
+      ) : (
         <div class="bp-settings-list">
           {banner}
-          <LockRow
-            title={t('settings.weakLock')}
-            sub={t('settings.weakLock.hint')}
-            value={data.settings.weakLockMinutes}
-            onChange={(n) => {
-              setLockTime('weakLockMinutes', n);
-            }}
-          />
-          <LockRow
-            title={t('settings.fullLock')}
-            sub={t('settings.fullLock.hint')}
-            value={data.settings.fullLockMinutes}
-            onChange={(n) => {
-              setLockTime('fullLockMinutes', n);
-            }}
-          />
+          {content(data)}
         </div>
-      </Sheet>
-    );
+      )}
+    </Sheet>
+  );
+
+  if (panel === 'timers') {
+    return level('timers', t('settings.timers'), (d) => (
+      <>
+        <LockRow
+          title={t('settings.weakLock')}
+          sub={t('settings.weakLock.hint')}
+          value={d.settings.weakLockMinutes}
+          onChange={(n) => {
+            setLockTime('weakLockMinutes', n);
+          }}
+        />
+        <LockRow
+          title={t('settings.fullLock')}
+          sub={t('settings.fullLock.hint')}
+          value={d.settings.fullLockMinutes}
+          onChange={(n) => {
+            setLockTime('fullLockMinutes', n);
+          }}
+        />
+      </>
+    ));
   }
 
-  let body;
-  if (failed) body = <Banner tone="red">{t('settings.loadFailed')}</Banner>;
-  else if (!data) body = <Spinner />;
-  else {
-    const { settings } = data;
-    body = (
-      <div class="bp-settings-list">
-        {banner}
+  if (panel === 'appearance') {
+    return level('appearance', t('settings.appearance'), (d) => (
+      <>
         <SettingsRow title={t('settings.appearance')}>
           <Segmented
             kind="radio"
@@ -263,41 +273,23 @@ export function SettingsSheet({ open, onClose, onChanged }: SettingsSheetProps) 
         <Toggle
           title={t('settings.brandThemes')}
           description={t('settings.brandThemes.hint')}
-          checked={settings.brandThemes}
+          checked={d.settings.brandThemes}
           onChange={(on) => {
-            setData({ ...data, settings: { ...settings, brandThemes: on } });
+            setData({ ...d, settings: { ...d.settings, brandThemes: on } });
             void save({ brandThemes: on });
           }}
         />
-        <SettingsRow
-          icon="grid"
-          title={t('settings.tokens')}
-          value={String(data.tokens)}
-          onClick={() => {
-            navigate({ name: 'settings.pickTokens' });
-          }}
-        />
-        <SettingsRow
-          icon="book"
-          title={t('settings.addressBook')}
-          value={String(data.contacts)}
-          onClick={() => {
-            setPanel('book');
-          }}
-        />
-        <SettingsRow
-          icon="link"
-          title={t('sites.row')}
-          value={String(data.sites)}
-          label={t('sites.row.count', { count: data.sites })}
-          onClick={() => {
-            navigate({ name: 'dapp.sites' });
-          }}
-        />
+      </>
+    ));
+  }
+
+  if (panel === 'security') {
+    return level('security', t('settings.security'), (d) => (
+      <>
         <SettingsRow
           icon="clock"
           title={t('settings.timers')}
-          value={`${minutesLabel(settings.weakLockMinutes)} · ${minutesLabel(settings.fullLockMinutes)}`}
+          value={`${minutesLabel(d.settings.weakLockMinutes)} · ${minutesLabel(d.settings.fullLockMinutes)}`}
           onClick={() => {
             setPanel('timers');
           }}
@@ -311,12 +303,88 @@ export function SettingsSheet({ open, onClose, onChanged }: SettingsSheetProps) 
             setPanel('reveal');
           }}
         />
-        <Toggle
-          title={t('settings.testnet')}
-          description={t('settings.testnet.hint')}
-          checked={data.network === 'testnet'}
-          onChange={(on) => {
-            void toggleNetwork(on);
+      </>
+    ));
+  }
+
+  if (panel === 'advanced') {
+    return level('advanced', t('settings.advanced'), (d) => (
+      <Toggle
+        title={t('settings.testnet')}
+        description={t('settings.testnet.hint')}
+        checked={d.network === 'testnet'}
+        onChange={(on) => {
+          void toggleNetwork(on);
+        }}
+      />
+    ));
+  }
+
+  if (panel === 'configuration') {
+    return level('configuration', t('settings.configuration'), (d) => (
+      <>
+        <SettingsRow
+          icon="sun"
+          title={t('settings.appearance')}
+          onClick={() => {
+            setPanel('appearance');
+          }}
+        />
+        <SettingsRow
+          icon="link"
+          title={t('sites.row')}
+          value={String(d.sites)}
+          label={t('sites.row.count', { count: d.sites })}
+          onClick={() => {
+            navigate({ name: 'dapp.sites' });
+          }}
+        />
+        <SettingsRow
+          icon="shield"
+          title={t('settings.security')}
+          onClick={() => {
+            setPanel('security');
+          }}
+        />
+        <SettingsRow
+          icon="code"
+          title={t('settings.advanced')}
+          onClick={() => {
+            setPanel('advanced');
+          }}
+        />
+      </>
+    ));
+  }
+
+  let body;
+  if (failed) body = <Banner tone="red">{t('settings.loadFailed')}</Banner>;
+  else if (!data) body = <Spinner />;
+  else {
+    body = (
+      <div class="bp-settings-list">
+        {banner}
+        <SettingsRow
+          icon="grid"
+          title={t('settings.tokens')}
+          value={String(data.tokens)}
+          onClick={() => {
+            navigate({ name: 'settings.pickTokens' });
+          }}
+        />
+        <SettingsRow
+          icon="sliders"
+          title={t('settings.configuration')}
+          onClick={() => {
+            setPanel('configuration');
+          }}
+        />
+        <SettingsRow
+          icon="book"
+          title={t('settings.addressBook')}
+          value={String(data.contacts)}
+          onClick={() => {
+            setPanel('book');
           }}
         />
         <SettingsRow

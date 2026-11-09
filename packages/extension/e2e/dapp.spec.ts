@@ -189,6 +189,7 @@ test('Settings › Connected sites: Change pushes accountChanged, Disconnect mak
     const settings = await context.newPage();
     await settings.goto(`chrome-extension://${extensionId}/popup.html`);
     await settings.getByRole('button', { name: 'Settings' }).click();
+    await settings.getByRole('button', { name: /^Configuration/ }).click();
     await settings.getByRole('button', { name: /Connected sites · 1/ }).click();
     // One compact row: the whole origin, the address it sees, the browser's icon for the site.
     await expect(settings.getByText('Mainnet · 1')).toBeVisible();

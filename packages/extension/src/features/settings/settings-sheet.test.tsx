@@ -288,28 +288,30 @@ async function opened(client?: FakeClient) {
   return r;
 }
 
+type Rig = Awaited<ReturnType<typeof opened>>;
+
+/** Taps the rows in turn, each one a level deeper (or a route away). */
+async function go(r: Rig, ...rows: (string | RegExp)[]) {
+  for (const row of rows) {
+    fireEvent(must(r.button(row)), 'click');
+    await flush();
+  }
+}
+
+const CONFIGURATION = /^Configuration/;
+const APPEARANCE = /^Appearance/;
+const SECURITY = /^Security/;
+const ADVANCED = /^Advanced/;
+const label = (r: Rig) => r.dialogs().map((d) => d.getAttribute('aria-label'));
+const titles = (host: HTMLElement) =>
+  [...host.querySelectorAll('.bp-settings-row-title, .bp-toggle-title')].map((e) => e.textContent);
+
 describe('Settings sheet', () => {
-  it('lists the rows in order, with the counts and the footer', async () => {
+  it('lists the top level in order, with the counts and the footer', async () => {
     const { host, dialogs } = await opened();
     expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
-    const rows = [...host.querySelectorAll('.bp-settings-row-title, .bp-toggle-title')].map(
-      (r) => r.textContent,
-    );
-    expect(rows).toEqual([
-      'Appearance',
-      'Theme follows token',
-      'Preferred tokens',
-      'Address book',
-      'Connected sites',
-      'Lock timers',
-      'Show recovery phrase',
-      'Testnet',
-      'Lock wallet',
-    ]);
+    expect(titles(host)).toEqual(['Manage tokens', 'Configuration', 'Address book', 'Lock wallet']);
     const text = host.textContent;
-    expect(text).toContain("Use each token's brand kit colours");
-    expect(text).toContain('15 min · 1 h');
-    expect(text).toContain('Password needed');
     expect(text).toContain('BeePocket 1.2.3 · beezee-1');
     // The footer logo stays BeePocket green whatever token kit is active.
     const stops = [...host.querySelectorAll('.bp-settings-footer .bp-logo stop')];
@@ -319,8 +321,54 @@ describe('Settings sheet', () => {
       '#3DD07A',
       '#1E9150',
     ]);
-    expect(host.querySelector('[aria-label="Connected sites · 2"]')).not.toBeNull();
+    const values = [...host.querySelectorAll('.bp-settings-row')].map((r) => r.textContent);
+    expect(values[0]).toContain('2');
+    expect(values[2]).toContain('1');
     expect(host.querySelector('input[type="checkbox"], select')).toBeNull();
+  });
+
+  it('Configuration lists Appearance, Connected sites, Security and Advanced in order', async () => {
+    const r = await opened();
+    await go(r, CONFIGURATION);
+    expect(label(r)).toEqual(['Configuration']);
+    expect(titles(r.host)).toEqual(['Appearance', 'Connected sites', 'Security', 'Advanced']);
+    expect(r.host.querySelector('[aria-label="Connected sites · 2"]')).not.toBeNull();
+  });
+
+  it('every level closes to its parent, one step at a time', async () => {
+    const r = await opened();
+    await go(r, CONFIGURATION, SECURITY, /^Lock timers/);
+    expect(label(r)).toEqual(['Lock timers']);
+    r.key('Escape');
+    await flush();
+    expect(label(r)).toEqual(['Security']);
+    expect(titles(r.host)).toEqual(['Lock timers', 'Show recovery phrase']);
+    expect(r.host.textContent).toContain('15 min · 1 h');
+    expect(r.host.textContent).toContain('Password needed');
+    await go(r, /^Show recovery phrase/);
+    expect(label(r)).toEqual(['Recovery phrase']);
+    r.key('Escape');
+    await flush();
+    expect(label(r)).toEqual(['Security']);
+    r.key('Escape');
+    await flush();
+    expect(label(r)).toEqual(['Configuration']);
+    await go(r, APPEARANCE);
+    expect(label(r)).toEqual(['Appearance']);
+    r.key('Escape');
+    await flush();
+    expect(label(r)).toEqual(['Configuration']);
+    await go(r, ADVANCED);
+    expect(label(r)).toEqual(['Advanced']);
+    r.key('Escape');
+    await flush();
+    expect(label(r)).toEqual(['Configuration']);
+    r.key('Escape');
+    await flush();
+    expect(label(r)).toEqual(['Settings']);
+    r.key('Escape');
+    await flush();
+    expect(label(r)).toEqual([]);
   });
 
   it('closes on Escape, on the backdrop and on the ×', async () => {
@@ -338,7 +386,9 @@ describe('Settings sheet', () => {
   });
 
   it('the appearance control saves each pick and keeps System picked', async () => {
-    const { host, appearance, saved } = await opened();
+    const r = await opened();
+    await go(r, CONFIGURATION, APPEARANCE);
+    const { host, appearance, saved } = r;
     const radio = (name: string) =>
       must(
         [...host.querySelectorAll('[role="radiogroup"] [role="radio"]')].find(
@@ -357,7 +407,9 @@ describe('Settings sheet', () => {
   });
 
   it('saves Theme follows token and tells Home to reload', async () => {
-    const { client, changed, host } = await opened();
+    const r = await opened();
+    await go(r, CONFIGURATION, APPEARANCE);
+    const { client, changed, host } = r;
     const sw = must(
       [...host.querySelectorAll('[role="switch"]')].find((s) =>
         s.textContent.includes('Theme follows token'),
@@ -376,7 +428,9 @@ describe('Settings sheet', () => {
       method === 'settings.set'
         ? Promise.resolve(fail(WalletErrorCodes.needsPassword, 'locked'))
         : orig(method, request))(client.call.bind(client));
-    const { host, changed } = await opened(client);
+    const r = await opened(client);
+    await go(r, CONFIGURATION, APPEARANCE);
+    const { host, changed } = r;
     const sw = () =>
       must(
         [...host.querySelectorAll('[role="switch"]')].find((s) =>
@@ -399,13 +453,14 @@ describe('Settings sheet', () => {
     expect(host.textContent).toBe('at:lock.unlock');
   });
 
-  it('Preferred tokens and Connected sites open their screens', async () => {
+  it('Manage tokens and Connected sites open their screens', async () => {
     const first = await opened();
-    fireEvent(first.button(/^Preferred tokens/), 'click');
+    fireEvent(first.button(/^Manage tokens/), 'click');
     await flush();
-    expect(first.host.querySelector('.bp-screen-title')?.textContent).toBe('Preferred tokens');
+    expect(first.host.querySelector('.bp-screen-title')?.textContent).toBe('Manage tokens');
     cleanup();
     const second = await opened();
+    await go(second, CONFIGURATION);
     fireEvent(second.button('Connected sites · 2'), 'click');
     expect(second.host.textContent).toBe('at:dapp.sites');
   });
@@ -439,21 +494,44 @@ describe('Settings sheet', () => {
           s.textContent.includes('Testnet'),
         ),
       );
+    const openAdvanced = async (client?: FakeClient) => {
+      const r = await opened(client);
+      await go(r, CONFIGURATION, ADVANCED);
+      return r;
+    };
 
     it('switches the network, shows it at once, keeps the sheet and tells Home', async () => {
-      const { client, changed, host } = await opened();
+      const { client, changed, host, key } = await openAdvanced();
+      expect(titles(host)).toEqual(['Testnet']);
       fireEvent(toggle(host), 'click');
       expect(toggle(host).getAttribute('aria-checked')).toBe('true');
       await flush();
       expect(client.saw('network.set')).toEqual([{ id: 'testnet' }]);
       expect(changed).toHaveBeenCalledOnce();
+      key('Escape');
+      key('Escape');
+      await flush();
       expect(host.textContent).toContain('BeePocket 1.2.3 · bzetestnet-3');
+    });
+
+    it('puts the switch back and shows the banner here when the network is refused', async () => {
+      const client = new FakeClient();
+      client.call = ((orig) => (method: Method, request: unknown) =>
+        method === 'network.set'
+          ? Promise.resolve(fail('unexpected', 'no'))
+          : orig(method, request))(client.call.bind(client));
+      const { host, changed } = await openAdvanced(client);
+      fireEvent(toggle(host), 'click');
+      await flush();
+      expect(toggle(host).getAttribute('aria-checked')).toBe('false');
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain('could not be saved');
+      expect(changed).not.toHaveBeenCalled();
     });
 
     it('lands on pick tokens when the network has none', async () => {
       const client = new FakeClient();
       client.preferred.testnet = [];
-      const { host, changed } = await opened(client);
+      const { host, changed } = await openAdvanced(client);
       fireEvent(toggle(host), 'click');
       await flush();
       await flush();
@@ -466,7 +544,7 @@ describe('Settings sheet', () => {
   describe('lock timers', () => {
     const openTimers = async () => {
       const r = await opened();
-      fireEvent(r.button(/^Lock timers/), 'click');
+      await go(r, CONFIGURATION, SECURITY, /^Lock timers/);
       return r;
     };
     const pick = async (r: Awaited<ReturnType<typeof opened>>, row: string, choice: string) => {
@@ -478,14 +556,14 @@ describe('Settings sheet', () => {
       await flush();
     };
 
-    it('replaces the Settings sheet with the two lock times', async () => {
+    it('replaces the Security sheet with the two lock times', async () => {
       const r = await openTimers();
       expect(r.dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Lock timers']);
       expect(r.host.textContent).toContain('Lock sending after');
       expect(r.host.textContent).toContain('Lock wallet after');
     });
 
-    it('saves both keys and shows them on the Settings row', async () => {
+    it('saves both keys and shows them on the Security row', async () => {
       const r = await openTimers();
       await pick(r, 'Lock sending after', '5 min');
       await pick(r, 'Lock wallet after', '2 h');
@@ -494,6 +572,8 @@ describe('Settings sheet', () => {
         { fullLockMinutes: 120 },
       ]);
       r.key('Escape');
+      await flush();
+      expect(label(r)).toEqual(['Security']);
       expect(r.host.textContent).toContain('5 min · 2 h');
     });
 
@@ -535,8 +615,9 @@ describe('Settings sheet', () => {
       const client = new FakeClient();
       client.settings = { ...client.settings, weakLockMinutes: 7 };
       const r = await opened(client);
+      await go(r, CONFIGURATION, SECURITY);
       expect(r.host.textContent).toContain('7 min · 1 h');
-      fireEvent(r.button(/^Lock timers/), 'click');
+      await go(r, /^Lock timers/);
       await pick(r, 'Lock sending after', '7 min');
       expect(client.saw('settings.set')).toEqual([]);
     });
@@ -546,7 +627,7 @@ describe('Settings sheet', () => {
 describe('Show recovery phrase', () => {
   const openReveal = async (client = new FakeClient()) => {
     const r = await opened(client);
-    fireEvent(r.button(/^Show recovery phrase/), 'click');
+    await go(r, CONFIGURATION, SECURITY, /^Show recovery phrase/);
     return r;
   };
   const submit = async (host: HTMLElement, password: string) => {
@@ -600,7 +681,7 @@ describe('Show recovery phrase', () => {
       close(r);
       await flush();
       expect(r.host.textContent).not.toContain('abandon');
-      expect(r.dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
+      expect(label(r)).toEqual(['Security']);
       fireEvent(r.button(/^Show recovery phrase/), 'click');
       expect(r.host.querySelector('input[type="password"]')).not.toBeNull();
       expect(r.host.textContent).not.toContain('abandon');
@@ -611,14 +692,15 @@ describe('Show recovery phrase', () => {
     const r = await openReveal();
     await submit(r.host, 'pw');
     fireEvent(r.button(/^Reveal phrase/), 'click');
-    // Back to Settings, then Settings closes: nothing of the phrase is left anywhere.
-    r.key('Escape');
-    r.key('Escape');
-    await flush();
+    // Up through Security, Configuration and Settings: nothing of the phrase is left anywhere.
+    for (let i = 0; i < 4; i++) {
+      r.key('Escape');
+      await flush();
+    }
     expect(r.dialogs()).toHaveLength(0);
     fireEvent(r.button('Open settings'), 'click');
     await flush();
-    fireEvent(r.button(/^Show recovery phrase/), 'click');
+    await go(r, CONFIGURATION, SECURITY, /^Show recovery phrase/);
     expect(r.host.querySelector('input[type="password"]')).not.toBeNull();
   });
 
@@ -670,7 +752,7 @@ describe('Show recovery phrase', () => {
   });
 });
 
-describe('Preferred tokens', () => {
+describe('Manage tokens', () => {
   let scheduler = new FakeScheduler();
   let clipboard = '';
   let readText = () => Promise.resolve(clipboard);
@@ -736,7 +818,7 @@ describe('Preferred tokens', () => {
     const client = new FakeClient();
     client.preferred.mainnet = ['ubze'];
     const host = await openPick(client);
-    expect(host.textContent).toContain('Preferred tokens');
+    expect(host.textContent).toContain('Manage tokens');
     expect(row(host, 'BZE').getAttribute('aria-checked')).toBe('true');
     expect(row(host, 'PAGE').getAttribute('aria-checked')).toBe('false');
     fireEvent(row(host, 'PAGE'), 'click');

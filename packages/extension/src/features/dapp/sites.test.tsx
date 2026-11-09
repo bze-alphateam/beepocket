@@ -30,7 +30,10 @@ function rig(handlers: Partial<Record<Method, Handler>>, icons?: SiteIcons) {
   });
   const screen = (
     <Router
-      table={{ here: ConnectedSitesScreen, 'settings.main': () => <p>settings</p> }}
+      table={{
+        here: ConnectedSitesScreen,
+        'settings.configuration': () => <p>configuration</p>,
+      }}
       initial={{ name: 'here' }}
     />
   );
@@ -67,6 +70,14 @@ describe('Connected sites', () => {
     // No intro paragraph, no date, no "Sees" caption: the row says it all.
     expect(t.host.textContent).not.toContain('Each site sees');
     expect(t.host.textContent).not.toMatch(/Connected (\d|[A-Z][a-z]{2} )/);
+  });
+
+  it('goes back to Settings on the Configuration level', async () => {
+    const t = rig({ 'sites.list': () => listing([SITE]) });
+    await settle();
+    fireEvent(button(t.host, 'Back to settings'), 'click');
+    await settle();
+    expect(t.host.textContent).toBe('configuration');
   });
 
   it('shows a long domain whole, never cut', async () => {

@@ -3,7 +3,7 @@ import { startDappServer } from '../e2e/mock-server';
 import { expect, openPopup, PAGE, PASSWORD, reload, seedWallet, shot, test } from './support';
 
 // The Settings sheet over Home and what it opens: lock timers, address book, recovery phrase,
-// preferred tokens, the testnet landing and Connected sites (W-Settings, W-Sites*, W-Light-*).
+// manage tokens, the testnet landing and Connected sites (W-Settings, W-Sites*, W-Light-*).
 
 const sheet = (page: Page, name: string) => page.getByRole('dialog', { name });
 
@@ -48,6 +48,12 @@ test('settings sheet, lock timers, address book, recovery phrase', async ({
     });
   await shot(page, 'settings-sheet-end');
 
+  await page.getByRole('button', { name: /^Configuration/ }).click();
+  await expect(sheet(page, 'Configuration')).toBeVisible();
+  await shot(page, 'settings-configuration');
+  await page.getByRole('button', { name: /^Security/ }).click();
+  await expect(sheet(page, 'Security')).toBeVisible();
+  await shot(page, 'settings-security');
   await page.getByRole('button', { name: /^Lock timers/ }).click();
   await expect(sheet(page, 'Lock timers')).toBeVisible();
   await shot(page, 'settings-timers');
@@ -55,11 +61,6 @@ test('settings sheet, lock timers, address book, recovery phrase', async ({
   await expect(sheet(page, 'Lock sending after')).toBeVisible();
   await shot(page, 'settings-timers-pick');
   await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
-
-  await page.getByRole('button', { name: /^Address book/ }).click();
-  await expect(sheet(page, 'Address book').getByText('Alex')).toBeVisible();
-  await shot(page, 'settings-book');
   await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: /^Show recovery phrase/ }).click();
@@ -73,8 +74,17 @@ test('settings sheet, lock timers, address book, recovery phrase', async ({
   await expect(page.locator('.bp-words li', { hasText: 'abandon' }).first()).toBeVisible();
   await shot(page, 'settings-reveal-words');
   await page.getByRole('button', { name: 'Hide' }).click();
+  // Back up through Security and Configuration to the top level.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(sheet(page, 'Settings')).toBeVisible();
 
-  await page.getByRole('button', { name: /^Preferred tokens/ }).click();
+  await page.getByRole('button', { name: /^Address book/ }).click();
+  await expect(sheet(page, 'Address book').getByText('Alex')).toBeVisible();
+  await shot(page, 'settings-book');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: /^Manage tokens/ }).click();
   await expect(page.getByRole('checkbox', { name: /PAGE/ })).toBeVisible();
   await shot(page, 'settings-tokens');
 
@@ -98,6 +108,9 @@ test('testnet: the toggle and the landing of a network without tokens', async ({
   await seedWallet(page);
   await reload(page, '12,480.52');
   await openSettings(page);
+  await page.getByRole('button', { name: /^Configuration/ }).click();
+  await page.getByRole('button', { name: /^Advanced/ }).click();
+  await shot(page, 'settings-advanced');
   await page.getByRole('switch', { name: /Testnet/ }).click();
   await expect(page.getByText('No tokens are picked on Testnet yet.')).toBeVisible();
   await shot(page, 'settings-tokens-landing');
@@ -115,6 +128,7 @@ test('connected sites: list, change, empty', async ({ context, extensionId }) =>
   try {
     await reload(page, '12,480.52');
     await openSettings(page);
+    await page.getByRole('button', { name: /^Configuration/ }).click();
     await page.getByRole('button', { name: /Connected sites · 3/ }).click();
     await expect(page.getByText('Each site sees one address.', { exact: false })).toBeVisible();
     await shot(page, 'sites');
