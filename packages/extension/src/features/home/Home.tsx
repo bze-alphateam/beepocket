@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { WalletErrorCodes, type ListedToken, type WalletAddress } from '../../protocol';
 import { useClient } from '../../popup/client-context';
-import { AppearanceToggle } from '../../popup/appearance';
 import { Layout } from '../../popup/Layout';
 import { useRoute } from '../../popup/router';
 import { applyTheme } from '../../theme';
@@ -43,6 +42,11 @@ export interface SettingsTarget {
   name: 'settings.main';
 }
 
+/** Home with the Settings sheet open on Configuration (the way back from Connected sites). */
+export interface SettingsConfigurationTarget {
+  name: 'settings.configuration';
+}
+
 /** Settings › Preferred tokens, which asks the password when saving needs it. */
 export interface PickTokensTarget {
   name: 'settings.pickTokens';
@@ -70,7 +74,7 @@ export function Home() {
   const client = useClient();
   const env = useHomeEnv();
   const { route, navigate } = useRoute<
-    HomeRoute | SettingsTarget | PickTokensTarget | SendTarget
+    HomeRoute | SettingsTarget | SettingsConfigurationTarget | PickTokensTarget | SendTarget
   >();
   const arrival = route.name === 'home.main' ? route : undefined;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -86,7 +90,9 @@ export function Home() {
   const [copied, setCopied] = useState<{ index: number; at: number } | null>(null);
   const [scheme, setScheme] = useState(env.scheme.current());
   // `settings.main` is Home with the Settings sheet open (the way back from a settings screen).
-  const [settings, setSettings] = useState(route.name === 'settings.main');
+  const [settings, setSettings] = useState(
+    route.name === 'settings.main' || route.name === 'settings.configuration',
+  );
   const { balances, refresh } = useBalances(denom, loaded?.network ?? null);
 
   const load = useCallback(async () => {
@@ -273,7 +279,6 @@ export function Home() {
       actions={
         <>
           {loaded.network === 'testnet' && <Pill>{t('home.network.testnet')}</Pill>}
-          <AppearanceToggle />
           <SettingsButton
             onClick={() => {
               setSettings(true);
@@ -331,6 +336,7 @@ export function Home() {
       )}
       <SettingsSheet
         open={settings}
+        initialPanel={route.name === 'settings.configuration' ? 'configuration' : 'main'}
         onClose={() => {
           setSettings(false);
         }}

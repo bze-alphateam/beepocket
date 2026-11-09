@@ -190,7 +190,7 @@ export function ConnectedSitesScreen() {
       title={t('sites.title')}
       backLabel={t('sites.back')}
       onBack={() => {
-        navigate({ name: 'settings.main' });
+        navigate({ name: 'settings.configuration' });
       }}
     />
   );

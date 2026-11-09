@@ -98,6 +98,8 @@ test('home settings sheet, Testnet toggle with pill, and the reveal sheet in the
 
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(page.locator('.bp-pill')).toHaveCount(0);
+  await page.getByRole('button', { name: /^Configuration/ }).click();
+  await page.getByRole('button', { name: /^Advanced/ }).click();
 
   // A click, not check(): the switch leaves the screen for "Pick your tokens" (no testnet
   // tokens yet), and check() hangs re-reading the state of a switch that is gone.
@@ -108,9 +110,13 @@ test('home settings sheet, Testnet toggle with pill, and the reveal sheet in the
 
   await page.getByRole('button', { name: 'Switch network' }).click();
   await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: /^Configuration/ }).click();
+  await page.getByRole('button', { name: /^Advanced/ }).click();
   await expect(page.getByRole('switch', { name: /Testnet/ })).not.toBeChecked();
   await expect(page.locator('.bp-pill')).toHaveCount(0);
+  await page.keyboard.press('Escape');
 
+  await page.getByRole('button', { name: /^Security/ }).click();
   await page.getByRole('button', { name: /Show recovery phrase/ }).click();
   await page.getByRole('dialog').getByLabel('Password').fill('wrong password');
   await page.getByRole('button', { name: 'Show', exact: true }).click();
@@ -124,5 +130,6 @@ test('home settings sheet, Testnet toggle with pill, and the reveal sheet in the
   await expect(page.locator('.bp-words li', { hasText: 'abandon' })).toHaveCount(23);
   await page.getByRole('button', { name: 'Hide' }).click();
   await expect(page.getByText('abandon')).toHaveCount(0);
-  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+  // Hide leaves the phrase; closing the sheet goes back one level, to Security.
+  await expect(page.getByRole('dialog', { name: 'Security' })).toBeVisible();
 });
