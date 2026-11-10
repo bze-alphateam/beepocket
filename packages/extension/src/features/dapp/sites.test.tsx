@@ -1,5 +1,6 @@
 import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SettingsEnvProvider, type SettingsEnv } from '../settings/env';
 import { ClientProvider } from '../../popup/client-context';
 import { Router } from '../../popup/router';
 import { fail, ok, WalletErrorCodes, type Method, type Result } from '../../protocol';
@@ -23,6 +24,13 @@ const SITE = {
 
 type Handler = (req: unknown) => Result<unknown>;
 
+/** Connected sites is a Settings page: its footer reads the version from here, not `chrome`. */
+const settingsEnv: SettingsEnv = {
+  manifest: { version: () => '1.0.0' },
+  clipboard: { readText: () => Promise.resolve(''), writeText: () => Promise.resolve() },
+  scheduler: { after: () => () => undefined },
+};
+
 function rig(handlers: Partial<Record<Method, Handler>>, icons?: SiteIcons) {
   const call = vi.fn((method: Method, req: unknown) => {
     const handler = handlers[method];
@@ -39,7 +47,9 @@ function rig(handlers: Partial<Record<Method, Handler>>, icons?: SiteIcons) {
   );
   const { host } = render(
     <ClientProvider client={{ call } as unknown as Client}>
-      {icons ? <SiteIconsProvider icons={icons}>{screen}</SiteIconsProvider> : screen}
+      <SettingsEnvProvider env={settingsEnv}>
+        {icons ? <SiteIconsProvider icons={icons}>{screen}</SiteIconsProvider> : screen}
+      </SettingsEnvProvider>
     </ClientProvider>,
   );
   return { host, call };

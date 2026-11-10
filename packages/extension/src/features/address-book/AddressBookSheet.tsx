@@ -43,12 +43,12 @@ export interface AddressBookSheetProps {
   onChanged?: (() => void) | undefined;
 }
 
-type View = { kind: 'list' } | { kind: 'new' } | { kind: 'edit'; contact: Contact };
+export type BookView = { kind: 'list' } | { kind: 'new' } | { kind: 'edit'; contact: Contact };
 
 /** `W-Book`, `W-Book-Search` and `W-Contact-New` in one sheet. */
 export function AddressBookSheet(props: AddressBookSheetProps) {
   const { open, newAddress } = props;
-  const [view, setView] = useState<View>({ kind: 'list' });
+  const [view, setView] = useState<BookView>({ kind: 'list' });
   // Every time the sheet opens it starts where the caller asked, never where it was left.
   useEffect(() => {
     if (open) setView(newAddress === undefined ? { kind: 'list' } : { kind: 'new' });
@@ -80,12 +80,15 @@ export function AddressBookSheet(props: AddressBookSheetProps) {
         ) : undefined
       }
     >
-      <Body {...props} view={view} setView={setView} />
+      <AddressBookBody {...props} view={view} setView={setView} />
     </Sheet>
   );
 }
 
-function Body(props: AddressBookSheetProps & { view: View; setView: (view: View) => void }) {
+/** The list and the forms of the book, in a sheet (Send) or on the Settings page. */
+export function AddressBookBody(
+  props: AddressBookSheetProps & { view: BookView; setView: (view: BookView) => void },
+) {
   const { view, setView, mode } = props;
   const client = useClient();
   const { book, failed, reload } = useBook();

@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'preact/test-utils';
-import { useState } from 'preact/hooks';
 import {
   fail,
   lockStateEvent,
@@ -23,11 +22,11 @@ import { AppearanceState, type Appearance, type SchemeQuery } from '../../theme'
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { LockEnvProvider } from '../lock/env';
 import type { StateEvents } from '../lock/events';
+import { bookRoutes } from '../address-book/routes';
 import { browserOnboardingEnv } from '../onboarding/env';
 import { browserSettingsEnv, SettingsEnvProvider, type SettingsEnv } from './env';
 import { NetworkPill } from './NetworkPill';
 import { settingsRoutes } from './routes';
-import { SettingsSheet } from './SettingsSheet';
 
 afterEach(() => {
   cleanup();
@@ -198,8 +197,8 @@ function must<T>(x: T | null | undefined): T {
   return x;
 }
 
-/** Home stand-in: the sheet over a button that opens it again, and a count of Home reloads. */
-function rig(client = new FakeClient()) {
+/** The Settings tree on the real routes, with Home and the sites screen stood in by markers. */
+function rig(client = new FakeClient(), initial = 'settings.main') {
   const saved: Appearance[] = [];
   const appearance = new AppearanceState(new FakeQuery(true), {
     save: (a) => {
@@ -219,52 +218,19 @@ function rig(client = new FakeClient()) {
     },
     scheduler: new FakeScheduler(),
   };
-  const changed = vi.fn();
-  function Home() {
-    const [open, setOpen] = useState(true);
-    // Home re-renders on its own (the balance refresh); this button stands in for that.
-    const [renders, setRenders] = useState(0);
-    return (
-      <>
-        <button
-          type="button"
-          onClick={() => {
-            setRenders(renders + 1);
-          }}
-        >
-          Re-render home
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setOpen(true);
-          }}
-        >
-          Open settings
-        </button>
-        <SettingsSheet
-          open={open}
-          onClose={() => {
-            setOpen(false);
-          }}
-          onChanged={changed}
-        />
-      </>
-    );
-  }
   const table = {
     ...settingsRoutes,
-    'home.main': Home,
-    'settings.main': Marker,
+    ...bookRoutes,
+    'home.main': Marker,
     'dapp.sites': Marker,
     'lock.unlock': Marker,
-  } as RouteTable<{ name: string }>;
+  } as unknown as RouteTable<{ name: string }>;
   const { host } = render(
     <ClientProvider client={client}>
       <AppearanceProvider state={appearance}>
         <SettingsEnvProvider env={env}>
           <LockEnvProvider clock={clock} events={events}>
-            <Router table={table} initial={{ name: 'home.main' }} />
+            <Router table={table} initial={{ name: initial }} />
           </LockEnvProvider>
         </SettingsEnvProvider>
       </AppearanceProvider>
@@ -279,11 +245,11 @@ function rig(client = new FakeClient()) {
   const key = (k: string) => {
     fireEvent(document.body, 'keydown', { key: k });
   };
-  return { host, client, appearance, saved, written, changed, button, dialogs, key };
+  return { host, client, appearance, saved, written, button, dialogs, key };
 }
 
-async function opened(client?: FakeClient) {
-  const r = rig(client);
+async function opened(client?: FakeClient, initial?: string) {
+  const r = rig(client, initial);
   await flush();
   return r;
 }
@@ -302,17 +268,20 @@ const CONFIGURATION = /^Configuration/;
 const APPEARANCE = /^Appearance/;
 const SECURITY = /^Security/;
 const ADVANCED = /^Advanced/;
-const label = (r: Rig) => r.dialogs().map((d) => d.getAttribute('aria-label'));
+/** The page shown: its title, or `at:<route>` when a stand-in marker is on screen. */
+const page = (r: Rig) =>
+  r.host.querySelector('.bp-screen-title')?.textContent ?? r.host.textContent;
 const titles = (host: HTMLElement) =>
   [...host.querySelectorAll('.bp-settings-row-title, .bp-toggle-title')].map((e) => e.textContent);
+const close = (r: Rig) => must(r.button('Close settings'));
+const back = (r: Rig) => must(r.button('Back'));
 
-describe('Settings sheet', () => {
+describe('Settings pages', () => {
   it('lists the top level in order, with the counts and the footer', async () => {
-    const { host, dialogs } = await opened();
-    expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
+    const { host, button } = await opened();
+    expect(host.querySelector('.bp-screen-title')?.textContent).toBe('Settings');
     expect(titles(host)).toEqual(['Manage tokens', 'Configuration', 'Address book', 'Lock wallet']);
-    const text = host.textContent;
-    expect(text).toContain('BeePocket 1.2.3 · beezee-1');
+    expect(host.textContent).toContain('BeePocket 1.2.3 · beezee-1');
     // The footer logo stays BeePocket green whatever token kit is active.
     const stops = [...host.querySelectorAll('.bp-settings-footer .bp-logo stop')];
     expect(stops.map((s) => s.getAttribute('stop-color'))).toEqual([
@@ -325,64 +294,113 @@ describe('Settings sheet', () => {
     expect(values[0]).toContain('2');
     expect(values[2]).toContain('1');
     expect(host.querySelector('input[type="checkbox"], select')).toBeNull();
+    // The root has the × only, no way up.
+    expect(button('Back')).toBeUndefined();
+    expect(button('Close settings')).toBeDefined();
   });
 
   it('Configuration lists Appearance, Connected sites, Security and Advanced in order', async () => {
     const r = await opened();
     await go(r, CONFIGURATION);
-    expect(label(r)).toEqual(['Configuration']);
+    expect(page(r)).toBe('Configuration');
     expect(titles(r.host)).toEqual(['Appearance', 'Connected sites', 'Security', 'Advanced']);
     expect(r.host.querySelector('[aria-label="Connected sites · 2"]')).not.toBeNull();
   });
 
-  it('every level closes to its parent, one step at a time', async () => {
+  it('← goes up exactly one level, from every level', async () => {
     const r = await opened();
     await go(r, CONFIGURATION, SECURITY, /^Lock timers/);
-    expect(label(r)).toEqual(['Lock timers']);
-    r.key('Escape');
-    await flush();
-    expect(label(r)).toEqual(['Security']);
+    expect(page(r)).toBe('Lock timers');
+    await go(r, 'Back');
+    expect(page(r)).toBe('Security');
     expect(titles(r.host)).toEqual(['Lock timers', 'Show recovery phrase']);
     expect(r.host.textContent).toContain('15 min · 1 h');
-    expect(r.host.textContent).toContain('Password needed');
     await go(r, /^Show recovery phrase/);
-    expect(label(r)).toEqual(['Recovery phrase']);
-    r.key('Escape');
-    await flush();
-    expect(label(r)).toEqual(['Security']);
-    r.key('Escape');
-    await flush();
-    expect(label(r)).toEqual(['Configuration']);
+    expect(page(r)).toBe('Recovery phrase');
+    await go(r, 'Back');
+    expect(page(r)).toBe('Security');
+    await go(r, 'Back');
+    expect(page(r)).toBe('Configuration');
     await go(r, APPEARANCE);
-    expect(label(r)).toEqual(['Appearance']);
-    r.key('Escape');
-    await flush();
-    expect(label(r)).toEqual(['Configuration']);
+    expect(page(r)).toBe('Appearance');
+    await go(r, 'Back');
+    expect(page(r)).toBe('Configuration');
     await go(r, ADVANCED);
-    expect(label(r)).toEqual(['Advanced']);
-    r.key('Escape');
-    await flush();
-    expect(label(r)).toEqual(['Configuration']);
-    r.key('Escape');
-    await flush();
-    expect(label(r)).toEqual(['Settings']);
-    r.key('Escape');
-    await flush();
-    expect(label(r)).toEqual([]);
+    expect(page(r)).toBe('Advanced');
+    await go(r, 'Back');
+    expect(page(r)).toBe('Configuration');
+    await go(r, 'Back');
+    expect(page(r)).toBe('Settings');
+    await go(r, /^Address book/);
+    expect(page(r)).toBe('Address book');
+    await go(r, 'Back');
+    expect(page(r)).toBe('Settings');
   });
 
-  it('closes on Escape, on the backdrop and on the ×', async () => {
-    const { host, button, dialogs, key } = await opened();
-    key('Escape');
-    expect(dialogs()).toHaveLength(0);
-    fireEvent(button('Open settings'), 'click');
+  it('× returns to Home from the root and from every nested level', async () => {
+    const r = await opened();
+    await go(r, 'Close settings');
+    expect(page(r)).toBe('at:home.main');
+    cleanup();
+    for (const route of [
+      ['settings.configuration'],
+      ['settings.appearance'],
+      ['settings.security'],
+      ['settings.timers'],
+      ['settings.advanced'],
+      ['settings.reveal'],
+      ['settings.book'],
+      ['settings.pickTokens'],
+    ] as const) {
+      const deep = await opened(undefined, route[0]);
+      expect(deep.button('Close settings')).toBeDefined();
+      await go(deep, 'Close settings');
+      expect(page(deep)).toBe('at:home.main');
+      cleanup();
+    }
+  });
+
+  it('Escape goes up one level, and to Home from the root', async () => {
+    const r = await opened();
+    await go(r, CONFIGURATION, SECURITY);
+    r.key('Escape');
     await flush();
-    fireEvent(host.querySelector('.bp-sheet-backdrop'), 'click');
-    expect(dialogs()).toHaveLength(0);
-    fireEvent(button('Open settings'), 'click');
+    expect(page(r)).toBe('Configuration');
+    r.key('Escape');
     await flush();
-    fireEvent(button('Close'), 'click');
-    expect(dialogs()).toHaveLength(0);
+    expect(page(r)).toBe('Settings');
+    r.key('Escape');
+    await flush();
+    expect(page(r)).toBe('at:home.main');
+  });
+
+  it('every nested page carries the logo, version and chain footer', async () => {
+    const r = await opened();
+    await go(r, CONFIGURATION, SECURITY, /^Lock timers/);
+    for (let i = 0; i < 3; i++) {
+      expect(r.host.querySelector('.bp-footer .bp-settings-footer .bp-logo')).not.toBeNull();
+      expect(r.host.querySelector('.bp-footer')?.textContent).toContain(
+        'BeePocket 1.2.3 · beezee-1',
+      );
+      await go(r, 'Back');
+    }
+    await go(r, /^Address book/);
+    expect(r.host.querySelector('.bp-footer')?.textContent).toContain('BeePocket 1.2.3 · beezee-1');
+    await go(r, 'Back', /^Manage tokens/);
+    expect(r.host.querySelector('.bp-footer')?.textContent).toContain('BeePocket 1.2.3 · beezee-1');
+  });
+
+  it('Manage tokens keeps Save directly above the footer', async () => {
+    const r = await opened(undefined, 'settings.pickTokens');
+    const footer = must(r.host.querySelector('.bp-footer'));
+    expect([...footer.children].map((c) => c.className)).toEqual([
+      'bp-bottom-bar',
+      'bp-settings-footer',
+    ]);
+    expect(footer.querySelector('.bp-bottom-bar button')?.textContent).toBe('Save');
+    // ← goes up to Settings.
+    await go(r, 'Back');
+    expect(page(r)).toBe('Settings');
   });
 
   it('the appearance control saves each pick and keeps System picked', async () => {
@@ -406,10 +424,10 @@ describe('Settings sheet', () => {
     expect(saved).toEqual(['light', 'system']);
   });
 
-  it('saves Theme follows token and tells Home to reload', async () => {
+  it('saves Theme follows token', async () => {
     const r = await opened();
     await go(r, CONFIGURATION, APPEARANCE);
-    const { client, changed, host } = r;
+    const { client, host } = r;
     const sw = must(
       [...host.querySelectorAll('[role="switch"]')].find((s) =>
         s.textContent.includes('Theme follows token'),
@@ -419,7 +437,6 @@ describe('Settings sheet', () => {
     expect(sw.getAttribute('aria-checked')).toBe('false');
     await flush();
     expect(client.saw('settings.set')).toEqual([{ brandThemes: false }]);
-    expect(changed).toHaveBeenCalledOnce();
   });
 
   it('puts Theme follows token back when the save is refused', async () => {
@@ -430,7 +447,7 @@ describe('Settings sheet', () => {
         : orig(method, request))(client.call.bind(client));
     const r = await opened(client);
     await go(r, CONFIGURATION, APPEARANCE);
-    const { host, changed } = r;
+    const { host } = r;
     const sw = () =>
       must(
         [...host.querySelectorAll('[role="switch"]')].find((s) =>
@@ -441,7 +458,6 @@ describe('Settings sheet', () => {
     await flush();
     expect(sw().getAttribute('aria-checked')).toBe('true');
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('Unlock the wallet');
-    expect(changed).not.toHaveBeenCalled();
   });
 
   it('Lock wallet locks at once and shows the unlock screen', async () => {
@@ -465,26 +481,27 @@ describe('Settings sheet', () => {
     expect(second.host.textContent).toBe('at:dapp.sites');
   });
 
-  it('the address book replaces the sheet in manage mode and comes back to Settings', async () => {
-    const { button, dialogs, host, key } = await opened();
+  it('the address book is a page with the contacts, a New contact button and the footer', async () => {
+    const { button, host } = await opened();
     fireEvent(button(/^Address book/), 'click');
     await flush();
-    expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Address book']);
+    expect(host.querySelector('.bp-screen-title')?.textContent).toBe('Address book');
     expect(host.textContent).toContain('Alex');
-    key('Escape');
-    await flush();
-    expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
+    expect(host.querySelector('.bp-footer')?.textContent).toContain('New contact');
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('the address book closes from its ×, back to Settings', async () => {
-    const { button, dialogs } = await opened();
-    fireEvent(button(/^Address book/), 'click');
-    await flush();
-    const close = dialogs()[0]?.querySelectorAll('button[aria-label="Close"]');
-    expect(close).toHaveLength(1);
-    fireEvent(close?.[0], 'click');
-    await flush();
-    expect(dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Settings']);
+  it('New contact and editing one open as a small sheet on the page', async () => {
+    const r = await opened(undefined, 'settings.book');
+    fireEvent(must(r.button(/New contact/)), 'click');
+    expect(r.dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['New contact']);
+    expect(r.host.querySelector('.bp-screen-title')?.textContent).toBe('Address book');
+    // Escape closes the sheet first, the page stays.
+    r.key('Escape');
+    expect(r.dialogs()).toHaveLength(0);
+    expect(page(r)).toBe('Address book');
+    fireEvent(must(r.button(/Alex/)), 'click');
+    expect(r.dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Edit contact']);
   });
 
   describe('testnet', () => {
@@ -500,17 +517,13 @@ describe('Settings sheet', () => {
       return r;
     };
 
-    it('switches the network, shows it at once, keeps the sheet and tells Home', async () => {
-      const { client, changed, host, key } = await openAdvanced();
+    it('switches the network, shows it at once and names it in the footer', async () => {
+      const { client, host } = await openAdvanced();
       expect(titles(host)).toEqual(['Testnet']);
       fireEvent(toggle(host), 'click');
       expect(toggle(host).getAttribute('aria-checked')).toBe('true');
       await flush();
       expect(client.saw('network.set')).toEqual([{ id: 'testnet' }]);
-      expect(changed).toHaveBeenCalledOnce();
-      key('Escape');
-      key('Escape');
-      await flush();
       expect(host.textContent).toContain('BeePocket 1.2.3 · bzetestnet-3');
     });
 
@@ -520,24 +533,22 @@ describe('Settings sheet', () => {
         method === 'network.set'
           ? Promise.resolve(fail('unexpected', 'no'))
           : orig(method, request))(client.call.bind(client));
-      const { host, changed } = await openAdvanced(client);
+      const { host } = await openAdvanced(client);
       fireEvent(toggle(host), 'click');
       await flush();
       expect(toggle(host).getAttribute('aria-checked')).toBe('false');
       expect(host.querySelector('[role="alert"]')?.textContent).toContain('could not be saved');
-      expect(changed).not.toHaveBeenCalled();
     });
 
     it('lands on pick tokens when the network has none', async () => {
       const client = new FakeClient();
       client.preferred.testnet = [];
-      const { host, changed } = await openAdvanced(client);
+      const { host } = await openAdvanced(client);
       fireEvent(toggle(host), 'click');
       await flush();
       await flush();
       expect(host.textContent).toContain('Pick your tokens');
       expect(host.querySelector('.bp-pill')?.textContent).toBe('Testnet');
-      expect(changed).not.toHaveBeenCalled();
     });
   });
 
@@ -556,9 +567,9 @@ describe('Settings sheet', () => {
       await flush();
     };
 
-    it('replaces the Security sheet with the two lock times', async () => {
+    it('is a page with the two lock times', async () => {
       const r = await openTimers();
-      expect(r.dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Lock timers']);
+      expect(page(r)).toBe('Lock timers');
       expect(r.host.textContent).toContain('Lock sending after');
       expect(r.host.textContent).toContain('Lock wallet after');
     });
@@ -571,18 +582,18 @@ describe('Settings sheet', () => {
         { weakLockMinutes: 5 },
         { fullLockMinutes: 120 },
       ]);
-      r.key('Escape');
-      await flush();
-      expect(label(r)).toEqual(['Security']);
+      await go(r, 'Back');
+      expect(page(r)).toBe('Security');
       expect(r.host.textContent).toContain('5 min · 2 h');
     });
 
-    it('a dropdown inside the sheet takes Escape first', async () => {
+    it('a dropdown on the page takes Escape first', async () => {
       const r = await openTimers();
       fireEvent(r.button(/^Lock sending after, now/), 'click');
-      expect(r.dialogs()).toHaveLength(2);
+      expect(r.dialogs()).toHaveLength(1);
       r.key('Escape');
-      expect(r.dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Lock timers']);
+      expect(r.dialogs()).toHaveLength(0);
+      expect(page(r)).toBe('Lock timers');
     });
 
     it('offers only the allowed lock times and shows the wallet error inline', async () => {
@@ -641,7 +652,7 @@ describe('Show recovery phrase', () => {
 
   it('asks the password, keeps the words out of the page until revealed, copies them', async () => {
     const r = await openReveal();
-    expect(r.dialogs().map((d) => d.getAttribute('aria-label'))).toEqual(['Recovery phrase']);
+    expect(page(r)).toBe('Recovery phrase');
     await submit(r.host, 'pw');
     expect(r.client.saw('wallet.revealMnemonic')).toEqual([{ password: 'pw' }]);
     expect(r.host.textContent).toContain('Never share them');
@@ -649,28 +660,30 @@ describe('Show recovery phrase', () => {
     fireEvent(r.button(/^Reveal phrase/), 'click');
     expect(words(r.host)).toHaveLength(24);
     expect(r.host.textContent).toContain('abandon');
+    // Hide sits above the footer, which stays.
+    expect(r.host.querySelector('.bp-footer')?.textContent).toContain('BeePocket 1.2.3');
     fireEvent(r.button('Copy phrase'), 'click');
     await flush();
     expect(r.written).toEqual([PHRASE]);
   });
 
-  for (const [how, close] of [
+  for (const [how, leave] of [
     [
       'Hide',
-      (r: Awaited<ReturnType<typeof opened>>) => {
-        fireEvent(r.button('Hide'), 'click');
+      (r: Rig) => {
+        fireEvent(must(r.button('Hide')), 'click');
+      },
+    ],
+    [
+      '←',
+      (r: Rig) => {
+        fireEvent(back(r), 'click');
       },
     ],
     [
       'Escape',
-      (r: Awaited<ReturnType<typeof opened>>) => {
+      (r: Rig) => {
         r.key('Escape');
-      },
-    ],
-    [
-      'the backdrop',
-      (r: Awaited<ReturnType<typeof opened>>) => {
-        fireEvent(r.host.querySelector('.bp-sheet-backdrop'), 'click');
       },
     ],
   ] as const) {
@@ -678,30 +691,28 @@ describe('Show recovery phrase', () => {
       const r = await openReveal();
       await submit(r.host, 'pw');
       fireEvent(r.button(/^Reveal phrase/), 'click');
-      close(r);
+      leave(r);
       await flush();
       expect(r.host.textContent).not.toContain('abandon');
-      expect(label(r)).toEqual(['Security']);
+      expect(page(r)).toBe('Security');
       fireEvent(r.button(/^Show recovery phrase/), 'click');
+      await flush();
       expect(r.host.querySelector('input[type="password"]')).not.toBeNull();
       expect(r.host.textContent).not.toContain('abandon');
     });
   }
 
-  it('closing the whole sheet drops the phrase too', async () => {
+  it('closing Settings with × drops the phrase too', async () => {
     const r = await openReveal();
     await submit(r.host, 'pw');
     fireEvent(r.button(/^Reveal phrase/), 'click');
-    // Up through Security, Configuration and Settings: nothing of the phrase is left anywhere.
-    for (let i = 0; i < 4; i++) {
-      r.key('Escape');
-      await flush();
-    }
-    expect(r.dialogs()).toHaveLength(0);
-    fireEvent(r.button('Open settings'), 'click');
+    fireEvent(close(r), 'click');
     await flush();
-    await go(r, CONFIGURATION, SECURITY, /^Show recovery phrase/);
-    expect(r.host.querySelector('input[type="password"]')).not.toBeNull();
+    expect(page(r)).toBe('at:home.main');
+    expect(r.host.textContent).not.toContain('abandon');
+    cleanup();
+    const again = await opened(undefined, 'settings.reveal');
+    expect(again.host.querySelector('input[type="password"]')).not.toBeNull();
   });
 
   it('shows wrong password and the throttle error', async () => {
@@ -716,27 +727,14 @@ describe('Show recovery phrase', () => {
     expect(r.button(/^Reveal phrase/)).toBeUndefined();
   });
 
-  it('hides the phrase as soon as the worker pushes a weak lock', async () => {
+  it('leaves the page and drops the phrase as soon as the worker pushes a weak lock', async () => {
     const r = await openReveal();
     await submit(r.host, 'pw');
     fireEvent(r.button(/^Reveal phrase/), 'click');
     events.push('unlocked');
     expect(words(r.host)).toHaveLength(24);
     events.push('weakLocked');
-    expect(r.host.textContent).not.toContain('abandon');
-  });
-
-  it('hides the phrase after the idle time even while Home keeps re-rendering', async () => {
-    vi.useFakeTimers();
-    const r = await openReveal();
-    await submit(r.host, 'pw');
-    fireEvent(r.button(/^Reveal phrase/), 'click');
-    for (let i = 0; i < 5; i++) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(15_000);
-      });
-      fireEvent(r.button('Re-render home'), 'click');
-    }
+    await flush();
     expect(r.host.textContent).not.toContain('abandon');
   });
 
@@ -781,7 +779,7 @@ describe('Manage tokens', () => {
         <LockEnvProvider clock={clock} events={events}>
           <SettingsEnvProvider env={env}>
             <Router
-              table={table as RouteTable<{ name: string }>}
+              table={table as unknown as RouteTable<{ name: string }>}
               initial={{ name: 'settings.pickTokens' }}
             />
           </SettingsEnvProvider>

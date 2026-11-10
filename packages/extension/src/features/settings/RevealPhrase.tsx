@@ -2,21 +2,27 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
 import type { PasswordOutcome, Result } from '../../protocol';
-import { Banner, Button, PhraseReveal, Sheet, WordGrid } from '../../ui';
+import { Banner, Button, PhraseReveal, WordGrid } from '../../ui';
 import { useLockEnv } from '../lock/env';
 import { PasswordForm } from '../lock/PasswordForm';
+import { useRoute, type RouteBase } from '../../popup/router';
 import { useSettingsEnv } from './env';
+import { SETTINGS_PARENT, SettingsPage } from './SettingsPage';
 
 /** A shown phrase hides on its own after this idle time. */
 export const REVEAL_IDLE_MS = 60_000;
 
 /**
- * Password prompt, then the 24 words behind the onboarding veil (`Ob-Phrase` without the step
+ * Settings › Security › Show recovery phrase, a page. Password prompt, then the 24 words behind the onboarding veil (`Ob-Phrase` without the step
  * header). Asks every time, even when unlocked. The phrase lives in this component's state only:
- * it is dropped when the sheet closes, when the screen unmounts and as soon as the worker pushes
+ * it is dropped when the page is left, when the screen unmounts and as soon as the worker pushes
  * any state but "unlocked" (weak lock included).
  */
-export function RevealPhrase({ onClose }: { onClose: () => void }) {
+export function RevealPhrase() {
+  const { navigate } = useRoute<RouteBase>();
+  const onClose = () => {
+    navigate(SETTINGS_PARENT['settings.reveal']);
+  };
   const client = useClient();
   const env = useSettingsEnv();
   const { events } = useLockEnv();
@@ -64,24 +70,26 @@ export function RevealPhrase({ onClose }: { onClose: () => void }) {
 
   if (phrase === null) {
     return (
-      <Sheet open title={t('settings.reveal.title')} onClose={onClose}>
+      <SettingsPage title={t('settings.reveal.title')} parent={SETTINGS_PARENT['settings.reveal']}>
         <PasswordForm
           label={t('settings.reveal.password')}
           submitLabel={t('settings.reveal.submit')}
           check={check}
           onSuccess={() => undefined}
         />
-      </Sheet>
+      </SettingsPage>
     );
   }
   const words = phrase.split(' ');
   return (
-    <Sheet
-      open
+    <SettingsPage
       title={t('settings.reveal.title')}
-      onClose={onClose}
-      height="tall"
-      actions={<Button onClick={onClose}>{t('settings.reveal.hide')}</Button>}
+      parent={SETTINGS_PARENT['settings.reveal']}
+      actions={
+        <div class="bp-bottom">
+          <Button onClick={onClose}>{t('settings.reveal.hide')}</Button>
+        </div>
+      }
     >
       <div class="bp-settings-reveal">
         <Banner tone="amber">{t('settings.reveal.warning')}</Banner>
@@ -102,6 +110,6 @@ export function RevealPhrase({ onClose }: { onClose: () => void }) {
           </Button>
         )}
       </div>
-    </Sheet>
+    </SettingsPage>
   );
 }

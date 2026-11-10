@@ -342,13 +342,6 @@ const text = (host: HTMLElement) => host.textContent;
 const click = (el: Element | null) => {
   fireEvent(el, 'click');
 };
-/** Settings › Configuration › Advanced, where the Testnet switch lives. */
-const openAdvanced = async (s: { host: HTMLElement; tick: () => Promise<void> }) => {
-  for (const name of [/^Configuration/, /^Advanced/]) {
-    click([...s.host.querySelectorAll('button')].find((b) => name.test(b.textContent)) ?? null);
-    await s.tick();
-  }
-};
 const balanceCalls = (calls: { method: string }[]) =>
   calls.filter((c) => c.method === 'tokens.balances').length;
 
@@ -578,27 +571,9 @@ describe('header', () => {
     expect(byLabel(s.host, 'Lock wallet')).toBeNull();
     click(byLabel(s.host, 'Settings'));
     await s.tick();
-    // Settings is a sheet over Home, not another screen.
-    expect(s.seen).toEqual([]);
-    expect(s.host.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Settings');
-    expect(text(s.host)).toContain('1,234.56789');
-  });
-
-  it('reads its data again after Testnet is switched on in the Settings sheet', async () => {
-    const s = setup();
-    await s.tick();
-    expect(s.host.querySelector('.bp-pill')).toBeNull();
-    click(byLabel(s.host, 'Settings'));
-    await s.tick();
-    await openAdvanced(s);
-    const testnet = [...s.host.querySelectorAll('[role="switch"]')].find((x) =>
-      x.textContent.includes('Testnet'),
-    );
-    click(testnet ?? null);
-    await s.tick();
-    expect(s.w.network).toBe('testnet');
-    expect(s.host.querySelector('.bp-home-header .bp-pill')?.textContent).toBe('Testnet');
-    expect(s.host.querySelector('[role="dialog"]')).not.toBeNull();
+    // Settings is a full page of its own: Home hands over to the settings route.
+    expect(s.seen.at(-1)).toEqual({ name: 'settings.main' });
+    expect(text(s.host)).toBe('at:settings.main');
   });
 });
 
@@ -813,29 +788,6 @@ describe('refresh', () => {
 });
 
 describe('balances while reading', () => {
-  it("never shows one network's numbers on the other, even while the new read runs", async () => {
-    const s = setup();
-    await s.tick();
-    expect(text(s.host)).toContain('1,234.56789');
-    const release = s.hold('tokens.balances');
-    click(byLabel(s.host, 'Settings'));
-    await s.tick();
-    await openAdvanced(s);
-    click(
-      [...s.host.querySelectorAll('[role="switch"]')].find((x) =>
-        x.textContent.includes('Testnet'),
-      ) ?? null,
-    );
-    await s.tick();
-    expect(s.host.querySelector('.bp-home-header .bp-pill')?.textContent).toBe('Testnet');
-    expect(text(s.host)).not.toContain('1,234.56789');
-    s.w.amounts = { ubze: ['42000000', '0'] };
-    release();
-    await s.tick();
-    expect(text(s.host)).toContain('42');
-    expect(text(s.host)).not.toContain('1,234.56789');
-  });
-
   it('keeps the numbers and polls on when a read call rejects', async () => {
     const s = setup();
     await s.tick();

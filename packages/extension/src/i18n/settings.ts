@@ -1,6 +1,7 @@
 /** Strings of the Settings screen and the network switch. */
 export const settings = {
   'settings.title': 'Settings',
+  'settings.close': 'Close settings',
   'settings.loadFailed': 'Settings could not be loaded.',
   'settings.saveFailed': 'The change could not be saved.',
   'settings.needsUnlock': 'Unlock the wallet to change settings.',
