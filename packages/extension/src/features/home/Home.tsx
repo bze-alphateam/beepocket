@@ -45,6 +45,8 @@ export interface SettingsTarget {
 /** Settings › Preferred tokens, which asks the password when saving needs it. */
 export interface PickTokensTarget {
   name: 'settings.pickTokens';
+  /** Home had no token to show and could not add one: picking is the only way forward. */
+  required?: boolean;
 }
 
 /** The send flow's route (registered by the send feature). */
@@ -99,7 +101,7 @@ export function Home() {
       list = await client.call('tokens.add', { denom: 'ubze' });
       // Weak lock: the list cannot be written here; the token picker asks the password.
       if (!list.ok && list.error.code === WalletErrorCodes.needsPassword) {
-        navigate({ name: 'settings.pickTokens' });
+        navigate({ name: 'settings.pickTokens', required: true });
         return;
       }
     }

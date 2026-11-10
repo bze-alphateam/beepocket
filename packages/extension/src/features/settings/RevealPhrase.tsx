@@ -37,7 +37,12 @@ export function RevealPhrase() {
 
   useEffect(() => {
     return events.subscribe((e) => {
-      if (e.state !== 'unlocked') close.current();
+      // A full lock: only the phrase goes; the state supervisor routes to the unlock screen, and
+      // leaving to Security here would put a Settings page over a locked wallet.
+      if (e.state === 'locked') {
+        setPhrase(null);
+        setRevealed(false);
+      } else if (e.state !== 'unlocked') close.current();
     });
   }, [events]);
 

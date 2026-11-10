@@ -139,7 +139,6 @@ export function SiteRow(props: {
   );
 }
 
-/** Settings › Connected sites: the sites of the active network, with Change and Disconnect. */
 /** Connected sites is a Settings page: ← goes to Configuration, × to Home. */
 function SitesPage(props: { actions?: ComponentChildren; children: ComponentChildren }) {
   return (
@@ -154,6 +153,7 @@ function SitesPage(props: { actions?: ComponentChildren; children: ComponentChil
   );
 }
 
+/** Settings › Connected sites: the sites of the active network, with Change and Disconnect. */
 export function ConnectedSitesScreen() {
   const client = useClient();
   const [listing, setListing] = useState<Listing | null>(null);

@@ -8,6 +8,7 @@ import { Banner, BottomBar, Button, InlineNote } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
 import { homeTarget } from '../lock/targets';
 import { TokenPicker } from '../tokens/TokenPicker';
+import type { PickTokensRoute } from './routes';
 import { NetworkPill } from './NetworkPill';
 import { SETTINGS_PARENT, SettingsPage } from './SettingsPage';
 import { TokenCodeField } from './TokenCodeField';
@@ -32,7 +33,7 @@ interface Start {
  * lands when that network has no preferred token yet: then there is no way back to a Home with
  * nothing to show, only picking tokens or switching to the other network.
  */
-export function PickTokensScreen() {
+export function PickTokensScreen({ route }: { route: PickTokensRoute }) {
   const client = useClient();
   const { navigate } = useRoute<RouteBase>();
   const [start, setStart] = useState<Start | null>(null);
@@ -148,6 +149,7 @@ export function PickTokensScreen() {
     <SettingsPage
       title={landing ? t('settings.network.pick.title') : t('settings.tokens')}
       parent={landing ? undefined : SETTINGS}
+      closable={route.required !== true}
       network={start.network}
       right={<NetworkPill network={start.network} />}
       actions={

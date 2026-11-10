@@ -48,6 +48,8 @@ export interface SettingsPageProps {
   right?: ComponentChildren;
   /** Pinned above the version footer: the page's primary action (Save, Hide). */
   actions?: ComponentChildren;
+  /** False when picking tokens is the only way forward: no ×, and Escape stays put. */
+  closable?: boolean | undefined;
   /** The network the footer names; read from the wallet when not given. */
   network?: NetworkId | undefined;
   children?: ComponentChildren;
@@ -77,8 +79,10 @@ export function SettingsPage(props: SettingsPageProps) {
   }, [client]);
 
   const parent = props.parent;
+  const closable = props.closable !== false;
   const leave = useRef<() => void>(() => undefined);
   leave.current = () => {
+    if (!closable && parent === undefined) return;
     navigate(parent ?? homeTarget);
   };
   useEffect(() => {
@@ -109,14 +113,16 @@ export function SettingsPage(props: SettingsPageProps) {
           right={
             <>
               {props.right}
-              <Button
-                variant="icon"
-                icon="x"
-                label={t('settings.close')}
-                onClick={() => {
-                  navigate(homeTarget);
-                }}
-              />
+              {closable && (
+                <Button
+                  variant="icon"
+                  icon="x"
+                  label={t('settings.close')}
+                  onClick={() => {
+                    navigate(homeTarget);
+                  }}
+                />
+              )}
             </>
           }
         />

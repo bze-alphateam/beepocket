@@ -16,7 +16,7 @@ import {
   type WalletAddress,
 } from '../../protocol';
 import { ClientProvider } from '../../popup/client-context';
-import { Router, type RouteTable } from '../../popup/router';
+import { Router, useRoute, type RouteTable } from '../../popup/router';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import {
   Home,
@@ -274,8 +274,23 @@ function setup(
   };
   const seen: { name: string }[] = [];
   const Marker = (props: { route: SendTarget | SettingsTarget | PickTokensTarget }) => {
+    const { navigate } = useRoute<HomeRoute>();
     seen.push(props.route);
-    return <p>at:{props.route.name}</p>;
+    return (
+      <>
+        <p>at:{props.route.name}</p>
+        {props.route.name === 'settings.main' && (
+          <button
+            type="button"
+            onClick={() => {
+              navigate({ name: 'home.main' });
+            }}
+          >
+            Back to Home
+          </button>
+        )}
+      </>
+    );
   };
   const table = {
     'home.main': Home,
@@ -573,7 +588,31 @@ describe('header', () => {
     await s.tick();
     // Settings is a full page of its own: Home hands over to the settings route.
     expect(s.seen.at(-1)).toEqual({ name: 'settings.main' });
-    expect(text(s.host)).toBe('at:settings.main');
+    expect(text(s.host)).toContain('at:settings.main');
+  });
+});
+
+describe('back from Settings', () => {
+  it('reads its data again, without the previous network’s numbers', async () => {
+    const s = setup();
+    await s.tick();
+    expect(text(s.host)).toContain('1,234.56789');
+    click(byLabel(s.host, 'Settings'));
+    await s.tick();
+    // Settings switched the network meanwhile; the new read is still running when Home returns.
+    s.w.network = 'testnet';
+    const release = s.hold('tokens.balances');
+    click(
+      [...s.host.querySelectorAll('button')].find((b) => b.textContent === 'Back to Home') ?? null,
+    );
+    await s.tick();
+    expect(s.host.querySelector('.bp-home-header .bp-pill')?.textContent).toBe('Testnet');
+    expect(text(s.host)).not.toContain('1,234.56789');
+    s.w.amounts = { ubze: ['42000000', '0'] };
+    release();
+    await s.tick();
+    expect(text(s.host)).toContain('42');
+    expect(text(s.host)).not.toContain('1,234.56789');
   });
 });
 
@@ -731,6 +770,8 @@ describe('an empty preferred list in the weak lock', () => {
       { denom: 'ubze' },
     ]);
     expect(text(s.host)).toBe('at:settings.pickTokens');
+    // Picking is the only way forward, so the picker must not offer a × back to this same state.
+    expect(s.seen.at(-1)).toEqual({ name: 'settings.pickTokens', required: true });
   });
 });
 

@@ -23,8 +23,11 @@ import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { LockEnvProvider } from '../lock/env';
 import type { StateEvents } from '../lock/events';
 import { bookRoutes } from '../address-book/routes';
+import { ConnectedSitesScreen } from '../dapp/ConnectedSitesScreen';
+import { StateSupervisor } from '../lock/StateSupervisor';
 import { browserOnboardingEnv } from '../onboarding/env';
 import { browserSettingsEnv, SettingsEnvProvider, type SettingsEnv } from './env';
+import { REVEAL_IDLE_MS } from './RevealPhrase';
 import { NetworkPill } from './NetworkPill';
 import { settingsRoutes } from './routes';
 
@@ -198,7 +201,10 @@ function must<T>(x: T | null | undefined): T {
 }
 
 /** The Settings tree on the real routes, with Home and the sites screen stood in by markers. */
-function rig(client = new FakeClient(), initial = 'settings.main') {
+function rig(
+  client = new FakeClient(),
+  initial: string | { name: string; required?: boolean } = 'settings.main',
+) {
   const saved: Appearance[] = [];
   const appearance = new AppearanceState(new FakeQuery(true), {
     save: (a) => {
@@ -222,7 +228,7 @@ function rig(client = new FakeClient(), initial = 'settings.main') {
     ...settingsRoutes,
     ...bookRoutes,
     'home.main': Marker,
-    'dapp.sites': Marker,
+    'dapp.sites': ConnectedSitesScreen,
     'lock.unlock': Marker,
   } as unknown as RouteTable<{ name: string }>;
   const { host } = render(
@@ -230,7 +236,12 @@ function rig(client = new FakeClient(), initial = 'settings.main') {
       <AppearanceProvider state={appearance}>
         <SettingsEnvProvider env={env}>
           <LockEnvProvider clock={clock} events={events}>
-            <Router table={table} initial={{ name: initial }} />
+            <Router
+              table={table}
+              initial={typeof initial === 'string' ? { name: initial } : initial}
+            >
+              <StateSupervisor />
+            </Router>
           </LockEnvProvider>
         </SettingsEnvProvider>
       </AppearanceProvider>
@@ -248,7 +259,10 @@ function rig(client = new FakeClient(), initial = 'settings.main') {
   return { host, client, appearance, saved, written, button, dialogs, key };
 }
 
-async function opened(client?: FakeClient, initial?: string) {
+async function opened(
+  client?: FakeClient,
+  initial?: string | { name: string; required?: boolean },
+) {
   const r = rig(client, initial);
   await flush();
   return r;
@@ -351,8 +365,11 @@ describe('Settings pages', () => {
       ['settings.reveal'],
       ['settings.book'],
       ['settings.pickTokens'],
+      ['dapp.sites'],
     ] as const) {
-      const deep = await opened(undefined, route[0]);
+      const quiet = new FakeClient();
+      quiet.sites = [];
+      const deep = await opened(quiet, route[0]);
       expect(deep.button('Close settings')).toBeDefined();
       await go(deep, 'Close settings');
       expect(page(deep)).toBe('at:home.main');
@@ -477,8 +494,8 @@ describe('Settings pages', () => {
     cleanup();
     const second = await opened();
     await go(second, CONFIGURATION);
-    fireEvent(second.button('Connected sites · 2'), 'click');
-    expect(second.host.textContent).toBe('at:dapp.sites');
+    await go(second, 'Connected sites · 2');
+    expect(page(second)).toBe('Connected sites');
   });
 
   it('the address book is a page with the contacts, a New contact button and the footer', async () => {
@@ -736,6 +753,17 @@ describe('Show recovery phrase', () => {
     events.push('weakLocked');
     await flush();
     expect(r.host.textContent).not.toContain('abandon');
+    expect(page(r)).toBe('Security');
+  });
+
+  it('a full lock drops the phrase and leaves the route to the unlock screen', async () => {
+    const r = await openReveal();
+    await submit(r.host, 'pw');
+    fireEvent(r.button(/^Reveal phrase/), 'click');
+    events.push('locked');
+    await flush();
+    expect(page(r)).toBe('at:lock.unlock');
+    expect(r.host.textContent).not.toContain('abandon');
   });
 
   it('hides the phrase after the idle time', async () => {
@@ -744,9 +772,10 @@ describe('Show recovery phrase', () => {
     await submit(r.host, 'pw');
     fireEvent(r.button(/^Reveal phrase/), 'click');
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(61_000);
+      await vi.advanceTimersByTimeAsync(REVEAL_IDLE_MS + 1_000);
     });
     expect(r.host.textContent).not.toContain('abandon');
+    expect(page(r)).toBe('Security');
   });
 });
 
@@ -925,6 +954,32 @@ describe('Manage tokens', () => {
       expect(client.saw('tokens.remove')).toEqual([{ denom: 'ubze' }, { denom: 'ubze' }]);
       expect(client.preferred.mainnet).toEqual([PAGE.denom]);
       expect(host.textContent).toBe('at:settings.main');
+    });
+  });
+
+  describe('when Home requires it', () => {
+    const required = async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = [];
+      return opened(client, { name: 'settings.pickTokens', required: true });
+    };
+
+    it('has no ×, and Escape does not leave', async () => {
+      const r = await required();
+      expect(r.button('Close settings')).toBeUndefined();
+      expect(r.button('Back')).toBeUndefined();
+      r.key('Escape');
+      await flush();
+      expect(page(r)).toBe('Pick your tokens');
+    });
+
+    it('a landing reached by switching to an empty network keeps × to Home', async () => {
+      const client = new FakeClient();
+      client.preferred.mainnet = [];
+      const r = await opened(client, 'settings.pickTokens');
+      expect(r.button('Close settings')).toBeDefined();
+      await go(r, 'Close settings');
+      expect(page(r)).toBe('at:home.main');
     });
   });
 

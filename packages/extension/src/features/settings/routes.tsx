@@ -23,11 +23,16 @@ export interface SettingsRoute {
     | 'settings.security'
     | 'settings.timers'
     | 'settings.reveal'
-    | 'settings.advanced'
-    | 'settings.pickTokens';
+    | 'settings.advanced';
 }
 
-export const settingsRoutes: RouteTable<SettingsRoute> = {
+/** Manage tokens; `required` when Home sent the user here: no way out until tokens are saved. */
+export interface PickTokensRoute {
+  name: 'settings.pickTokens';
+  required?: boolean;
+}
+
+export const settingsRoutes: RouteTable<SettingsRoute | PickTokensRoute> = {
   'settings.main': SettingsMain,
   'settings.configuration': SettingsConfiguration,
   'settings.appearance': SettingsAppearance,
