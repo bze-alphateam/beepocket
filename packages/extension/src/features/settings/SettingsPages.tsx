@@ -5,7 +5,6 @@ import { t } from '../../i18n';
 import { useAppearance } from '../../popup/appearance';
 import { useClient } from '../../popup/client-context';
 import { useRoute, type RouteBase } from '../../popup/router';
-import type { WalletSettings } from '../../protocol';
 import type { Appearance } from '../../theme';
 import { Banner, DropdownSheet, Segmented, SettingsRow, Spinner, Toggle } from '../../ui';
 import { useLock } from '../lock/useLock';
@@ -243,7 +242,7 @@ export function SettingsTimers() {
       title={t('settings.timers')}
       content={(d, s) => {
         const set = (key: 'weakLockMinutes' | 'fullLockMinutes') => (minutes: number) => {
-          if (isLockChoice(minutes)) void s.save({ [key]: minutes } as Partial<WalletSettings>);
+          if (isLockChoice(minutes)) void s.save({ [key]: minutes });
         };
         return (
           <>
