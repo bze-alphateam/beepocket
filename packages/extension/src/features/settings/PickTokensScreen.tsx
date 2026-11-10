@@ -3,13 +3,14 @@ import { WalletErrorCodes, type ListedToken } from '../../protocol';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
-import { Layout } from '../../popup/Layout';
 import { useRoute, type RouteBase } from '../../popup/router';
-import { Banner, BottomBar, Button, InlineNote, ScreenHeader } from '../../ui';
+import { Banner, BottomBar, Button, InlineNote } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
 import { homeTarget } from '../lock/targets';
 import { TokenPicker } from '../tokens/TokenPicker';
+import type { PickTokensRoute } from './routes';
 import { NetworkPill } from './NetworkPill';
+import { SETTINGS_PARENT, SettingsPage } from './SettingsPage';
 import { TokenCodeField } from './TokenCodeField';
 
 const networkName: Record<NetworkId, string> = {
@@ -17,7 +18,7 @@ const networkName: Record<NetworkId, string> = {
   testnet: t('settings.network.testnet'),
 };
 
-const SETTINGS: RouteBase = { name: 'settings.main' };
+const SETTINGS = SETTINGS_PARENT['settings.pickTokens'];
 
 /** What the screen opened on: the network and the tokens picked on it then. */
 interface Start {
@@ -32,7 +33,7 @@ interface Start {
  * lands when that network has no preferred token yet: then there is no way back to a Home with
  * nothing to show, only picking tokens or switching to the other network.
  */
-export function PickTokensScreen() {
+export function PickTokensScreen({ route }: { route: PickTokensRoute }) {
   const client = useClient();
   const { navigate } = useRoute<RouteBase>();
   const [start, setStart] = useState<Start | null>(null);
@@ -130,7 +131,11 @@ export function PickTokensScreen() {
   };
 
   if (start === null) {
-    return <Layout>{failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}</Layout>;
+    return (
+      <SettingsPage title={t('settings.tokens')} parent={SETTINGS}>
+        {failed && <Banner tone="red">{t('settings.saveFailed')}</Banner>}
+      </SettingsPage>
+    );
   }
   const landing = start.picked.length === 0;
   const extra = [...start.tokens, ...found].filter(
@@ -141,21 +146,13 @@ export function PickTokensScreen() {
       ? t('settings.tokens.none')
       : t('settings.tokens.selected', { count: selected.length });
   return (
-    <Layout
-      header={
-        <ScreenHeader
-          title={landing ? t('settings.network.pick.title') : t('settings.tokens')}
-          onBack={
-            landing
-              ? undefined
-              : () => {
-                  navigate(SETTINGS);
-                }
-          }
-          right={<NetworkPill network={start.network} />}
-        />
-      }
-      footer={
+    <SettingsPage
+      title={landing ? t('settings.network.pick.title') : t('settings.tokens')}
+      parent={landing ? undefined : SETTINGS}
+      closable={route.required !== true}
+      network={start.network}
+      right={<NetworkPill network={start.network} />}
+      actions={
         needsPassword ? (
           <div class="bp-bottom">
             <p class="bp-bottom-bar-note" role="status">
@@ -217,6 +214,6 @@ export function PickTokensScreen() {
           }
         />
       </section>
-    </Layout>
+    </SettingsPage>
   );
 }

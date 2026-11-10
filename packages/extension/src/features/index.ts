@@ -1,13 +1,8 @@
 import { onboardingRoutes, type OnboardingRoute } from './onboarding';
 import { bookRoutes, type BookRoute } from './address-book/routes';
-import {
-  homeRoutes,
-  type HomeRoute,
-  type SettingsConfigurationTarget,
-  type SettingsTarget,
-} from './home/routes';
+import { homeRoutes, type HomeRoute } from './home/routes';
 import { shellRoutes, type ShellRoute } from './shell/routes';
-import { settingsRoutes, type SettingsRoute } from './settings/routes';
+import { settingsRoutes, type PickTokensRoute, type SettingsRoute } from './settings/routes';
 import { sendRoutes, type SendRoute } from './send/routes';
 import type { RouteTable } from '../popup/router';
 import { lockRoutes, type LockRoute } from './lock/routes';
@@ -21,12 +16,11 @@ import { addTokenRoutes, type AddTokenRoute } from './addtoken/routes';
 export type AppRoute =
   | ShellRoute
   | HomeRoute
-  | SettingsTarget
-  | SettingsConfigurationTarget
   | LockRoute
   | BookRoute
   | OnboardingRoute
   | SettingsRoute
+  | PickTokensRoute
   | SendRoute
   | DappRoute
   | AddTokenRoute;

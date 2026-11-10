@@ -4,10 +4,8 @@ import { act } from 'preact/test-utils';
 import { fail, ok, type Contact, type Result } from '../../protocol';
 import type { Client } from '../../protocol/client';
 import { ClientProvider } from '../../popup/client-context';
-import { Router } from '../../popup/router';
 import { cleanup, fireEvent, render } from '../../ui/test-render';
 import { AddressBookSheet, type AddressBookSheetProps } from './AddressBookSheet';
-import { bookRoutes, type BookRoute } from './routes';
 
 afterEach(cleanup);
 
@@ -243,23 +241,5 @@ describe('AddressBookSheet, manage mode (Settings)', () => {
     await flush();
     expect(button(host, 'Edit Bo')).not.toBeNull();
     expect(onPick).not.toHaveBeenCalled();
-  });
-});
-
-describe('book route', () => {
-  it('shows the sheet in manage mode and leaves to where it came from', async () => {
-    const { client } = mockClient([{ name: 'Alex', address: A }]);
-    const { host } = render(
-      <ClientProvider client={client}>
-        <Router<BookRoute | { name: 'settings.main' }>
-          table={{ ...bookRoutes, 'settings.main': () => <p>SETTINGS</p> }}
-          initial={{ name: 'book' }}
-        />
-      </ClientProvider>,
-    );
-    await flush();
-    expect(button(host, 'Edit Alex')).not.toBeNull();
-    fireEvent(button(host, 'Back'), 'click');
-    expect(host.textContent).toBe('SETTINGS');
   });
 });

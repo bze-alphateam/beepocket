@@ -83,7 +83,7 @@ test('testnet toggle switches the node, back again, and the phrase needs the pas
   });
 });
 
-test('home settings sheet, Testnet toggle with pill, and the reveal sheet in the popup', async ({
+test('home settings pages, Testnet toggle with pill, and the reveal page in the popup', async ({
   context,
   extensionId,
 }) => {
@@ -118,10 +118,10 @@ test('home settings sheet, Testnet toggle with pill, and the reveal sheet in the
 
   await page.getByRole('button', { name: /^Security/ }).click();
   await page.getByRole('button', { name: /Show recovery phrase/ }).click();
-  await page.getByRole('dialog').getByLabel('Password').fill('wrong password');
+  await page.getByLabel('Password').fill('wrong password');
   await page.getByRole('button', { name: 'Show', exact: true }).click();
   await expect(page.getByText('Wrong password.')).toBeVisible();
-  await page.getByRole('dialog').getByLabel('Password').fill(PASSWORD);
+  await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Show', exact: true }).click();
   // The words stay behind the veil, out of the page, until asked for.
   await expect(page.locator('.bp-words li')).toHaveCount(24);
@@ -130,6 +130,6 @@ test('home settings sheet, Testnet toggle with pill, and the reveal sheet in the
   await expect(page.locator('.bp-words li', { hasText: 'abandon' })).toHaveCount(23);
   await page.getByRole('button', { name: 'Hide' }).click();
   await expect(page.getByText('abandon')).toHaveCount(0);
-  // Hide leaves the phrase; closing the sheet goes back one level, to Security.
-  await expect(page.getByRole('dialog', { name: 'Security' })).toBeVisible();
+  // Hide leaves the phrase; the page goes back one level, to Security.
+  await expect(page.getByRole('heading', { name: 'Security' })).toBeVisible();
 });

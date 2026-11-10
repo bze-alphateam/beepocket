@@ -19,7 +19,6 @@ import {
   TokenPill,
   TokenTitle,
 } from '../../ui';
-import { SettingsSheet } from '../settings/SettingsSheet';
 import { AddAddressSheet } from './AddAddressSheet';
 import { AddressesTab } from './AddressesTab';
 import { CurrentSite } from './CurrentSite';
@@ -38,18 +37,16 @@ export interface HomeRoute {
   toast?: string;
 }
 
+/** The Settings root, opened by the gear. */
 export interface SettingsTarget {
   name: 'settings.main';
-}
-
-/** Home with the Settings sheet open on Configuration (the way back from Connected sites). */
-export interface SettingsConfigurationTarget {
-  name: 'settings.configuration';
 }
 
 /** Settings › Preferred tokens, which asks the password when saving needs it. */
 export interface PickTokensTarget {
   name: 'settings.pickTokens';
+  /** Home had no token to show and could not add one: picking is the only way forward. */
+  required?: boolean;
 }
 
 /** The send flow's route (registered by the send feature). */
@@ -74,7 +71,7 @@ export function Home() {
   const client = useClient();
   const env = useHomeEnv();
   const { route, navigate } = useRoute<
-    HomeRoute | SettingsTarget | SettingsConfigurationTarget | PickTokensTarget | SendTarget
+    HomeRoute | SettingsTarget | PickTokensTarget | SendTarget
   >();
   const arrival = route.name === 'home.main' ? route : undefined;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -89,10 +86,6 @@ export function Home() {
   const [adding, setAdding] = useState(false);
   const [copied, setCopied] = useState<{ index: number; at: number } | null>(null);
   const [scheme, setScheme] = useState(env.scheme.current());
-  // `settings.main` is Home with the Settings sheet open (the way back from a settings screen).
-  const [settings, setSettings] = useState(
-    route.name === 'settings.main' || route.name === 'settings.configuration',
-  );
   const { balances, refresh } = useBalances(denom, loaded?.network ?? null);
 
   const load = useCallback(async () => {
@@ -108,7 +101,7 @@ export function Home() {
       list = await client.call('tokens.add', { denom: 'ubze' });
       // Weak lock: the list cannot be written here; the token picker asks the password.
       if (!list.ok && list.error.code === WalletErrorCodes.needsPassword) {
-        navigate({ name: 'settings.pickTokens' });
+        navigate({ name: 'settings.pickTokens', required: true });
         return;
       }
     }
@@ -281,7 +274,7 @@ export function Home() {
           {loaded.network === 'testnet' && <Pill>{t('home.network.testnet')}</Pill>}
           <SettingsButton
             onClick={() => {
-              setSettings(true);
+              navigate({ name: 'settings.main' });
             }}
           />
         </>
@@ -334,17 +327,6 @@ export function Home() {
           }}
         />
       )}
-      <SettingsSheet
-        open={settings}
-        initialPanel={route.name === 'settings.configuration' ? 'configuration' : 'main'}
-        onClose={() => {
-          setSettings(false);
-        }}
-        onChanged={() => {
-          void load();
-          void refresh();
-        }}
-      />
     </>
   );
 

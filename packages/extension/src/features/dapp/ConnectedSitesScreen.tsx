@@ -1,9 +1,8 @@
 import { shortAddress } from '@beepocket/core';
+import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
-import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
-import { useRoute, type RouteBase } from '../../popup/router';
 import {
   DappProtocolCodes,
   WalletErrorCodes,
@@ -19,10 +18,10 @@ import {
   EmptyState,
   Icon,
   RadioList,
-  ScreenHeader,
   Sheet,
   Spinner,
 } from '../../ui';
+import { SETTINGS_PARENT, SettingsPage } from '../settings/SettingsPage';
 import { useSiteIcons } from './site-icons';
 
 type Listing = ResponseOf<'sites.list'>;
@@ -140,10 +139,23 @@ export function SiteRow(props: {
   );
 }
 
+/** Connected sites is a Settings page: ← goes to Configuration, × to Home. */
+function SitesPage(props: { actions?: ComponentChildren; children: ComponentChildren }) {
+  return (
+    <SettingsPage
+      title={t('sites.title')}
+      backLabel={t('sites.back')}
+      parent={SETTINGS_PARENT['dapp.sites']}
+      actions={props.actions}
+    >
+      {props.children}
+    </SettingsPage>
+  );
+}
+
 /** Settings › Connected sites: the sites of the active network, with Change and Disconnect. */
 export function ConnectedSitesScreen() {
   const client = useClient();
-  const { navigate } = useRoute<RouteBase>();
   const [listing, setListing] = useState<Listing | null>(null);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,37 +197,26 @@ export function ConnectedSitesScreen() {
   };
   const disconnect = (origin: string) => () => client.call('sites.disconnect', { origin });
 
-  const header = (
-    <ScreenHeader
-      title={t('sites.title')}
-      backLabel={t('sites.back')}
-      onBack={() => {
-        navigate({ name: 'settings.configuration' });
-      }}
-    />
-  );
-
   if (failed) {
     return (
-      <Layout header={header}>
+      <SitesPage>
         <Banner tone="red">{t('sites.loadFailed')}</Banner>
-      </Layout>
+      </SitesPage>
     );
   }
   if (listing === null) {
     return (
-      <Layout header={header}>
+      <SitesPage>
         <Spinner />
-      </Layout>
+      </SitesPage>
     );
   }
 
   const { sites } = listing;
   const testnet = listing.network === 'testnet';
   return (
-    <Layout
-      header={header}
-      footer={
+    <SitesPage
+      actions={
         sites.length > 1 ? (
           <BottomActions>
             <Button
@@ -281,6 +282,6 @@ export function ConnectedSitesScreen() {
           }}
         />
       )}
-    </Layout>
+    </SitesPage>
   );
 }

@@ -17,11 +17,27 @@
   color: var(--bp-accent-text, #3dd07a);
 }
 
-/* Settings sheet (W-Settings): plain rows, then the footer. */
+/* Settings pages: one frame, so the title, the scrolling rows and the footer never move. */
+.bp-settings-page {
+  min-height: 100%;
+}
+
+.bp-settings-list,
+.bp-settings-page > .bp-settings-reveal,
+.bp-settings-page > .bp-book,
+.bp-settings-page > .bp-lock-form {
+  padding: 0 16px 16px;
+}
+
 .bp-settings-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* A sheet opened on a Settings page (dropdown, contact form) covers the whole frame. */
+.bp-body:has(> .bp-settings-page .bp-sheet-root) {
+  position: static;
 }
 
 .bp-settings-footer {
@@ -29,7 +45,9 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding-top: 8px;
+  min-height: 40px;
+  justify-content: center;
+  padding: 8px 0 12px;
   color: var(--bp-faint);
   font-size: 12px;
 }
