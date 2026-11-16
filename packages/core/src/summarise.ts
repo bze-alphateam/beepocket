@@ -944,13 +944,7 @@ async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): 
     }
   };
   const inner = await Promise.all(msg.msgs.map(summarised));
-  // A wrapped message's own red box speaks of "your address": kept only when that holds, and
-  // for nested execs, whose notices are worded for the same signing address.
-  const nested = inner.flatMap((p, i) =>
-    authorities[i]?.kind === 'own' || msg.msgs[i]?.typeUrl === MsgExec.typeUrl
-      ? [...(p.danger ? [p.danger] : []), ...(p.nested ?? [])]
-      : [],
-  );
+  const nested: DangerNotice[] = [];
   // A hidden message needs a look unless it is an ordinary message of another readable account.
   let flagged = 0;
   for (let i = MAX_EXEC_ROWS; i < inner.length; i += 1) {
@@ -965,6 +959,15 @@ async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): 
       text: 'They run from your own account, need extra care, or cannot be read. Read them in the message details before you continue.',
     });
   }
+  // Red boxes of the shown messages only. A wrapped message's own red box speaks of "your
+  // address": kept only when that holds, and for nested execs, whose notices are worded for
+  // the same signing address. One box per title.
+  inner.slice(0, MAX_EXEC_ROWS).forEach((p, i) => {
+    if (authorities[i]?.kind !== 'own' && msg.msgs[i]?.typeUrl !== MsgExec.typeUrl) return;
+    for (const notice of [...(p.danger ? [p.danger] : []), ...(p.nested ?? [])]) {
+      if (!nested.some((n) => n.title === notice.title)) nested.push(notice);
+    }
+  });
   const danger = execDanger(l, authorities);
   const [only] = inner;
   const [onlyAuthority] = authorities;
