@@ -200,6 +200,8 @@ describe('verifySignRequest', () => {
     '/bze.tradebin.MsgUpdateParams',
     '/bze.tradebin.MsgHaltDenoms',
     '/bze.cointrunk.MsgSavePublisher',
+    '/bze.tokenfactory.MsgSetDenomAdmin',
+    '/bze.tradebin.MsgUpdatePools',
   ])('multi-signer: %s is signed by governance only, never by the wallet', (typeUrl) => {
     // Some of these have no decoder, so their signer would otherwise go unchecked.
     expect(code(request({}, [{ typeUrl, value: new Uint8Array([10, 1, 65]) }]))).toBe(

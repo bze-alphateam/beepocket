@@ -46,3 +46,21 @@ export const nothingMsg = (): AnyMsg => ({
   typeUrl: '/test.v1.MsgNothing',
   value: Uint8Array.from([1, 2, 3, 250]),
 });
+
+/**
+ * A vesting `MsgCreateVestingAccount` from `from` to `to` of `amount` ubze, ending at
+ * `endTime`: a type the wallet has no decoder for.
+ */
+export function vestingMsg(from: string, to: string, amount: string, endTime = 1): AnyMsg {
+  const coin = cat(textField(1, 'ubze'), textField(2, amount));
+  return {
+    typeUrl: '/cosmos.vesting.v1beta1.MsgCreateVestingAccount',
+    value: cat(
+      textField(1, from),
+      textField(2, to),
+      bytesField(3, coin),
+      varint(4 << 3),
+      varint(endTime),
+    ),
+  };
+}

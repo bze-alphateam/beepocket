@@ -2,6 +2,7 @@ import { bech32 } from '@scure/base';
 import { describe, expect, it, vi } from 'vitest';
 import { stubChain, stubScan } from '../test/stubs';
 import {
+  needsTrust,
   parseAmount,
   rawJson,
   summarise,
@@ -1109,6 +1110,39 @@ describe('unknown messages', () => {
     expect(s.level).toBe('unknown');
     expect(s.sub).toContain('unreadable');
   });
+
+});
+
+describe('the trust tick', () => {
+  it('is needed for a message the wallet cannot read, alone or next to a readable one', async () => {
+    expect(needsTrust(await run([wasm]))).toBe(true);
+    expect(needsTrust(await run([send(), wasm]))).toBe(true);
+    expect(needsTrust(await run([wasm, send()]))).toBe(true);
+  });
+
+  it('is needed for a known type whose bytes do not decode', async () => {
+    const broken: AnyMsg = { typeUrl: MsgSend.typeUrl, value: new Uint8Array([10, 99]) };
+    expect(needsTrust(await run([broken]))).toBe(true);
+  });
+
+  it('is needed for a dangerous request, and for an exec of a message it cannot read', async () => {
+    expect(needsTrust(await run([exec(send(STRANGER))]))).toBe(true);
+    expect(needsTrust(await run([exec(wasm)]))).toBe(true);
+    expect(needsTrust(await run([exec(send(), wasm)]))).toBe(true);
+  });
+
+  it('is not needed for a readable message, even one it could not verify', async () => {
+    expect(needsTrust(await run([send()]))).toBe(false);
+    const unverified = await run([swap(['pool-nowhere'], 'ubze', USDC)]);
+    expect(unverified.level).toBe('unknown');
+    expect(needsTrust(unverified)).toBe(false);
+    expect(needsTrust(await run([send(), swap([])]))).toBe(false);
+  });
+
+  it('is not needed for a governance-only type: the request checks refuse those', async () => {
+    const s = await run([{ typeUrl: '/bze.tradebin.MsgUpdatePools', value: new Uint8Array() }]);
+    expect(needsTrust(s)).toBe(false);
+  });
 });
 
 describe('several messages', () => {
@@ -1545,6 +1579,8 @@ const GOVERNANCE_ONLY: [string, string][] = [
   ['/bze.tradebin.MsgUnhaltDenoms', 'Resume trading of tokens'],
   ['/bze.cointrunk.MsgAcceptDomain', 'Change an accepted news domain'],
   ['/bze.cointrunk.MsgSavePublisher', 'Save a CoinTrunk publisher'],
+  ['/bze.tokenfactory.MsgSetDenomAdmin', 'Change a token admin'],
+  ['/bze.tradebin.MsgUpdatePools', 'Update liquidity pools'],
 ];
 
 const sample = (typeUrl: string): AnyMsg => {
