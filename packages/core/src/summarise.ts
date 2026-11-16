@@ -485,12 +485,10 @@ async function fillOrdersParts(l: Lookups, msg: MsgFillOrders): Promise<Parts> {
       sub: `${pair} · ${side}`,
       rows: [
         marketRow,
-        ...msg.orders.map(
-          (item, i): SummaryRow => [
-            `Order ${String(i + 1)}`,
-            `${safeText(item.amount, 40)} @ ${safeText(item.price, 40)} (base units)`,
-          ],
-        ),
+        ...msg.orders.map((item, i): SummaryRow => [
+          `Order ${String(i + 1)}`,
+          `${safeText(item.amount, 40)} @ ${safeText(item.price, 40)} (base units)`,
+        ]),
       ],
       marketId: msg.marketId,
       ...(market ? { marketPair: pair } : {}),
