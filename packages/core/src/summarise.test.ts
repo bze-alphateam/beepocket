@@ -954,6 +954,100 @@ describe('authz exec', () => {
     expect((await run([broken])).level).toBe('dangerous');
   });
 
+  describe('past the rows it shows', () => {
+    const theirs = pack(MsgSend, {
+      fromAddress: ALEX,
+      toAddress: STRANGER,
+      amount: [{ denom: 'ubze', amount: '1' }],
+    });
+    const harmless = Array.from({ length: 10 }, () => theirs);
+    const titles = (s: TxSummary) => s.dangers.map((d) => d.title);
+
+    it('warns about a hidden nested exec', async () => {
+      const nested = pack(MsgExec, { grantee: ALEX, msgs: [Any.fromPartial(theirs)] });
+      const s = await run([exec(...harmless, nested)]);
+      expect(titles(s)).toContain('1 message not shown here needs a closer look');
+    });
+
+    it('warns about a hidden admin hand-over from your own account', async () => {
+      const handOver = pack(factory.MsgChangeAdmin, {
+        creator: ME,
+        denom: VDL,
+        newAdmin: STRANGER,
+      });
+      const s = await run([exec(...harmless, handOver)]);
+      expect(titles(s)).toContain('1 message not shown here needs a closer look');
+      const control = `This gives ${short(STRANGER)} control of`;
+      expect(titles(s).some((t) => t.startsWith(control))).toBe(true);
+    });
+
+    it('warns about hidden messages it cannot read', async () => {
+      const brokenSend: AnyMsg = { typeUrl: MsgSend.typeUrl, value: new Uint8Array([10, 99]) };
+      const s = await run([exec(...harmless, wasm, brokenSend)]);
+      expect(titles(s)).toContain('2 messages not shown here need a closer look');
+    });
+
+    it('stays quiet about hidden ordinary messages of other accounts', async () => {
+      const s = await run([exec(...harmless, theirs, theirs)]);
+      expect(titles(s)).toEqual(['This runs messages on behalf of other accounts']);
+    });
+  });
+
+  it('shows the good messages around one it cannot read', async () => {
+    const brokenSend: AnyMsg = { typeUrl: MsgSend.typeUrl, value: new Uint8Array([10, 99]) };
+    const theirs = pack(MsgSend, {
+      fromAddress: ALEX,
+      toAddress: STRANGER,
+      amount: [{ denom: 'ubze', amount: '1000000' }],
+    });
+    const s = await run([exec(send(STRANGER), brokenSend, theirs)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows).toContainEqual(['To', STRANGER, 'mono']);
+    expect(s.rows).toContainEqual(['Runs from', ALEX, 'mono']);
+    expect(s.rows).toContainEqual(['Runs from', 'An account the wallet cannot read']);
+    expect(s.dangers[0]?.title).toBe('Some of these run from your own account');
+  });
+
+  it('says messages it cannot read may run from your own account', async () => {
+    const theirs = pack(MsgSend, { fromAddress: ALEX, toAddress: STRANGER });
+    const s = await run([exec(theirs, wasm)]);
+    expect(s.dangers[0]?.title).toBe('Some of these may run from your own account');
+    const one = await run([exec(wasm)]);
+    expect(one.dangers[0]?.text).toContain('it may be your own');
+  });
+
+  it('numbers the messages of a nested exec under their parent', async () => {
+    const inner = pack(MsgExec, {
+      grantee: ME,
+      msgs: [Any.fromPartial(send(STRANGER)), Any.fromPartial(send(ALEX))],
+    });
+    const s = await run([exec(send(ALEX), inner)]);
+    const labels = s.rows.map((r) => r[0]).filter((l) => l.startsWith('Message '));
+    expect(labels).toEqual(['Message 1', 'Message 2', 'Message 2.1', 'Message 2.2']);
+  });
+
+  it('does not decode an exec past the depth limit', async () => {
+    const brokenExec: AnyMsg = { typeUrl: MsgExec.typeUrl, value: new Uint8Array([10, 99]) };
+    const s = await run([exec(exec(brokenExec))]);
+    expect(s.level).toBe('dangerous');
+    expect(JSON.stringify(s)).toContain('Nested too deeply to read');
+    expect(JSON.stringify(s)).not.toContain('Unreadable');
+  });
+
+  it('never shows a signer longer than a row allows', async () => {
+    const long = `bze1${'q'.repeat(200)}`;
+    const s = await run([exec(pack(MsgSend, { fromAddress: long, toAddress: ALEX }))]);
+    expect(s.rows[0]).toEqual(['Runs from', 'An account the wallet cannot read']);
+    for (const [, value] of s.rows) expect(value.length).toBeLessThanOrEqual(81);
+    expect(JSON.stringify(s)).not.toContain(long);
+  });
+
+  it('reads a nested exec grantee in upper case as your own account', async () => {
+    const nested = pack(MsgExec, { grantee: ME.toUpperCase(), msgs: [Any.fromPartial(send())] });
+    const s = await run([exec(nested)]);
+    expect(s.rows[0]).toEqual(['Runs from', 'Your own account']);
+  });
+
   it('still warns about wrapped messages past the rows it shows', async () => {
     const theirs = pack(MsgSend, {
       fromAddress: ALEX,
