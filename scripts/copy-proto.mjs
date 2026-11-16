@@ -122,7 +122,7 @@ const govDoc = (from, to) => {
   return tx.slice(start, lineIndex(tx, to, start) - 1);
 };
 const govTx = [
-  'import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";',
+  'import { Coin, type CoinAmino, type CoinSDKType } from "../../base/v1beta1/coin";',
   'import { VoteOption, voteOptionFromJSON, voteOptionToJSON } from "./gov";',
   'import { BinaryReader, BinaryWriter } from "../../../binary";',
   'import { GlobalDecoderRegistry } from "../../../registry";',

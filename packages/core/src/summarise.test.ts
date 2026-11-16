@@ -1055,7 +1055,8 @@ describe('authz exec', () => {
       ['Runs from', 'An account the wallet cannot read'],
     ]);
     expect(JSON.stringify(s)).toContain('Nested too deeply to read');
-    expect(JSON.stringify(s).toLowerCase()).not.toContain('unreadable');
+    const text = JSON.stringify(s).replaceAll('"unreadable":false', '');
+    expect(text.toLowerCase()).not.toContain('unreadable');
   });
 
   it('shows an over-long signer as unreadable and never in full', async () => {

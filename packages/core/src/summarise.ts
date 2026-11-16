@@ -1592,19 +1592,13 @@ function createVestingParts(l: Lookups, msg: MsgCreateVestingAccount): Promise<P
   ]);
 }
 
-function permanentLockedParts(
-  l: Lookups,
-  msg: MsgCreatePermanentLockedAccount,
-): Promise<Parts> {
+function permanentLockedParts(l: Lookups, msg: MsgCreatePermanentLockedAccount): Promise<Parts> {
   return vestingParts(l, 'Create locked account', msg.toAddress, msg.amount, [
     ['Unlocks', 'Never: the tokens can only be staked'],
   ]);
 }
 
-function periodicVestingParts(
-  l: Lookups,
-  msg: MsgCreatePeriodicVestingAccount,
-): Promise<Parts> {
+function periodicVestingParts(l: Lookups, msg: MsgCreatePeriodicVestingAccount): Promise<Parts> {
   const length = msg.vestingPeriods.reduce((sum, p) => sum + p.length, 0n);
   return vestingParts(
     l,

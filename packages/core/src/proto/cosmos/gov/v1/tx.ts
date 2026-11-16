@@ -1,5 +1,5 @@
 // Copied from @bze/bzejs 3.2.0 (src/cosmos/gov/v1/tx.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
-import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";
+import { Coin, type CoinAmino, type CoinSDKType } from "../../base/v1beta1/coin";
 import { VoteOption, voteOptionFromJSON, voteOptionToJSON } from "./gov";
 import { BinaryReader, BinaryWriter } from "../../../binary";
 import { GlobalDecoderRegistry } from "../../../registry";
