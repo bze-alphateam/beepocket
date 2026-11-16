@@ -976,9 +976,19 @@ describe('authz exec', () => {
         newAdmin: STRANGER,
       });
       const s = await run([exec(...harmless, handOver)]);
-      expect(titles(s)).toContain('1 message not shown here needs a closer look');
-      const control = `This gives ${short(STRANGER)} control of`;
-      expect(titles(s).some((t) => t.startsWith(control))).toBe(true);
+      expect(titles(s)[1]).toBe('1 message not shown here needs a closer look');
+    });
+
+    it('keeps the red boxes of many wrapped messages few', async () => {
+      const handOver = pack(factory.MsgChangeAdmin, {
+        creator: ME,
+        denom: VDL,
+        newAdmin: STRANGER,
+      });
+      const s = await run([exec(...Array.from({ length: 50 }, () => handOver))]);
+      expect(titles(s)[1]).toBe('40 messages not shown here need a closer look');
+      expect(new Set(titles(s)).size).toBe(titles(s).length);
+      expect(s.dangers.length).toBeLessThanOrEqual(3);
     });
 
     it('warns about hidden messages it cannot read', async () => {
@@ -1027,14 +1037,17 @@ describe('authz exec', () => {
   });
 
   it('does not decode an exec past the depth limit', async () => {
-    const brokenExec: AnyMsg = { typeUrl: MsgExec.typeUrl, value: new Uint8Array([10, 99]) };
-    const s = await run([exec(exec(brokenExec))]);
+    const s = await run([exec(exec(exec(send(STRANGER))))]);
     expect(s.level).toBe('dangerous');
+    expect(s.rows).toEqual([
+      ['Runs from', 'Your own account'],
+      ['Runs from', 'An account the wallet cannot read'],
+    ]);
     expect(JSON.stringify(s)).toContain('Nested too deeply to read');
-    expect(JSON.stringify(s)).not.toContain('Unreadable');
+    expect(JSON.stringify(s).toLowerCase()).not.toContain('unreadable');
   });
 
-  it('never shows a signer longer than a row allows', async () => {
+  it('shows an over-long signer as unreadable and never in full', async () => {
     const long = `bze1${'q'.repeat(200)}`;
     const s = await run([exec(pack(MsgSend, { fromAddress: long, toAddress: ALEX }))]);
     expect(s.rows[0]).toEqual(['Runs from', 'An account the wallet cannot read']);
@@ -1060,7 +1073,7 @@ describe('authz exec', () => {
     expect(JSON.stringify(s.rows)).not.toContain('Your own account');
     const titles = s.dangers.map((d) => d.title);
     expect(titles[0]).toBe('Some of these run from your own account');
-    expect(titles).toContain(`This gives ${short(STRANGER)} power over your address`);
+    expect(titles[1]).toBe('2 messages not shown here need a closer look');
   });
 
   it('does not read nesting past its depth limit', async () => {
