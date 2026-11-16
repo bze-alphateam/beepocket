@@ -470,7 +470,7 @@ async function fillOrdersParts(l: Lookups, msg: MsgFillOrders): Promise<Parts> {
     items.push({ amount, price: item.price });
   }
   const known = msg.orderType === 'buy' || msg.orderType === 'sell';
-  if (!market || !known || items.length !== count) {
+  if (!market || !known || count === 0 || items.length !== count) {
     // Nothing to work the totals out with: list what the message says, in the chain's units.
     const side = msg.orderType === 'buy' ? 'you sell' : buying ? 'you buy' : '?';
     const pair = market ? await l.pair(market.base, market.quote) : safeText(msg.marketId);
@@ -509,7 +509,8 @@ async function fillOrdersParts(l: Lookups, msg: MsgFillOrders): Promise<Parts> {
     const amount = await l.money(market.base, item.amount);
     rows.push([`Order ${String(i + 1)}`, `${amount} @ ${price} ${unit}`]);
   }
-  const baseText = await l.money(market.base, baseTotal);
+  // Shown in full on the side that is given up, so it is never cut short.
+  const baseText = await l.money(market.base, baseTotal, !buying);
   const quoteText = await l.money(market.quote, quoteTotal, buying);
   const [hero, sub, baseLabel, quoteLabel] = buying
     ? [`You pay up to ${quoteText}`, `You get ${baseText}`, 'You get', 'You pay up to']
