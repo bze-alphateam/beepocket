@@ -762,7 +762,7 @@ describe('request queue', () => {
     expect(await t.dapp.queue()).toEqual({
       head: at(1),
       headId: a.id,
-      headTicket: expect.any(String),
+      headTicket: expect.any(String) as string,
       count: 3,
       origins: [at(1), at(2), at(3)],
     });
@@ -975,7 +975,7 @@ describe('request queue', () => {
     expect(await t.dapp.queue()).toEqual({
       head: at(2),
       headId: b.id,
-      headTicket: expect.any(String),
+      headTicket: expect.any(String) as string,
       count: 1,
       origins: [at(2)],
     });
