@@ -1203,4 +1203,178 @@ describe('an approval is bound to the request on screen', () => {
     const later = await t.ask('connect', chainId(), from);
     expect(t.answersFor(later.id)).toEqual([]);
   });
+
+  it('refuses a request id its page already has in hand', async () => {
+    const t = await rig();
+    const id = 'c'.repeat(32);
+    const first = await t.dapp.receive(t.site(), { id, method: 'connect', params: chainId() });
+    const again = await t.dapp.receive(t.site(), { id, method: 'connect', params: chainId() });
+    expect(first.ack).toEqual({ accepted: true });
+    expect(again.ack).toEqual({
+      error: { code: 'invalid-request', message: 'Duplicate request.' },
+    });
+    await first.after();
+    expect((await t.dapp.queue()).count).toBe(1);
+  });
+
+  it('takes at most 50 requests of one site in hand at once', async () => {
+    const t = await rig();
+    const from = t.site(at(1), 1, 'd1');
+    const id = (i: number) => (i + 1).toString(16).padStart(32, '0');
+    const held = [];
+    for (let i = 0; i < 50; i++) {
+      const r = await t.dapp.receive(from, { id: id(i), method: 'connect', params: chainId() });
+      expect(r.ack).toEqual({ accepted: true });
+      held.push(r);
+    }
+    const over = await t.dapp.receive(from, { id: id(50), method: 'connect', params: chainId() });
+    expect(over.ack).toEqual({
+      error: { code: 'invalid-request', message: 'Too many requests waiting' },
+    });
+    // Another site is not held back.
+    const other = await t.dapp.receive(t.site(at(2), 2, 'd2'), {
+      id: id(51),
+      method: 'connect',
+      params: chainId(),
+    });
+    expect(other.ack).toEqual({ accepted: true });
+    // Once one is handled, the site has room again.
+    await held[0]?.after();
+    const room = await t.dapp.receive(from, { id: id(52), method: 'connect', params: chainId() });
+    expect(room.ack).toEqual({ accepted: true });
+  });
+
+  it('refuses a used id again for ten minutes, then takes it', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId());
+    await t.answer(a.id, { approve: false });
+    const send = async () => {
+      const r = await t.dapp.receive(t.site(), { id: a.id, method: 'connect', params: chainId() });
+      await r.after();
+    };
+    await send();
+    expect(t.answersFor(a.id).at(-1)).toMatchObject({ error: { message: 'Duplicate request.' } });
+    t.clock.t += 10 * MINUTE;
+    const before = t.answersFor(a.id).length;
+    await send();
+    expect(t.answersFor(a.id)).toHaveLength(before);
+    expect(await t.dapp.queue()).toMatchObject({ count: 1, headId: a.id });
+  });
+
+  it('completes an approval once, however often the window sends it', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId());
+    const view = await t.dapp.current();
+    if (view.status !== 'connect') throw new Error('unreachable');
+    const user = { approve: true, index: 1, ticket: view.ticket, origin: view.origin };
+    const results = await Promise.all([t.dapp.answer(a.id, user), t.dapp.answer(a.id, user)]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toMatchObject([
+      { ok: false, error: { code: 'unknown-request' } },
+    ]);
+    expect(t.answersFor(a.id)).toHaveLength(1);
+  });
+
+  it(
+    'answers only the instance on screen even once its id is no longer remembered',
+    {
+      timeout: 120_000,
+    },
+    async () => {
+      const t = await rig();
+      const id = 'b'.repeat(32);
+      const first = await t.dapp.receive(t.site(ORIGIN, 1, 'doc-a'), {
+        id,
+        method: 'connect',
+        params: chainId(),
+      });
+      await first.after();
+      const view = await t.dapp.current();
+      if (view.status !== 'connect') throw new Error('unreachable');
+      const gone = await t.dapp.receive(t.site(ORIGIN, 1, 'doc-a'), { id, cancel: true });
+      await gone.after();
+      // Ten other sites use their full share of ids: the oldest remembered ids are forgotten.
+      for (let o = 1; o <= 10; o++) {
+        const from = t.site(at(o), 10 + o, `d${String(o)}`);
+        for (let i = 0; i < 100; i++) {
+          const r = await t.ask('connect', chainId(), from);
+          const c = await t.dapp.receive(from, { id: r.id, cancel: true });
+          await c.after();
+        }
+      }
+      const second = await t.dapp.receive(t.site(ORIGIN, 2, 'doc-b'), {
+        id,
+        method: 'connect',
+        params: chainId(),
+      });
+      await second.after();
+      const replaced = await t.dapp.current();
+      expect(replaced).toMatchObject({ status: 'connect', id });
+      if (replaced.status !== 'connect') throw new Error('unreachable');
+      expect(replaced.ticket).not.toBe(view.ticket);
+
+      const res = await t.dapp.answer(id, {
+        approve: true,
+        index: 0,
+        ticket: view.ticket,
+        origin: view.origin,
+      });
+      expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
+      const profile = await t.wallet.getProfile();
+      expect(profile.ok && profile.value.sites.mainnet).toEqual({});
+      expect(await t.dapp.current()).toMatchObject({ id, ticket: replaced.ticket });
+    },
+  );
+
+  it('puts back the answered request, and refuses one that took its id meanwhile', async () => {
+    const t = await rig();
+    const id = 'b'.repeat(32);
+    const first = await t.dapp.receive(t.site(at(1), 1, 'd1'), {
+      id,
+      method: 'connect',
+      params: chainId(),
+    });
+    await first.after();
+    const view = await t.dapp.current();
+    if (view.status !== 'connect') throw new Error('unreachable');
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const update = vi
+      .spyOn(t.wallet, 'updateProfile')
+      .mockImplementationOnce(() =>
+        gate.then(() => ({ ok: false, error: { code: 'internal', message: 'Not saved.' } })),
+      );
+    const answering = t.dapp.answer(id, {
+      approve: true,
+      index: 0,
+      ticket: view.ticket,
+      origin: view.origin,
+    });
+    await vi.waitFor(() => {
+      expect(update).toHaveBeenCalled();
+    });
+    // Long enough for the id to be forgotten while the answer is still being completed.
+    t.clock.t += 10 * MINUTE;
+    const second = await t.dapp.receive(t.site(at(2), 2, 'd2'), {
+      id,
+      method: 'connect',
+      params: chainId(),
+    });
+    await second.after();
+    release();
+    expect(await answering).toMatchObject({ ok: false, error: { code: 'internal' } });
+
+    expect(t.delivered.filter((d) => d.documentId === 'd2').map((d) => d.message)).toMatchObject([
+      { dapp: { id, error: { message: 'Duplicate request.' } } },
+    ]);
+    // The answered request is back (and, this late, ends as expired rather than silently).
+    await t.dapp.queue();
+    expect(t.delivered.filter((d) => d.documentId === 'd1').map((d) => d.message)).toMatchObject([
+      { dapp: { id, error: { code: 'expired' } } },
+    ]);
+    const profile = await t.wallet.getProfile();
+    expect(profile.ok && profile.value.sites.mainnet).toEqual({});
+  });
 });

@@ -1367,4 +1367,43 @@ describe('an approval is bound to the request on screen', () => {
     expect(t.node.broadcast).not.toHaveBeenCalled();
     expect(t.answerOf(id)).toBeUndefined();
   });
+
+  it('broadcasts nothing that its page cancels while the request is being handled', async () => {
+    const t = await rig();
+    await t.connect();
+    const id = 'e'.repeat(32);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const profile = await t.wallet.getProfile();
+    const slow = vi
+      .spyOn(t.wallet, 'getProfile')
+      .mockImplementationOnce(() => gate.then(() => profile));
+    const received = await t.dapp.receive(pageA, {
+      id,
+      method: 'sendTx',
+      params: {
+        chainId: CHAIN_ID,
+        txBytes: bytesToWire(
+          txRawBytes({
+            bodyBytes: Uint8Array.from([1]),
+            authInfoBytes: Uint8Array.from([2]),
+            signatures: [new Uint8Array(64).fill(1)],
+          }),
+        ),
+        mode: 'sync',
+      },
+      sentAt: t.clock.now(),
+    });
+    const handling = received.after();
+    await vi.waitFor(() => {
+      expect(slow).toHaveBeenCalled();
+    });
+    await cancel(t, pageA, id);
+    release();
+    await handling;
+    expect(t.node.broadcast).not.toHaveBeenCalled();
+    expect(t.answerOf(id)).toBeUndefined();
+  });
 });
