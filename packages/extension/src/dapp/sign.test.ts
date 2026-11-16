@@ -1116,9 +1116,9 @@ describe('signDirect with Advanced gas limit and price', () => {
       });
     }
     t.node.balances = new Map([['ubze', 5_999n]]);
-    expect(
-      await t.answer(r.id, { approve: true, fee: custom('6000', '300000', 2) }),
-    ).toMatchObject({ ok: false, error: { code: 'review-changed' } });
+    expect(await t.answer(r.id, { approve: true, fee: custom('6000', '300000', 2) })).toMatchObject(
+      { ok: false, error: { code: 'review-changed' } },
+    );
   });
 
   it("replaces a site's fee with one priced for the user's settings", async () => {
