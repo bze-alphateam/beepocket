@@ -56,7 +56,7 @@ interface Incoming {
   params: unknown;
 }
 
-/** The checks passed: the request is taken. */
+/** The checks passed: the request is taken once it is recorded. */
 interface Checked {
   handler: DappHandler;
   pending: Incoming;
@@ -85,16 +85,20 @@ export class DappService {
   }
 
   /** `message` is the untrusted `dapp` field of a content-script message; `from` is the browser's word. */
-  receive(from: DappSender, message: unknown): Promise<Received> {
+  async receive(from: DappSender, message: unknown): Promise<Received> {
     const checked = this.check(from, message);
-    if (!('pending' in checked)) return Promise.resolve(checked);
+    if (!('pending' in checked)) return checked;
     const { handler, pending } = checked;
-    // Recorded now, ahead of anything the page sends after the ack, such as its cancel.
-    void this.deps.cancellations.sent(from, pending.id).catch(() => undefined);
-    return Promise.resolve({
-      ack: { accepted: true },
-      after: () => this.settle(from, handler, pending),
-    });
+    // Recorded before the ack, so the page's cancel, which can only follow it, finds the request.
+    const taken = await this.deps.cancellations.sent(from, pending.id);
+    if (taken !== 'ok') {
+      const text = taken === 'duplicate' ? 'Duplicate request.' : 'Too many requests waiting';
+      return {
+        ack: { error: { code: DappErrorCodes.invalidRequest, message: text } },
+        after: nothing,
+      };
+    }
+    return { ack: { accepted: true }, after: () => this.settle(from, handler, pending) };
   }
 
   /** The synchronous checks that decide the ack. */

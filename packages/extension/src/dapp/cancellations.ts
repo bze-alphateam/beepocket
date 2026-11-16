@@ -2,7 +2,7 @@ import type { SessionStorage } from '../platform';
 import type { DappSender } from './types';
 
 export const IN_FLIGHT_KEY = 'dapp.inflight';
-/** Requests recorded per site while they are handled; past it, a site's new ones are not. */
+/** Requests one site may have in hand at once, before they are answered or queued. */
 export const MAX_IN_FLIGHT_PER_ORIGIN = 50;
 /** A record older than this belongs to a worker that stopped: it is forgotten. */
 const STALE_MS = 10 * 60_000;
@@ -11,6 +11,9 @@ const STALE_MS = 10 * 60_000;
 export interface CancelledRequests {
   has(request: { id: string; tabId: number; documentId: string }): Promise<boolean>;
 }
+
+/** Whether a new request was taken in hand, or why not. */
+export type SentResult = 'ok' | 'duplicate' | 'full';
 
 interface InFlight {
   origin: string;
@@ -45,7 +48,8 @@ const same = (
  * The requests being handled (acked, not yet answered or queued), per sending document, and
  * whether their page gave up on them (no ack in time, or restored from the back/forward cache).
  * A cancel counts only for a request its own document sent. Records are kept per document,
- * within a bounded share per site, and are never evicted. Kept in session storage, written one
+ * within a bounded share per site, and are never evicted: past the share, a site's new requests
+ * are refused. Kept in session storage, written one
  * change at a time in arrival order: a cancel that arrives right after its request finds it.
  */
 export class Cancellations implements CancelledRequests {
@@ -69,16 +73,20 @@ export class Cancellations implements CancelledRequests {
   }
 
   /**
-   * The page sent this request; until it is settled, the page may cancel it. Nothing is recorded
-   * past the site's share, or for a request already recorded.
+   * The page sent this request; until it is settled, the page may cancel it. Every request in
+   * hand has its record: one the document already has in hand, or one past the site's share, is
+   * not taken.
    */
-  sent(from: DappSender, id: string): Promise<void> {
+  sent(from: DappSender, id: string): Promise<SentResult> {
     return this.exclusive(async () => {
       const all = await this.read();
-      if (all.some((r) => same(r, from.tabId, from.documentId, id))) return;
-      if (all.filter((r) => r.origin === from.origin).length >= MAX_IN_FLIGHT_PER_ORIGIN) return;
+      if (all.some((r) => same(r, from.tabId, from.documentId, id))) return 'duplicate';
+      if (all.filter((r) => r.origin === from.origin).length >= MAX_IN_FLIGHT_PER_ORIGIN) {
+        return 'full';
+      }
       all.push({ ...from, id, cancelled: false, at: this.clock.now() });
       await this.session.set(IN_FLIGHT_KEY, all);
+      return 'ok';
     });
   }
 
