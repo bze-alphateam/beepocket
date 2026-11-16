@@ -154,7 +154,6 @@ const selfGrant = () =>
       authorization: wrap(GenericAuthorization, { msg: '/cosmos.bank.v1beta1.MsgSend' }),
     },
   });
-const short = (address: string) => `${address.slice(0, 8)}…${address.slice(-6)}`;
 /** An authz exec run by the connected address. */
 const exec = (...msgs: AnyMsg[]) =>
   pack(MsgExec, { grantee: ME, msgs: msgs.map((m) => Any.fromPartial(m)) });
