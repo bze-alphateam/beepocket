@@ -31,7 +31,7 @@ import { Deliverer } from './deliver';
 import { DocumentLog } from './documents';
 import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
-import { DappRegistry } from './registry';
+import { DappRegistry, type UserAnswer } from './registry';
 import { grantMsg, nothingMsg } from './test-support';
 import { RequestStore } from './requests';
 import { Cancellations } from './cancellations';
@@ -187,7 +187,7 @@ async function rig() {
   const created: unknown[] = [];
   const open = new Set<number>();
   const registry = new DappRegistry();
-  const cancellations = new Cancellations();
+  const cancellations = new Cancellations(session, clock);
   registerDappHandlers(registry, {
     wallet,
     services,
@@ -250,16 +250,31 @@ async function rig() {
       { result?: unknown; error?: { code: string; message: string } } | undefined;
   const signedOf = (id: string) => answerOf(id)?.result as SignedAnswer;
 
+  /**
+   * The window's answer to the request at the head of the queue, naming it as the window does:
+   * its id, the ticket it was shown with and, for a connect, its site.
+   */
+  const answer = async (id: string, user: Omit<UserAnswer, 'ticket'>) => {
+    const { head, headId, headTicket } = await dapp.queue();
+    const named = headId === id;
+    return dapp.answer(id, {
+      ticket: named ? (headTicket ?? '') : '',
+      ...(named && head !== null ? { origin: head } : {}),
+      ...user,
+    });
+  };
+
   await wallet.createWallet(PASSWORD, PHRASE);
   await wallet.deriveNext();
   const connect = async () => {
     const a = await ask('connect', { chainId: CHAIN_ID });
     await dapp.current();
-    await dapp.answer(a.id, { approve: true, index: 0 });
+    await answer(a.id, { approve: true, index: 0 });
   };
   return {
     wallet,
     dapp,
+    answer,
     from,
     clock,
     ask,
@@ -437,7 +452,7 @@ describe('signDirect review and approval', () => {
     await t.connect();
     const r = await review(t);
     expect(r.view.siteFee).toBeUndefined();
-    const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(res.ok).toBe(true);
     const { signed, signature } = t.signedOf(r.id);
     expect(bytesFromWire(signed.bodyBytes)).toEqual(r.bodyBytes);
@@ -471,12 +486,12 @@ describe('signDirect review and approval', () => {
     expect(other?.gasLimit).toBe('300000');
     // The native fee's gas limit does not pay for the swap: signing it is refused.
     expect(
-      await t.dapp.answer(r.id, {
+      await t.answer(r.id, {
         approve: true,
         fee: { denom: 'uother', amount: '500', gasLimit: r.view.fee.gasLimit },
       }),
     ).toMatchObject({ ok: false, error: { code: 'review-changed' } });
-    await t.dapp.answer(r.id, {
+    await t.answer(r.id, {
       approve: true,
       fee: { denom: 'uother', amount: '500', gasLimit: '300000' },
     });
@@ -490,7 +505,7 @@ describe('signDirect review and approval', () => {
     const t = await rig();
     await t.connect();
     const r = await review(t);
-    const res = await t.dapp.answer(r.id, {
+    const res = await t.answer(r.id, {
       approve: true,
       fee: { denom: 'ubze', amount: '1', gasLimit: r.view.fee.gasLimit },
     });
@@ -503,9 +518,9 @@ describe('signDirect review and approval', () => {
     const t = await rig();
     await t.connect();
     const r = await review(t);
-    expect(await t.dapp.answer(r.id, { approve: true })).toMatchObject({ ok: false });
+    expect(await t.answer(r.id, { approve: true })).toMatchObject({ ok: false });
     expect(
-      await t.dapp.answer(r.id, {
+      await t.answer(r.id, {
         approve: true,
         fee: { denom: 'unope', amount: '1', gasLimit: r.view.fee.gasLimit },
       }),
@@ -517,7 +532,7 @@ describe('signDirect review and approval', () => {
     const t = await rig();
     await t.connect();
     const r = await review(t);
-    await t.dapp.answer(r.id, { approve: false });
+    await t.answer(r.id, { approve: false });
     expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'rejected' } });
   });
 
@@ -526,7 +541,7 @@ describe('signDirect review and approval', () => {
     await t.connect();
     const r = await review(t);
     t.alarms.length = 0;
-    await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(t.alarms).toEqual(expect.arrayContaining([WEAK_LOCK_ALARM, FULL_LOCK_ALARM]));
   });
 
@@ -536,7 +551,7 @@ describe('signDirect review and approval', () => {
     const r = await review(t, { messages: [nothingMsg()] });
     expect(r.view.summary.level).toBe('unknown');
     expect(r.view.messageJson[0]).toContain('/test.v1.MsgNothing');
-    const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(res.ok).toBe(true);
     expect(t.signedOf(r.id)).toBeDefined();
   });
@@ -549,7 +564,7 @@ describe('signDirect review and approval', () => {
     });
     expect(r.view.summary.level).toBe('dangerous');
     expect(r.view.summary.messages[0]?.danger).not.toBeNull();
-    const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(res.ok).toBe(true);
     expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
     expect(t.signedOf(r.id)).toBeUndefined();
@@ -561,7 +576,7 @@ describe('signDirect review and approval', () => {
     const r = await review(t, {
       messages: [grantMsg(MAIN.address, OTHER.address, '/cosmos.bank.v1beta1.MsgSend')],
     });
-    const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view), trusted: true });
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view), trusted: true });
     expect(res.ok).toBe(true);
     expect(t.signedOf(r.id)).toBeDefined();
   });
@@ -580,7 +595,7 @@ describe('signDirect review and approval', () => {
     expect(r.view.summary.level).toBe('dangerous');
     expect(r.view.summary.messages.map((m) => m.level)).toEqual(['normal', 'dangerous']);
     expect(r.view.messageJson).toHaveLength(2);
-    const res = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(res.ok).toBe(true);
     expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
     expect(t.signedOf(r.id)).toBeUndefined();
@@ -595,7 +610,7 @@ describe('signDirect review and approval', () => {
       p.sites.mainnet = {};
       return p;
     });
-    await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'not-connected' } });
   });
 });
@@ -608,7 +623,7 @@ describe('signDirect in the weak lock', () => {
     const r = await review(t);
     expect(r.view.locked).toBe(true);
 
-    const early = await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    const early = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(early).toMatchObject({ ok: false, error: { code: 'needs-password' } });
     expect(t.answerOf(r.id)).toBeUndefined();
 
@@ -620,7 +635,7 @@ describe('signDirect in the weak lock', () => {
     expect(right).toMatchObject({ ok: true, value: { status: 'ok' } });
     const view = await t.dapp.current();
     expect(view).toMatchObject({ status: 'sign', locked: false });
-    await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(t.signedOf(r.id).signature.signature).toBeTypeOf('string');
   });
 });
@@ -779,7 +794,7 @@ describe('a sign request waiting in the queue', () => {
     const second = await t.ask('signDirect', request().params);
     expect(await t.dapp.current()).toMatchObject({ status: 'sign', id: first.id, count: 2 });
 
-    await t.dapp.answer(first.id, { approve: false });
+    await t.answer(first.id, { approve: false });
     expect(await t.dapp.sites.disconnect(ORIGIN)).toEqual({ ok: true, value: {} });
     expect(await t.dapp.current()).toEqual({ status: 'none' });
     expect(t.answerOf(second.id)).toMatchObject({ error: { code: 'not-connected' } });
@@ -811,7 +826,7 @@ describe('signDirect with a fee the site set', () => {
       ['ubze', '2000', undefined],
       ['uother', '500', undefined],
     ]);
-    expect((await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) })).ok).toBe(true);
+    expect((await t.answer(r.id, { approve: true, fee: feeFor(r.view) })).ok).toBe(true);
     expect(signedFee(t, r.id)).toMatchObject({
       amount: [{ denom: 'ubze', amount: '5000' }],
       gasLimit: '250000',
@@ -822,7 +837,7 @@ describe('signDirect with a fee the site set', () => {
     const t = await rig();
     await t.connect();
     const r = await review(t, site([['ubze', 5_000n]], 250_000n));
-    await t.dapp.answer(r.id, {
+    await t.answer(r.id, {
       approve: true,
       fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
     });
@@ -837,7 +852,7 @@ describe('signDirect with a fee the site set', () => {
     await t.connect();
     const r = await review(t, site([['ubze', 5_000n]], 250_000n));
     expect(
-      await t.dapp.answer(r.id, {
+      await t.answer(r.id, {
         approve: true,
         fee: { denom: 'ubze', amount: '5000', gasLimit: '200000' },
       }),
@@ -850,11 +865,11 @@ describe('signDirect with a fee the site set', () => {
     await t.connect();
     const at = await review(t, site([['ubze', 2_500n]], 250_000n));
     expect(at.view.siteFee).toEqual({ status: 'ok' });
-    await t.dapp.answer(at.id, { approve: false });
+    await t.answer(at.id, { approve: false });
     const below = await review(t, site([['ubze', 2_499n]], 250_000n));
     expect(below.view.siteFee).toEqual({ status: 'low' });
     expect(below.view.fee).toMatchObject({ amount: '2499', setBy: ORIGIN });
-    await t.dapp.answer(below.id, { approve: true, fee: feeFor(below.view) });
+    await t.answer(below.id, { approve: true, fee: feeFor(below.view) });
     expect(signedFee(t, below.id)).toMatchObject({
       amount: [{ denom: 'ubze', amount: '2499' }],
       gasLimit: '250000',
@@ -866,10 +881,10 @@ describe('signDirect with a fee the site set', () => {
     await t.connect();
     const three = await review(t, site([['ubze', 6_000n]], 200_000n));
     expect(three.view.siteFee).toEqual({ status: 'ok' });
-    await t.dapp.answer(three.id, { approve: false });
+    await t.answer(three.id, { approve: false });
     const over = await review(t, site([['ubze', 6_001n]], 200_000n));
     expect(over.view.siteFee).toEqual({ status: 'high', times: 3 });
-    await t.dapp.answer(over.id, { approve: false });
+    await t.answer(over.id, { approve: false });
     const many = await review(t, site([['ubze', 9_000n]], 200_000n));
     expect(many.view.siteFee).toEqual({ status: 'high', times: 5 });
     expect(many.view.fee).toMatchObject({ amount: '9000', setBy: ORIGIN });
@@ -882,7 +897,7 @@ describe('signDirect with a fee the site set', () => {
     const below = await review(t, site([['ubze', 5_000n]], 149_999n));
     expect(below.view.siteFee).toEqual({ status: 'gas' });
     expect(below.view.fee).toMatchObject({ gasLimit: '149999', setBy: ORIGIN });
-    await t.dapp.answer(below.id, { approve: false });
+    await t.answer(below.id, { approve: false });
     const at = await review(t, site([['ubze', 1_500n]], 150_000n));
     expect(at.view.siteFee).toEqual({ status: 'ok' });
   });
@@ -900,10 +915,10 @@ describe('signDirect with a fee the site set', () => {
     expect(below.view.fee).toMatchObject({ denom: 'uother', gasUsed: '200000', setBy: ORIGIN });
     // The site's token is the one the estimate simulates a fee in another token with.
     expect(t.node.estimates.at(-1)?.preferred).toBe('uother');
-    await t.dapp.answer(below.id, { approve: false });
+    await t.answer(below.id, { approve: false });
     const at = await review(t, site([['uother', 400n]], 200_000n));
     expect(at.view.siteFee).toEqual({ status: 'ok' });
-    await t.dapp.answer(at.id, { approve: false });
+    await t.answer(at.id, { approve: false });
     // A BZE fee is still checked against the BZE simulation.
     const bze = await review(t, site([['ubze', 1_800n]], 180_000n));
     expect(bze.view.siteFee).toEqual({ status: 'ok' });
@@ -959,14 +974,14 @@ describe('signDirect with a fee the site set', () => {
     const ok = await review(t, site([['uother', 500n]], 300_000n));
     expect(ok.view.siteFee).toEqual({ status: 'ok' });
     expect(ok.view.fee).toMatchObject({ denom: 'uother', symbol: 'OTH', setBy: ORIGIN });
-    await t.dapp.answer(ok.id, { approve: true, fee: feeFor(ok.view) });
+    await t.answer(ok.id, { approve: true, fee: feeFor(ok.view) });
     expect(signedFee(t, ok.id)).toMatchObject({
       amount: [{ denom: 'uother', amount: '500' }],
       gasLimit: '300000',
     });
     const low = await review(t, site([['uother', 499n]], 300_000n));
     expect(low.view.siteFee).toEqual({ status: 'low' });
-    await t.dapp.answer(low.id, { approve: false });
+    await t.answer(low.id, { approve: false });
     // The wallet's own estimate in uother is 500.
     const high = await review(t, site([['uother', 2_000n]], 300_000n));
     expect(high.view.siteFee).toEqual({ status: 'high', times: 4 });
@@ -1002,7 +1017,7 @@ describe('signDirect with a fee the site set', () => {
       expect(r.view.fee).toMatchObject({ denom: 'ubze', amount: '2000', gasLimit: '200000' });
       expect(r.view.fee.setBy).toBeUndefined();
       expect(r.view.options.every((o) => o.setBy === undefined)).toBe(true);
-      await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+      await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
       expect(signedFee(t, r.id)).toMatchObject({
         amount: [{ denom: 'ubze', amount: '2000' }],
         gasLimit: '200000',
@@ -1026,7 +1041,7 @@ describe('signDirect with a fee the site set', () => {
     const r = await review(t, site([['ubze', 2_500n]], 250_000n));
     expect(r.view.options).toHaveLength(1);
     expect(r.view.siteFee).toEqual({ status: 'ok' });
-    await t.dapp.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(signedFee(t, r.id)).toMatchObject({ amount: [{ denom: 'ubze', amount: '2500' }] });
   });
 });
@@ -1063,7 +1078,7 @@ describe('signDirect with Advanced gas limit and price', () => {
     await t.connect();
     const r = await review(t);
     // 300,000 gas x 0.02 = 6,000 ubze.
-    const res = await t.dapp.answer(r.id, { approve: true, fee: custom('6000', '300000', 2) });
+    const res = await t.answer(r.id, { approve: true, fee: custom('6000', '300000', 2) });
     expect(res.ok).toBe(true);
     expect(signedFee(t, r.id)).toEqual({
       amount: [{ denom: 'ubze', amount: '6000' }],
@@ -1077,7 +1092,7 @@ describe('signDirect with Advanced gas limit and price', () => {
     const t = await rig();
     await t.connect();
     const r = await review(t);
-    await t.dapp.answer(r.id, { approve: true, fee: custom('1500', '150000') });
+    await t.answer(r.id, { approve: true, fee: custom('1500', '150000') });
     expect(signedFee(t, r.id)).toMatchObject({ gasLimit: '150000' });
   });
 
@@ -1095,14 +1110,14 @@ describe('signDirect with Advanced gas limit and price', () => {
       { ...custom('6000', '300000', 2), denom: 'ufree' },
     ];
     for (const fee of refused) {
-      expect(await t.dapp.answer(r.id, { approve: true, fee })).toMatchObject({
+      expect(await t.answer(r.id, { approve: true, fee })).toMatchObject({
         ok: false,
         error: { code: 'review-changed' },
       });
     }
     t.node.balances = new Map([['ubze', 5_999n]]);
     expect(
-      await t.dapp.answer(r.id, { approve: true, fee: custom('6000', '300000', 2) }),
+      await t.answer(r.id, { approve: true, fee: custom('6000', '300000', 2) }),
     ).toMatchObject({ ok: false, error: { code: 'review-changed' } });
   });
 
@@ -1111,7 +1126,7 @@ describe('signDirect with Advanced gas limit and price', () => {
     await t.connect();
     const r = await review(t, site([['ubze', 1_200n]], 120_000n));
     expect(r.view.siteFee).toEqual({ status: 'gas' });
-    await t.dapp.answer(r.id, { approve: true, fee: custom('2250', '225000') });
+    await t.answer(r.id, { approve: true, fee: custom('2250', '225000') });
     expect(signedFee(t, r.id)).toEqual({
       amount: [{ denom: 'ubze', amount: '2250' }],
       gasLimit: '225000',
@@ -1131,11 +1146,11 @@ describe('signDirect with Advanced gas limit and price', () => {
     // 200,000 gas is 2,000 ubze, 333.3 uother at 6 ubze each, 367 with the 10% margin; one gas
     // less prices the same but is below the simulation in another token.
     const fee = (gasLimit: string) => ({ ...custom('367', gasLimit), denom: 'uother' });
-    expect(await t.dapp.answer(r.id, { approve: true, fee: fee('199999') })).toMatchObject({
+    expect(await t.answer(r.id, { approve: true, fee: fee('199999') })).toMatchObject({
       ok: false,
       error: { code: 'review-changed' },
     });
-    expect((await t.dapp.answer(r.id, { approve: true, fee: fee('200000') })).ok).toBe(true);
+    expect((await t.answer(r.id, { approve: true, fee: fee('200000') })).ok).toBe(true);
     expect(signedFee(t, r.id)).toMatchObject({
       amount: [{ denom: 'uother', amount: '367' }],
       gasLimit: '200000',
@@ -1199,40 +1214,37 @@ describe('an approval is bound to the request on screen', () => {
     ['cancelled, then sent again from another tab', 'cancel', pageB],
     ['cancelled, then sent again by the same page after many cancels', 'flood', pageA],
     ['its tab closed, then sent again from another tab', 'tab', pageB],
-  ] as const)(
-    'signs nothing when the request on screen is %s',
-    async (_name, removal, again) => {
-      const t = await rig();
-      await t.connect();
-      const shown = small();
-      await send(t, pageA, ID, shown.params);
-      const view = await reviewOn(t);
-      expect(view.summary.hero).toContain('1.00 BZE');
+  ] as const)('signs nothing when the request on screen is %s', async (_name, removal, again) => {
+    const t = await rig();
+    await t.connect();
+    const shown = small();
+    await send(t, pageA, ID, shown.params);
+    const view = await reviewOn(t);
+    expect(view.summary.hero).toContain('1.00 BZE');
 
-      if (removal === 'tab') {
-        await t.dapp.onTabRemoved(pageA.tabId);
-      } else {
-        await cancel(t, pageA, ID);
-        if (removal === 'flood') {
-          for (let i = 0; i < 100; i++) await cancel(t, pageA, junk(i));
-        }
+    if (removal === 'tab') {
+      await t.dapp.onTabRemoved(pageA.tabId);
+    } else {
+      await cancel(t, pageA, ID);
+      if (removal === 'flood') {
+        for (let i = 0; i < 100; i++) await cancel(t, pageA, junk(i));
       }
-      await send(t, again, ID, large().params);
+    }
+    await send(t, again, ID, large().params);
 
-      const res = await t.dapp.answer(ID, {
-        approve: true,
-        fee: feeFor(view),
-        ticket: view.ticket,
-      } as never);
-      expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
-      expect(signedBodies(t)).toEqual([]);
-      expect(answersTo(t, again.documentId).at(-1)).toMatchObject({
-        id: ID,
-        error: { message: 'Duplicate request.' },
-      });
-      expect((await t.dapp.queue()).count).toBe(0);
-    },
-  );
+    const res = await t.dapp.answer(ID, {
+      approve: true,
+      fee: feeFor(view),
+      ticket: view.ticket,
+    });
+    expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
+    expect(signedBodies(t)).toEqual([]);
+    expect(answersTo(t, again.documentId).at(-1)).toMatchObject({
+      id: ID,
+      error: { message: 'Duplicate request.' },
+    });
+    expect((await t.dapp.queue()).count).toBe(0);
+  });
 
   it('refuses an approval for another instance of the request than the one on screen', async () => {
     const t = await rig();
@@ -1242,8 +1254,8 @@ describe('an approval is bound to the request on screen', () => {
     const res = await t.dapp.answer(ID, {
       approve: true,
       fee: feeFor(view),
-      ticket: `${String(view.ticket)}-other`,
-    } as never);
+      ticket: `${view.ticket}-other`,
+    });
     expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
     expect(signedBodies(t)).toEqual([]);
     expect(await t.dapp.current()).toMatchObject({ status: 'sign', id: ID });
@@ -1266,7 +1278,7 @@ describe('an approval is bound to the request on screen', () => {
       approve: true,
       fee: feeFor(view),
       ticket: view.ticket,
-    } as never);
+    });
     await vi.waitFor(() => {
       expect(held).toBe(true);
     });
@@ -1280,7 +1292,7 @@ describe('an approval is bound to the request on screen', () => {
       approve: true,
       fee: feeFor(view),
       ticket: view.ticket,
-    } as never);
+    });
     expect(second).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
     expect(signedBodies(t)).toEqual([shown.bodyBytes]);
   });
@@ -1307,7 +1319,7 @@ describe('an approval is bound to the request on screen', () => {
       approve: true,
       fee: feeFor(view),
       ticket: view.ticket,
-    } as never);
+    });
     await vi.waitFor(() => {
       expect(held).toBe(true);
     });
@@ -1317,14 +1329,14 @@ describe('an approval is bound to the request on screen', () => {
 
     // The reviewed request is still the one waiting, with what the user read.
     const again = await reviewOn(t);
-    expect(again).toMatchObject({ id: ID, ticket: view.ticket });
     expect(again.summary.hero).toContain('1.00 BZE');
+    expect(again).toMatchObject({ id: ID, ticket: view.ticket });
     expect(answersTo(t, pageA.documentId).at(-1)).toMatchObject({
       id: ID,
       error: { message: 'Duplicate request.' },
     });
 
-    await t.dapp.answer(ID, { approve: true, fee: feeFor(again), ticket: again.ticket } as never);
+    await t.dapp.answer(ID, { approve: true, fee: feeFor(again), ticket: again.ticket });
     expect(signedBodies(t)).toEqual([shown.bodyBytes]);
     expect(signedBodies(t)).not.toContainEqual(swapped.bodyBytes);
   });

@@ -47,7 +47,7 @@ export function createDappService(
     });
     return { network, chain, fees, tokens };
   };
-  const cancellations = new Cancellations();
+  const cancellations = new Cancellations(platform.session, platform.clock);
   registerDappHandlers(registry, {
     wallet,
     services,

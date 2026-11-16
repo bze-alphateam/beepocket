@@ -28,6 +28,7 @@ const ADDRESSES = [
 const CONNECT: RequestView = {
   status: 'connect',
   id: 'r1',
+  ticket: 'k-r1',
   origin: 'https://dex.getbze.com',
   network: 'mainnet',
   addresses: ADDRESSES,
@@ -122,7 +123,7 @@ const feeRow = (host: HTMLElement) =>
 
 describe('the request window', () => {
   it('moves on when the request on screen leaves the queue (its page gave up)', async () => {
-    const other = { ...CONNECT, id: 'r2', origin: 'https://other.example' };
+    const other = { ...CONNECT, id: 'r2', ticket: 'k-r2', origin: 'https://other.example' };
     const views: RequestView[] = [CONNECT, other];
     const polls: (() => void)[] = [];
     const t = rig(
@@ -130,7 +131,13 @@ describe('the request window', () => {
         ...base,
         'dapp.current': () => ok(views.length > 1 ? (views.shift() ?? other) : other),
         'dapp.queue': () =>
-          ok({ head: other.origin, headId: 'r2', count: 1, origins: [other.origin] }),
+          ok({
+            head: other.origin,
+            headId: 'r2',
+            headTicket: 'k-r2',
+            count: 1,
+            origins: [other.origin],
+          }),
       },
       undefined,
       (_ms, fn) => {
@@ -157,7 +164,13 @@ describe('the request window', () => {
         ...base,
         'dapp.current': () => ok(CONNECT),
         'dapp.queue': () =>
-          ok({ head: CONNECT.origin, headId: 'r1', count: 2, origins: [CONNECT.origin] }),
+          ok({
+            head: CONNECT.origin,
+            headId: 'r1',
+            headTicket: 'k-r1',
+            count: 2,
+            origins: [CONNECT.origin],
+          }),
       },
       undefined,
       (_ms, fn) => {
@@ -193,7 +206,13 @@ describe('the request window', () => {
     fireEvent(radios[1], 'click');
     fireEvent(button(t.host, 'Connect'), 'click');
     await settle();
-    expect(t.call).toHaveBeenCalledWith('dapp.answer', { id: 'r1', approve: true, index: 1 });
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 'r1',
+      ticket: 'k-r1',
+      approve: true,
+      origin: 'https://dex.getbze.com',
+      index: 1,
+    });
     expect(t.close).toHaveBeenCalledTimes(1);
     views = [];
   });
@@ -214,7 +233,13 @@ describe('the request window', () => {
     await settle();
     fireEvent(button(t.host, 'Cancel'), 'click');
     await settle();
-    expect(t.call).toHaveBeenCalledWith('dapp.answer', { id: 'r1', approve: false, index: 0 });
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 'r1',
+      ticket: 'k-r1',
+      approve: false,
+      origin: 'https://dex.getbze.com',
+      index: 0,
+    });
     expect(t.close).toHaveBeenCalled();
   });
 
@@ -258,6 +283,7 @@ describe('the request window', () => {
 const SIGN: Extract<RequestView, { status: 'sign' }> = {
   status: 'sign',
   id: 's1',
+  ticket: 'k-s1',
   origin: 'https://dex.getbze.com',
   network: 'mainnet',
   signer: { label: 'Main', address: ADDRESSES[0]?.address ?? '' },
@@ -361,6 +387,7 @@ describe('the sign screen', () => {
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
+      ticket: 'k-s1',
       approve: true,
       fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
     });
@@ -383,6 +410,7 @@ describe('the sign screen', () => {
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
+      ticket: 'k-s1',
       approve: true,
       // The picked token's own gas limit, not the default fee's.
       fee: { denom: 'uother', amount: '500', gasLimit: '300000' },
@@ -430,6 +458,7 @@ describe('the sign screen', () => {
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
+      ticket: 'k-s1',
       approve: true,
       fee: {
         denom: 'ubze',
@@ -483,6 +512,7 @@ describe('the sign screen', () => {
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
+      ticket: 'k-s1',
       approve: true,
       // The site's limit at 0.02 ubze per gas.
       fee: {
@@ -545,6 +575,7 @@ describe('the sign screen', () => {
     // Exactly the site's 2,500, not 195,000 x 0.01 recomputed.
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
+      ticket: 'k-s1',
       approve: true,
       fee: { denom: 'ubze', amount: '2500', gasLimit: '195000' },
     });
@@ -608,6 +639,7 @@ describe('the sign screen', () => {
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
+      ticket: 'k-s1',
       approve: true,
       fee: { denom: 'uother', amount: '500', gasLimit: '300000' },
     });
@@ -657,7 +689,11 @@ describe('the sign screen', () => {
     await settle();
     fireEvent(button(t.host, 'Reject'), 'click');
     await settle();
-    expect(t.call).toHaveBeenCalledWith('dapp.answer', { id: 's1', approve: false });
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      ticket: 'k-s1',
+      approve: false,
+    });
   });
 
   it('asks for the password in the weak lock, then approves', async () => {
@@ -767,6 +803,7 @@ describe('the sign screen: risk levels', () => {
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
+      ticket: 'k-s1',
       approve: true,
       fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
       trusted: true,
@@ -794,7 +831,7 @@ describe('the sign screen: risk levels', () => {
 
   it('drops the tick when another dangerous request replaces the one on screen', async () => {
     const a = await signView([grant()]);
-    const b = { ...(await signView([grant()])), id: 's2' };
+    const b = { ...(await signView([grant()])), id: 's2', ticket: 'k-s2' };
     const views: RequestView[] = [a, b];
     const polls: (() => void)[] = [];
     const t = rig(
@@ -891,6 +928,7 @@ describe('the sign screen: risk levels', () => {
     await settle();
     expect(t.call).toHaveBeenCalledWith('dapp.answer', {
       id: 's1',
+      ticket: 'k-s1',
       approve: true,
       fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
       trusted: true,
@@ -929,7 +967,7 @@ describe('the request queue in the window', () => {
     let timer: (() => void) | undefined;
     const views: CurrentRequest[] = [
       { ...CONNECT, count: 2 },
-      { ...CONNECT, id: 'r2', count: 1 },
+      { ...CONNECT, id: 'r2', ticket: 'k-r2', count: 1 },
     ];
     const t = rig(
       {
@@ -1013,7 +1051,7 @@ describe('the request queue in the window', () => {
   it('says what was approved, from where and the fee, before the next request', async () => {
     const views: CurrentRequest[] = [
       { ...SIGN, count: 2 },
-      { ...CONNECT, id: 'r2', count: 1 },
+      { ...CONNECT, id: 'r2', ticket: 'k-r2', count: 1 },
     ];
     const t = rig({
       ...base,
@@ -1050,9 +1088,12 @@ describe('the request queue in the window', () => {
 describe('the request window after an answer', () => {
   it('shows "Next request" and a fresh review when the same id comes back with other content', async () => {
     let timer: (() => void) | undefined;
-    const first = { ...(await signView([grant()])), ticket: 'k1', count: 1 } as CurrentRequest;
-    const other = await signView([grant(), sendMsg()]);
-    const second = { ...other, ticket: 'k2', count: 1 } as CurrentRequest;
+    const first: CurrentRequest = { ...(await signView([grant()])), ticket: 'k1', count: 1 };
+    const second: CurrentRequest = {
+      ...(await signView([grant(), sendMsg()])),
+      ticket: 'k2',
+      count: 1,
+    };
     const views: CurrentRequest[] = [first, second];
     const t = rig(
       {
@@ -1095,8 +1136,8 @@ describe('the request window after an answer', () => {
 
   it('keeps Approve inert until the worker has sent what comes next', async () => {
     let release: (() => void) | undefined;
-    const first = { ...SIGN, ticket: 'k1', count: 1 } as CurrentRequest;
-    const second = { ...SIGN, ticket: 'k2', count: 1 } as CurrentRequest;
+    const first: CurrentRequest = { ...SIGN, ticket: 'k1', count: 1 };
+    const second: CurrentRequest = { ...SIGN, ticket: 'k2', count: 1 };
     let calls = 0;
     const t = rig({
       ...base,

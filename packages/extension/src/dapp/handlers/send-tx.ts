@@ -86,7 +86,7 @@ export function sendTxHandler(deps: TxDeps): DappHandler<SendTxParams> {
       }
       const env = await deps.env();
       // Checked right before the broadcast: the page may have given up while the request waited.
-      if (deps.cancelled.has(request)) {
+      if (await deps.cancelled.has(request)) {
         return done(refuse(DappErrorCodes.unavailable, 'The page stopped waiting.'));
       }
       const sent = await guarded(

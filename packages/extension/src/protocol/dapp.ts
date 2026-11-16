@@ -24,6 +24,8 @@ export type RequestView =
   | {
       status: 'connect';
       id: string;
+      /** This queued instance of the request; the answer must carry it. */
+      ticket: string;
       origin: string;
       network: NetworkId;
       addresses: WalletAddress[];
@@ -43,8 +45,10 @@ export type CurrentRequest = RequestView & {
 export interface QueueView {
   /** The origin of the request at the head, or null when nothing waits. */
   head: string | null;
-  /** The id of the request at the head; the window moves on when it changes. */
+  /** The id of the request at the head. */
   headId?: string;
+  /** The ticket of the request at the head; the window moves on when it changes. */
+  headTicket?: string;
   count: number;
   /** Distinct origins, oldest request first. */
   origins: string[];
@@ -58,11 +62,16 @@ export interface DappProtocol {
   'dapp.queue': { req: Record<string, never>; res: QueueView };
   /** Opens (or focuses) the request window when something waits. */
   'dapp.open': { req: Record<string, never>; res: Record<string, never> };
-  /** The user's answer: Cancel (`approve: false`) or Connect with the picked address `index`. */
+  /**
+   * The user's answer: Cancel (`approve: false`) or Connect with the picked address `index`.
+   * It names the request on screen by its id and ticket; a connect also names its site.
+   */
   'dapp.answer': {
     req: {
       id: string;
+      ticket: string;
       approve: boolean;
+      origin?: string;
       index?: number;
       fee?: ReviewedFee;
       /** The user ticked "I set this up myself and trust this address" (dangerous requests). */

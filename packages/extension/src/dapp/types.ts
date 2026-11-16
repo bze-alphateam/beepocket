@@ -22,6 +22,14 @@ export interface PendingRequest {
   createdAt: number;
 }
 
+/**
+ * A request in the queue. The wallet gives each queued instance its own ticket: the window shows
+ * it and answers with it, so an answer only ever applies to the instance the user reviewed.
+ */
+export interface QueuedRequest extends PendingRequest {
+  ticket: string;
+}
+
 /** Who is asking, taken from the browser's `sender`, never from the message. */
 export interface DappSender {
   origin: string;

@@ -24,8 +24,11 @@ type ConnectView = Extract<RequestView, { status: 'connect' }>;
 
 export interface ConnectScreenProps {
   view: ConnectView;
-  /** The request was answered (or may be): ask the worker what is next. */
-  done: (answer?: Answer) => void;
+  /**
+   * The request was answered (or may be): ask the worker what is next. Resolves once that is on
+   * screen; the screen sends nothing more until then.
+   */
+  done: (answer?: Answer) => Promise<void>;
   /** Requests waiting in all, this one included; 2 or more shows "1 of N". */
   queue?: number | undefined;
 }
@@ -44,15 +47,29 @@ export function ConnectScreen({ view, done, queue }: ConnectScreenProps) {
     if (busy) return;
     setBusy(true);
     setFailed(false);
-    const res = await client.call('dapp.answer', { id: view.id, approve, index });
-    setBusy(false);
+    try {
+      await send(approve);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const send = async (approve: boolean) => {
+    const res = await client.call('dapp.answer', {
+      id: view.id,
+      ticket: view.ticket,
+      approve,
+      origin: view.origin,
+      index,
+    });
     if (res.ok) {
       const label = view.addresses.find((a) => a.index === index)?.label ?? '';
-      done({ kind: 'connect', approved: approve, origin: view.origin, label });
+      // Inert until the worker's next view is on screen.
+      await done({ kind: 'connect', approved: approve, origin: view.origin, label });
     } else if (res.error.code === WalletErrorCodes.needsPassword) {
       setNeedsPassword(true);
     } else if (res.error.code === 'unknown-request') {
-      done();
+      await done();
     } else {
       setFailed(true);
     }
@@ -105,6 +122,7 @@ export function ConnectScreen({ view, done, queue }: ConnectScreenProps) {
             <PasswordGate
               submitLabel={t('dapp.connect.unlock')}
               labelIcon="lock"
+              hold={busy}
               onUnlocked={() => {
                 setNeedsPassword(false);
                 void answer(true);

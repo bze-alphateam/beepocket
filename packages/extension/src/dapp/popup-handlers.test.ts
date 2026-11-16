@@ -19,15 +19,24 @@ describe('dapp.answer', () => {
     const t = rig();
     const override = { gasLimit: '300000', gasPrice: 2 };
     expect(
-      await t.call({ id: 's1', approve: true, fee: { ...fee, override, extra: 'dropped' } }),
+      await t.call({
+        id: 's1',
+        ticket: 'k1',
+        approve: true,
+        fee: { ...fee, override, extra: 'dropped' },
+      }),
     ).toMatchObject({ ok: true });
-    expect(t.answer).toHaveBeenCalledWith('s1', { approve: true, fee: { ...fee, override } });
+    expect(t.answer).toHaveBeenCalledWith('s1', {
+      ticket: 'k1',
+      approve: true,
+      fee: { ...fee, override },
+    });
   });
 
   it('passes a reviewed fee without settings through as before', async () => {
     const t = rig();
-    await t.call({ id: 's1', approve: true, fee });
-    expect(t.answer).toHaveBeenCalledWith('s1', { approve: true, fee });
+    await t.call({ id: 's1', ticket: 'k1', approve: true, fee });
+    expect(t.answer).toHaveBeenCalledWith('s1', { ticket: 'k1', approve: true, fee });
   });
 
   it('refuses malformed settings before the service sees them', async () => {
@@ -42,10 +51,38 @@ describe('dapp.answer', () => {
       { gasPrice: 1 },
       null,
     ]) {
-      expect(await t.call({ id: 's1', approve: true, fee: { ...fee, override } })).toMatchObject({
-        ok: false,
-        error: { code: 'bad_request' },
-      });
+      expect(
+        await t.call({ id: 's1', ticket: 'k1', approve: true, fee: { ...fee, override } }),
+      ).toMatchObject({ ok: false, error: { code: 'bad_request' } });
+    }
+    expect(t.answer).not.toHaveBeenCalled();
+  });
+
+  it('passes the request ticket and the site of a connect through to the service', async () => {
+    const t = rig();
+    await t.call({
+      id: 'c1',
+      ticket: 'k2',
+      approve: true,
+      origin: 'https://dex.getbze.com',
+      index: 1,
+    });
+    expect(t.answer).toHaveBeenCalledWith('c1', {
+      ticket: 'k2',
+      approve: true,
+      origin: 'https://dex.getbze.com',
+      index: 1,
+    });
+  });
+
+  it('refuses an answer that does not name the request instance it answers', async () => {
+    const t = rig();
+    for (const payload of [
+      { id: 's1', approve: true, fee },
+      { id: 's1', ticket: 7, approve: true, fee },
+      { id: 'c1', ticket: 'k2', approve: true, origin: 5, index: 1 },
+    ]) {
+      expect(await t.call(payload)).toMatchObject({ ok: false, error: { code: 'bad_request' } });
     }
     expect(t.answer).not.toHaveBeenCalled();
   });

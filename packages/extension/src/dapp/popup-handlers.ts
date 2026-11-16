@@ -44,8 +44,12 @@ export function registerDappPopupHandlers(registry: HandlerRegistry, dapp: DappS
       if (typeof payload !== 'object' || payload === null) {
         return fail(ErrorCodes.badRequest, 'dapp.answer got a malformed request.');
       }
-      const { id, approve, index, fee, trusted } = payload as Record<string, unknown>;
-      if (typeof id !== 'string' || typeof approve !== 'boolean') {
+      const fields = payload as Record<string, unknown>;
+      const { id, ticket, approve, origin, index, fee, trusted } = fields;
+      if (typeof id !== 'string' || typeof ticket !== 'string' || typeof approve !== 'boolean') {
+        return fail(ErrorCodes.badRequest, 'dapp.answer got a malformed request.');
+      }
+      if (origin !== undefined && typeof origin !== 'string') {
         return fail(ErrorCodes.badRequest, 'dapp.answer got a malformed request.');
       }
       if (index !== undefined && (typeof index !== 'number' || !Number.isInteger(index))) {
@@ -60,7 +64,9 @@ export function registerDappPopupHandlers(registry: HandlerRegistry, dapp: DappS
       }
       return ok({
         id,
+        ticket,
         approve,
+        ...(origin === undefined ? {} : { origin }),
         ...(index === undefined ? {} : { index }),
         ...(reviewed === null ? {} : { fee: reviewed }),
         ...(trusted === undefined ? {} : { trusted }),
@@ -68,7 +74,9 @@ export function registerDappPopupHandlers(registry: HandlerRegistry, dapp: DappS
     },
     handle: (request) =>
       dapp.answer(request.id, {
+        ticket: request.ticket,
         approve: request.approve,
+        ...(request.origin === undefined ? {} : { origin: request.origin }),
         ...(request.index === undefined ? {} : { index: request.index }),
         ...(request.fee === undefined ? {} : { fee: request.fee }),
         ...(request.trusted === undefined ? {} : { trusted: request.trusted }),
