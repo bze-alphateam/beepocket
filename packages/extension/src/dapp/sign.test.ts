@@ -1142,3 +1142,217 @@ describe('signDirect with Advanced gas limit and price', () => {
     });
   });
 });
+
+/** A promise the test settles by hand. */
+function deferred<T = void>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+describe('an approval is bound to the request on screen', () => {
+  const ID = 'a1'.repeat(16);
+  const pageA: DappSender = { origin: ORIGIN, tabId: 1, documentId: 'doc-a' };
+  const pageB: DappSender = { origin: ORIGIN, tabId: 2, documentId: 'doc-b' };
+  const SITE_FEE = { coins: [['ubze', 3000n]] as [string, bigint][], gasLimit: 200_000n };
+  const small = () => request({ requestFee: SITE_FEE });
+  const large = () =>
+    request({
+      requestFee: SITE_FEE,
+      messages: [
+        encodeMsgSend({
+          fromAddress: MAIN.address,
+          toAddress: OTHER.address,
+          amount: [{ denom: 'ubze', amount: '90000000' }],
+        }),
+      ],
+    });
+
+  /** Well-formed ids no page sent. */
+  const junk = (i: number) => (i + 1).toString(16).padStart(32, 'f');
+  const send = async (t: Rig, from: DappSender, id: string, params: unknown) => {
+    const received = await t.dapp.receive(from, { id, method: 'signDirect', params });
+    await received.after();
+  };
+  const cancel = async (t: Rig, from: DappSender, id: string) => {
+    const received = await t.dapp.receive(from, { id, cancel: true });
+    await received.after();
+  };
+  /** Every signed answer any page received, as the body bytes that were signed. */
+  const signedBodies = (t: Rig) =>
+    t.delivered
+      .map((d) => (d.message as { dapp: { result?: { signed?: { bodyBytes: string } } } }).dapp)
+      .flatMap((m) => (m.result?.signed ? [bytesFromWire(m.result.signed.bodyBytes)] : []));
+  const answersTo = (t: Rig, documentId: string) =>
+    t.delivered
+      .filter((d) => d.documentId === documentId)
+      .map((d) => (d.message as { dapp: { id: string; error?: { message: string } } }).dapp);
+  const reviewOn = async (t: Rig) => {
+    const view = await t.dapp.current();
+    if (view.status !== 'sign') throw new Error(`expected the sign screen, got ${view.status}`);
+    return view;
+  };
+
+  it.each([
+    ['cancelled, then sent again from another tab', 'cancel', pageB],
+    ['cancelled, then sent again by the same page after many cancels', 'flood', pageA],
+    ['its tab closed, then sent again from another tab', 'tab', pageB],
+  ] as const)(
+    'signs nothing when the request on screen is %s',
+    async (_name, removal, again) => {
+      const t = await rig();
+      await t.connect();
+      const shown = small();
+      await send(t, pageA, ID, shown.params);
+      const view = await reviewOn(t);
+      expect(view.summary.hero).toContain('1.00 BZE');
+
+      if (removal === 'tab') {
+        await t.dapp.onTabRemoved(pageA.tabId);
+      } else {
+        await cancel(t, pageA, ID);
+        if (removal === 'flood') {
+          for (let i = 0; i < 100; i++) await cancel(t, pageA, junk(i));
+        }
+      }
+      await send(t, again, ID, large().params);
+
+      const res = await t.dapp.answer(ID, {
+        approve: true,
+        fee: feeFor(view),
+        ticket: view.ticket,
+      } as never);
+      expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
+      expect(signedBodies(t)).toEqual([]);
+      expect(answersTo(t, again.documentId).at(-1)).toMatchObject({
+        id: ID,
+        error: { message: 'Duplicate request.' },
+      });
+      expect((await t.dapp.queue()).count).toBe(0);
+    },
+  );
+
+  it('refuses an approval for another instance of the request than the one on screen', async () => {
+    const t = await rig();
+    await t.connect();
+    await send(t, pageA, ID, small().params);
+    const view = await reviewOn(t);
+    const res = await t.dapp.answer(ID, {
+      approve: true,
+      fee: feeFor(view),
+      ticket: `${String(view.ticket)}-other`,
+    } as never);
+    expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
+    expect(signedBodies(t)).toEqual([]);
+    expect(await t.dapp.current()).toMatchObject({ status: 'sign', id: ID });
+  });
+
+  it('refuses the same id sent again while its approval is being completed', async () => {
+    const t = await rig();
+    await t.connect();
+    const shown = small();
+    await send(t, pageA, ID, shown.params);
+    const view = await reviewOn(t);
+    const gate = deferred();
+    let held = false;
+    t.node.estimate = () => {
+      if (held) return Promise.resolve(FEES);
+      held = true;
+      return gate.promise.then(() => FEES);
+    };
+    const approving = t.dapp.answer(ID, {
+      approve: true,
+      fee: feeFor(view),
+      ticket: view.ticket,
+    } as never);
+    await vi.waitFor(() => {
+      expect(held).toBe(true);
+    });
+    await send(t, pageA, ID, large().params);
+    gate.resolve();
+    expect(await approving).toEqual({ ok: true, value: {} });
+
+    expect(await t.dapp.queue()).toMatchObject({ count: 0 });
+    expect((await t.dapp.queue()).headId).toBeUndefined();
+    const second = await t.dapp.answer(ID, {
+      approve: true,
+      fee: feeFor(view),
+      ticket: view.ticket,
+    } as never);
+    expect(second).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
+    expect(signedBodies(t)).toEqual([shown.bodyBytes]);
+  });
+
+  it('keeps the reviewed request, and signs only it, when its signing fails while the id is sent again', async () => {
+    const t = await rig();
+    await t.connect();
+    const shown = small();
+    const swapped = large();
+    await send(t, pageA, ID, shown.params);
+    const view = await reviewOn(t);
+    const gate = deferred();
+    let held = false;
+    t.node.estimate = () => {
+      if (held) return Promise.resolve(FEES);
+      held = true;
+      return gate.promise.then(() => FEES);
+    };
+    vi.spyOn(t.wallet, 'signDirect').mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'internal', message: 'The wallet could not sign.' },
+    });
+    const approving = t.dapp.answer(ID, {
+      approve: true,
+      fee: feeFor(view),
+      ticket: view.ticket,
+    } as never);
+    await vi.waitFor(() => {
+      expect(held).toBe(true);
+    });
+    await send(t, pageA, ID, swapped.params);
+    gate.resolve();
+    expect(await approving).toMatchObject({ ok: false, error: { code: 'internal' } });
+
+    // The reviewed request is still the one waiting, with what the user read.
+    const again = await reviewOn(t);
+    expect(again).toMatchObject({ id: ID, ticket: view.ticket });
+    expect(again.summary.hero).toContain('1.00 BZE');
+    expect(answersTo(t, pageA.documentId).at(-1)).toMatchObject({
+      id: ID,
+      error: { message: 'Duplicate request.' },
+    });
+
+    await t.dapp.answer(ID, { approve: true, fee: feeFor(again), ticket: again.ticket } as never);
+    expect(signedBodies(t)).toEqual([shown.bodyBytes]);
+    expect(signedBodies(t)).not.toContainEqual(swapped.bodyBytes);
+  });
+
+  it('broadcasts nothing that its page cancelled, whatever another page cancels meanwhile', async () => {
+    const t = await rig();
+    await t.connect();
+    const id = 'e'.repeat(32);
+    const received = await t.dapp.receive(pageA, {
+      id,
+      method: 'sendTx',
+      params: {
+        chainId: CHAIN_ID,
+        txBytes: bytesToWire(
+          txRawBytes({
+            bodyBytes: Uint8Array.from([1]),
+            authInfoBytes: Uint8Array.from([2]),
+            signatures: [new Uint8Array(64).fill(1)],
+          }),
+        ),
+        mode: 'sync',
+      },
+      sentAt: t.clock.now(),
+    });
+    await cancel(t, pageA, id);
+    for (let i = 0; i < 100; i++) await cancel(t, pageB, junk(i));
+    await received.after();
+    expect(t.node.broadcast).not.toHaveBeenCalled();
+    expect(t.answerOf(id)).toBeUndefined();
+  });
+});

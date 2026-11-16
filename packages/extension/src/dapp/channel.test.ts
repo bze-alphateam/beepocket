@@ -1079,3 +1079,81 @@ describe('signDirect through the composition root', () => {
     expect(view.options.find((o) => o.denom === 'ubze')?.logo).toBe('/tokens/bze.png');
   });
 });
+
+describe('an approval is bound to the request on screen', () => {
+  it('connects nothing when the request on screen is replaced by one from another site', async () => {
+    const t = await rig();
+    const id = 'b'.repeat(32);
+    const first = await t.dapp.receive(t.site(at(1), 1, 'd1'), {
+      id,
+      method: 'connect',
+      params: chainId(),
+    });
+    await first.after();
+    const view = await t.dapp.current();
+    if (view.status !== 'connect') throw new Error('unreachable');
+    expect(view.origin).toBe(at(1));
+    const cancel = await t.dapp.receive(t.site(at(1), 1, 'd1'), { id, cancel: true });
+    await cancel.after();
+    const second = await t.dapp.receive(t.site(at(2), 2, 'd2'), {
+      id,
+      method: 'connect',
+      params: chainId(),
+    });
+    await second.after();
+
+    const res = await t.dapp.answer(id, {
+      approve: true,
+      index: 0,
+      ticket: view.ticket,
+      origin: view.origin,
+    } as never);
+    expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
+    const profile = await t.wallet.getProfile();
+    expect(profile.ok && profile.value.sites.mainnet).toEqual({});
+    expect(t.delivered.filter((d) => d.documentId === 'd2').map((d) => d.message)).toMatchObject([
+      { dapp: { id, error: { message: 'Duplicate request.' } } },
+    ]);
+  });
+
+  it('connects nothing when the answer names another site than the request', async () => {
+    const t = await rig();
+    const a = await t.ask('connect', chainId(), t.site(at(1), 1, 'd1'));
+    const view = await t.dapp.current();
+    if (view.status !== 'connect') throw new Error('unreachable');
+    const res = await t.dapp.answer(a.id, {
+      approve: true,
+      index: 0,
+      ticket: view.ticket,
+      origin: at(2),
+    } as never);
+    expect(res).toMatchObject({ ok: false, error: { code: 'unknown-request' } });
+    const profile = await t.wallet.getProfile();
+    expect(profile.ok && profile.value.sites.mainnet).toEqual({});
+    expect(t.answersFor(a.id)).toEqual([]);
+    expect(await t.dapp.current()).toMatchObject({ status: 'connect', id: a.id });
+  });
+
+  it("keeps a page's own cancel, whatever another page cancels meanwhile", async () => {
+    const t = await rig();
+    const id = 'c'.repeat(32);
+    const received = await t.dapp.receive(t.site(ORIGIN, 1, 'doc-a'), {
+      id,
+      method: 'connect',
+      params: chainId(),
+    });
+    const own = await t.dapp.receive(t.site(ORIGIN, 1, 'doc-a'), { id, cancel: true });
+    await own.after();
+    for (let i = 0; i < 100; i++) {
+      const other = await t.dapp.receive(t.site(ORIGIN, 2, 'doc-b'), {
+        id: (i + 1).toString(16).padStart(32, 'f'),
+        cancel: true,
+      });
+      await other.after();
+    }
+    await received.after();
+    expect((await t.dapp.queue()).count).toBe(0);
+    expect(t.created).toHaveLength(0);
+    expect(t.answersFor(id)).toEqual([]);
+  });
+});

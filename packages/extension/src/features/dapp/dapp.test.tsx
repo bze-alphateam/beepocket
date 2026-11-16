@@ -1046,3 +1046,90 @@ describe('the request queue in the window', () => {
     expect(t.host.textContent).not.toContain('Next request');
   });
 });
+
+describe('the request window after an answer', () => {
+  it('shows "Next request" and a fresh review when the same id comes back with other content', async () => {
+    let timer: (() => void) | undefined;
+    const first = { ...(await signView([grant()])), ticket: 'k1', count: 1 } as CurrentRequest;
+    const other = await signView([grant(), sendMsg()]);
+    const second = { ...other, ticket: 'k2', count: 1 } as CurrentRequest;
+    const views: CurrentRequest[] = [first, second];
+    const t = rig(
+      {
+        ...base,
+        'dapp.current': () => ok(views.length > 1 ? (views.shift() ?? second) : second),
+        'dapp.answer': () => ok({}),
+      },
+      (_ms, fn) => {
+        timer = fn;
+        return () => undefined;
+      },
+    );
+    await settle();
+    await settle();
+    // Another fee token and the tick on the first request.
+    fireEvent(feeRow(t.host), 'click');
+    await settle();
+    fireEvent(
+      [...document.querySelectorAll('button')].find((b) =>
+        b.getAttribute('aria-label')?.startsWith('OTH'),
+      ),
+      'click',
+    );
+    await settle();
+    setTick(t.host);
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    await settle();
+
+    expect(t.host.querySelector('[role=status]')?.textContent).toBe('Next request · 1 waiting');
+    expect(button(t.host, 'Approve')).toBeUndefined();
+    await act(() => timer?.());
+    await settle();
+    expect(t.host.querySelector('.bp-sign-big')?.textContent).toBe('2 actions');
+    expect(ticked(t.host)).toBe(false);
+    expect(disabled(t.host, 'Approve')).toBe(true);
+    expect(feeRow(t.host)?.textContent).toContain('0.002 BZE');
+  });
+
+  it('keeps Approve inert until the worker has sent what comes next', async () => {
+    let release: (() => void) | undefined;
+    const first = { ...SIGN, ticket: 'k1', count: 1 } as CurrentRequest;
+    const second = { ...SIGN, ticket: 'k2', count: 1 } as CurrentRequest;
+    let calls = 0;
+    const t = rig({
+      ...base,
+      'dapp.current': () => {
+        calls++;
+        if (calls === 1) return ok(first);
+        return new Promise<Result<unknown>>((resolve) => {
+          release = () => {
+            resolve(ok(second));
+          };
+        }) as unknown as Result<unknown>;
+      },
+      'dapp.answer': () => ok({}),
+    });
+    await settle();
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    await settle();
+    expect(release).toBeDefined();
+    const answers = () => t.call.mock.calls.filter(([m]) => m === 'dapp.answer').length;
+    // Approve, or its busy label while the answer is out.
+    const approve = () =>
+      [...t.host.querySelectorAll('button')].find(
+        (b) => b.textContent === 'Approve' || b.textContent === en['dapp.sign.approving'],
+      );
+    expect(answers()).toBe(1);
+    expect(approve()?.disabled).toBe(true);
+    fireEvent(approve(), 'click');
+    await settle();
+    expect(answers()).toBe(1);
+    await act(() => release?.());
+    await settle();
+    expect(answers()).toBe(1);
+  });
+});
