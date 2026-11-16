@@ -310,6 +310,7 @@ const SIGN: Extract<RequestView, { status: 'sign' }> = {
           ['Amount', '1 BZE'],
         ],
         danger: null,
+        unreadable: false,
       },
     ],
     dangers: [],

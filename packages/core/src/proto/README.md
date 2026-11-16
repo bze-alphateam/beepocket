@@ -34,15 +34,17 @@ prepended, except where noted. The copied files still import `GlobalDecoderRegis
 - `bze/cointrunk/params.ts` (the `Decimal` import points at the local `decimal.ts`),
   `bze/cointrunk/tx.ts`
 - `ibc/core/client/v1/client.ts`, `ibc/applications/transfer/v1/tx.ts`
-- `cosmos/gov/v1/tx.ts`: trimmed to `MsgVote` and `MsgVoteResponse` (the full file pulls in
-  upgrade, distribution, params and cointrunk proposal types)
+- `cosmos/vesting/v1beta1/vesting.ts`, `cosmos/vesting/v1beta1/tx.ts`
+- `cosmos/gov/v1/tx.ts`: trimmed to `MsgVote`, `MsgDeposit` and their responses (the full file
+  pulls in upgrade, distribution, params and cointrunk proposal types)
 - `cosmos/gov/v1/gov.ts`: trimmed to the `VoteOption` enum and its JSON helpers
 - `cosmos/staking/v1beta1/tx.ts`: trimmed to `MsgDelegate`, `MsgBeginRedelegate`,
   `MsgUndelegate`, `MsgCancelUnbondingDelegation` and their responses (the full file pulls in
   validator, tendermint and pubkey types); keeps the `//@ts-nocheck` line
 - `cosmos/distribution/v1beta1/tx.ts`: trimmed to `MsgSetWithdrawAddress`,
-  `MsgWithdrawDelegatorReward` and their responses (the full file pulls in the distribution
-  params); keeps the `//@ts-nocheck` line
+  `MsgWithdrawDelegatorReward`, `MsgFundCommunityPool`, `MsgDepositValidatorRewardsPool` and
+  their responses (the full file pulls in the distribution params); keeps the `//@ts-nocheck`
+  line
 
 ## Hand-written stand-ins
 
@@ -57,4 +59,7 @@ prepended, except where noted. The copied files still import `GlobalDecoderRegis
 2. `node scripts/copy-proto.mjs <path-to-bzejs>` from the repo root (rewrites the files above
    with the new version in the header lines).
 3. Regenerate the fixtures with the matching `bzed`: `scripts/gen-golden.sh`.
-4. `pnpm check` must stay green; a changed fixture means the encoding changed, so review why.
+4. Regenerate the message-type registry fixtures (`../../test/fixtures/registry/`, see the
+   README there) and give every new type a summary, a governance-only entry or a place on the
+   trust-tick list.
+5. `pnpm check` must stay green; a changed fixture means the encoding changed, so review why.

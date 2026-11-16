@@ -41,9 +41,11 @@ const FILES = [
   'bze/cointrunk/tx.ts',
   'ibc/core/client/v1/client.ts',
   'ibc/applications/transfer/v1/tx.ts',
+  'cosmos/vesting/v1beta1/vesting.ts',
+  'cosmos/vesting/v1beta1/tx.ts',
 ];
 // Trimmed on purpose: the full gov v1 files pull in upgrade, distribution, params
-// and cointrunk proposal types. Only MsgVote and the VoteOption enum are kept.
+// and cointrunk proposal types. Only MsgVote, MsgDeposit and the VoteOption enum are kept.
 const GOV_TX = 'cosmos/gov/v1/tx.ts';
 const GOV = 'cosmos/gov/v1/gov.ts';
 // Trimmed too: the full staking and distribution tx files pull in validator, tendermint and
@@ -109,32 +111,56 @@ const govStart = lineIndex(gov, '/** VoteOption enumerates');
 const govEnd = lineIndex(gov, '/** ProposalStatus enumerates');
 write(GOV, gov.slice(govStart, govEnd).join('\n') + '\n');
 
-// gov v1: MsgVote + MsgVoteResponse.
+// gov v1: MsgVote, MsgDeposit and their responses.
 const tx = read(GOV_TX).split('\n');
-const ifaceStart = lineIndex(tx, ' * MsgVote defines a message to cast a vote.') - 1;
-const ifaceEnd = lineIndex(tx, ' * MsgVoteWeighted defines a message to cast a vote.') - 1;
-const implStart = lineIndex(tx, 'function createBaseMsgVote(): MsgVote {');
-const implEnd = lineIndex(tx, 'function createBaseMsgVoteWeighted()');
+const govRange = (from, to) => {
+  const start = lineIndex(tx, from);
+  return tx.slice(start, lineIndex(tx, to, start));
+};
+const govDoc = (from, to) => {
+  const start = lineIndex(tx, from) - 1;
+  return tx.slice(start, lineIndex(tx, to, start) - 1);
+};
 const govTx = [
+  'import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";',
   'import { VoteOption, voteOptionFromJSON, voteOptionToJSON } from "./gov";',
   'import { BinaryReader, BinaryWriter } from "../../../binary";',
+  'import { GlobalDecoderRegistry } from "../../../registry";',
   'import { isSet } from "../../../helpers";',
-  ...tx.slice(ifaceStart, ifaceEnd),
-  ...tx.slice(implStart, implEnd),
+  ...govDoc(
+    ' * MsgVote defines a message to cast a vote.',
+    ' * MsgVoteWeighted defines a message to cast a vote.',
+  ),
+  ...govDoc(
+    ' * MsgDeposit defines a message to submit a deposit',
+    ' * MsgUpdateParams is the Msg/UpdateParams request type.',
+  ),
+  ...govRange('function createBaseMsgVote(): MsgVote {', 'function createBaseMsgVoteWeighted()'),
+  ...govRange(
+    'function createBaseMsgDeposit(): MsgDeposit {',
+    'function createBaseMsgUpdateParams()',
+  ),
 ].join('\n');
 write(GOV_TX, govTx + '\n');
 
-// A slice of a generated tx file: the interfaces from one doc comment up to another, and the
-// implementations from one createBase function up to another. Keeps the `//@ts-nocheck` line.
-const slice = (path, imports, [ifaceFrom, ifaceTo], [implFrom, implTo]) => {
+// Slices of a generated tx file: for each kept range, the interfaces from one doc comment up to
+// another, and the implementations from one createBase function up to another (`null`: to the
+// end of the file). Keeps the `//@ts-nocheck` line.
+const slice = (path, imports, ...ranges) => {
   const lines = read(path).split('\n');
-  const iStart = lineIndex(lines, ifaceFrom) - 1;
-  const iEnd = lineIndex(lines, ifaceTo, iStart) - 1;
-  const mStart = lineIndex(lines, implFrom);
-  const mEnd = lineIndex(lines, implTo, mStart);
   if (lines[0] !== '//@ts-nocheck') throw new Error(`${path}: expected //@ts-nocheck first`);
-  const body = [lines[0], ...imports, ...lines.slice(iStart, iEnd), ...lines.slice(mStart, mEnd)];
-  write(path, body.join('\n') + '\n');
+  const ifaces = [];
+  const impls = [];
+  for (const [[ifaceFrom, ifaceTo], [implFrom, implTo]] of ranges) {
+    const iStart = lineIndex(lines, ifaceFrom) - 1;
+    // A doc comment starts one line above its first text line; a function starts on its own.
+    const iEnd = lineIndex(lines, ifaceTo, iStart) - (ifaceTo.startsWith('function ') ? 0 : 1);
+    const mStart = lineIndex(lines, implFrom);
+    const mEnd = implTo === null ? lines.length : lineIndex(lines, implTo, mStart);
+    ifaces.push(...lines.slice(iStart, iEnd));
+    impls.push(...lines.slice(mStart, mEnd));
+  }
+  write(path, [lines[0], ...imports, ...ifaces, ...impls].join('\n').trimEnd() + '\n');
 };
 
 // staking: MsgDelegate, MsgBeginRedelegate, MsgUndelegate, MsgCancelUnbondingDelegation and
@@ -148,11 +174,14 @@ slice(
     'import { GlobalDecoderRegistry } from "../../../registry";',
     'import { toTimestamp, fromTimestamp } from "../../../helpers";',
   ],
-  [' * MsgDelegate defines a SDK message', ' * MsgUpdateParams is the Msg/UpdateParams'],
-  ['function createBaseMsgDelegate(): MsgDelegate {', 'function createBaseMsgUpdateParams()'],
+  [
+    [' * MsgDelegate defines a SDK message', ' * MsgUpdateParams is the Msg/UpdateParams'],
+    ['function createBaseMsgDelegate(): MsgDelegate {', 'function createBaseMsgUpdateParams()'],
+  ],
 );
 
-// distribution: MsgSetWithdrawAddress, MsgWithdrawDelegatorReward and their responses.
+// distribution: MsgSetWithdrawAddress, MsgWithdrawDelegatorReward, MsgFundCommunityPool,
+// MsgDepositValidatorRewardsPool and their responses.
 slice(
   DISTRIBUTION_TX,
   [
@@ -160,10 +189,26 @@ slice(
     'import { BinaryReader, BinaryWriter } from "../../../binary";',
     'import { GlobalDecoderRegistry } from "../../../registry";',
   ],
-  [' * MsgSetWithdrawAddress sets', ' * MsgWithdrawValidatorCommission withdraws'],
   [
-    'function createBaseMsgSetWithdrawAddress(): MsgSetWithdrawAddress {',
-    'function createBaseMsgWithdrawValidatorCommission()',
+    [' * MsgSetWithdrawAddress sets', ' * MsgWithdrawValidatorCommission withdraws'],
+    [
+      'function createBaseMsgSetWithdrawAddress(): MsgSetWithdrawAddress {',
+      'function createBaseMsgWithdrawValidatorCommission()',
+    ],
+  ],
+  [
+    [' * MsgFundCommunityPool allows an account', ' * MsgUpdateParams is the Msg/UpdateParams'],
+    [
+      'function createBaseMsgFundCommunityPool(): MsgFundCommunityPool {',
+      'function createBaseMsgUpdateParams()',
+    ],
+  ],
+  [
+    [
+      ' * DepositValidatorRewardsPool defines the request',
+      'function createBaseMsgSetWithdrawAddress()',
+    ],
+    ['function createBaseMsgDepositValidatorRewardsPool(): MsgDepositValidatorRewardsPool {', null],
   ],
 );
 console.log(`copied from @bze/bzejs ${version}`);

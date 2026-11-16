@@ -47,10 +47,7 @@ export const nothingMsg = (): AnyMsg => ({
   value: Uint8Array.from([1, 2, 3, 250]),
 });
 
-/**
- * A vesting `MsgCreateVestingAccount` from `from` to `to` of `amount` ubze, ending at
- * `endTime`: a type the wallet has no decoder for.
- */
+/** A vesting `MsgCreateVestingAccount` from `from` to `to` of `amount` ubze until `endTime`. */
 export function vestingMsg(from: string, to: string, amount: string, endTime = 1): AnyMsg {
   const coin = cat(textField(1, 'ubze'), textField(2, amount));
   return {
@@ -62,5 +59,13 @@ export function vestingMsg(from: string, to: string, amount: string, endTime = 1
       varint(4 << 3),
       varint(endTime),
     ),
+  };
+}
+
+/** An authz `MsgExec` run by `grantee`, wrapping `msgs`. */
+export function execMsg(grantee: string, ...msgs: AnyMsg[]): AnyMsg {
+  return {
+    typeUrl: '/cosmos.authz.v1beta1.MsgExec',
+    value: cat(textField(1, grantee), ...msgs.map((m) => bytesField(2, any(m.typeUrl, m.value)))),
   };
 }

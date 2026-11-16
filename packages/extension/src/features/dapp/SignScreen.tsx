@@ -397,6 +397,9 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
   );
 
   const danger = summary.dangers[0];
+  const boxTitle =
+    danger?.title ?? (dangerous ? t('dapp.sign.dangerFallback') : t('dapp.sign.unreadable.title'));
+  const tickLabel = dangerous ? t('dapp.sign.trust') : t('dapp.sign.unreadable.trust');
   // Advanced settings are signed too: shown as rows under the fee.
   const pricing = pricingOf(base);
   const estimate = applied.bounds?.estimate;
@@ -462,13 +465,10 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
         {mustTrust && (
           <RiskBox
             tone="red"
-            title={
-              danger?.title ??
-              (dangerous ? t('dapp.sign.dangerFallback') : t('dapp.sign.unreadable.title'))
-            }
+            title={boxTitle}
             action={
               <Check checked={trusted} onChange={setTrusted}>
-                {dangerous ? t('dapp.sign.trust') : t('dapp.sign.unreadable.trust')}
+                {tickLabel}
               </Check>
             }
           >

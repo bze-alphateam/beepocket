@@ -24,6 +24,8 @@ import * as cointrunkMsgs from './proto/bze/cointrunk/tx';
 import * as stakingMsgs from './proto/cosmos/staking/v1beta1/tx';
 import * as distributionMsgs from './proto/cosmos/distribution/v1beta1/tx';
 import * as transferMsgs from './proto/ibc/applications/transfer/v1/tx';
+import * as vestingMsgs from './proto/cosmos/vesting/v1beta1/tx';
+import * as vesting from './proto/cosmos/vesting/v1beta1/vesting';
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -69,6 +71,8 @@ for (const mod of [
   stakingMsgs,
   distributionMsgs,
   transferMsgs,
+  vestingMsgs,
+  vesting,
 ]) {
   for (const exported of Object.values(mod)) {
     if (isCodec(exported)) codecs.set(exported.typeUrl, exported);

@@ -14,6 +14,7 @@ import * as cointrunkMsgs from './proto/bze/cointrunk/tx';
 import * as stakingMsgs from './proto/cosmos/staking/v1beta1/tx';
 import * as distributionMsgs from './proto/cosmos/distribution/v1beta1/tx';
 import * as transferMsgs from './proto/ibc/applications/transfer/v1/tx';
+import * as vestingMsgs from './proto/cosmos/vesting/v1beta1/tx';
 import { Any } from './proto/google/protobuf/any';
 import { VoteOption } from './proto/cosmos/gov/v1/gov';
 
@@ -39,6 +40,7 @@ const allMsgs = [
   stakingMsgs,
   distributionMsgs,
   transferMsgs,
+  vestingMsgs,
 ].flatMap((mod) => Object.entries(mod).filter((e): e is [string, MsgCodec] => isMsg(e[0], e[1])));
 
 const send = {

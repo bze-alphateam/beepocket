@@ -32,7 +32,7 @@ import { DocumentLog } from './documents';
 import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
 import { DappRegistry, type UserAnswer } from './registry';
-import { grantMsg, nothingMsg, vestingMsg } from './test-support';
+import { execMsg, grantMsg, nothingMsg, vestingMsg } from './test-support';
 import { RequestStore } from './requests';
 import { Cancellations } from './cancellations';
 import { DappService } from './service';
@@ -577,6 +577,17 @@ describe('signDirect review and approval', () => {
     const r = await review(t, { messages: [send, nothingMsg()] });
     expect(r.view.summary.level).toBe('unknown');
     const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view), trusted: false });
+    expect(res.ok).toBe(true);
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
+  });
+
+  it('refuses an exec of a message it cannot read without the tick', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, { messages: [execMsg(MAIN.address, nothingMsg())] });
+    expect(r.view.summary.level).toBe('dangerous');
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
     expect(res.ok).toBe(true);
     expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
     expect(t.signedOf(r.id)).toBeUndefined();
