@@ -64,6 +64,7 @@ import type {
   MsgSetDenomMetadata,
 } from './proto/bze/tokenfactory/tx';
 import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
+import { bzeAddressHash, signersOf } from './signers';
 import { sanitiseText } from './text';
 import { LP_DECIMALS, type TokenInfo } from './tokens';
 import type { AnyMsg } from './tx';
@@ -153,6 +154,8 @@ interface Parts {
   sub: string;
   rows: SummaryRow[];
   danger?: DangerNotice;
+  /** Red-box texts of the messages an exec wraps. */
+  nested?: DangerNotice[];
   /** The market a trade message acts on, for the shared-market line of a multi-message tx. */
   marketId?: string;
   marketPair?: string;
@@ -211,7 +214,24 @@ class Lookups {
   private marketsCache: Promise<Map<string, Market>> | undefined;
   private poolsCache: Promise<Map<string, Pool>> | undefined;
 
+  private offlineLookups: Lookups | undefined;
+
   constructor(readonly ctx: SummaryContext) {}
+
+  /** The same address book with no node calls: tokens, markets and orders are not found. */
+  offline(): Lookups {
+    if (!this.offlineLookups) {
+      const offline = new Lookups({
+        tokens: { resolve: () => Promise.reject(new Error('offline')) },
+        markets: { markets: () => Promise.resolve([]), liquidityPools: () => Promise.resolve([]) },
+        orders: { marketOrder: () => Promise.resolve(null) },
+        addressBook: this.ctx.addressBook,
+      });
+      offline.offlineLookups = offline;
+      this.offlineLookups = offline;
+    }
+    return this.offlineLookups;
+  }
 
   token(denom: string): Promise<TokenView> {
     let cached = this.tokenCache.get(denom);
@@ -710,10 +730,15 @@ async function grantParts(l: Lookups, msg: MsgGrant): Promise<Parts> {
       ['Permission', permission],
       ['Expires', expiry(msg.grant.expiration)],
     ],
-    danger: {
-      title: `This gives ${grantee} power over your address`,
-      text: 'They can make transactions from this address until the permission expires or you revoke it.',
-    },
+    danger: grantDanger(grantee),
+  };
+}
+
+/** The red box of an authz grant; `grantee` is display text. */
+function grantDanger(grantee: string): DangerNotice {
+  return {
+    title: `This gives ${grantee} power over your address`,
+    text: 'They can make transactions from this address until the permission expires or you revoke it.',
   };
 }
 
@@ -772,30 +797,211 @@ async function feeGrantParts(l: Lookups, msg: MsgGrantAllowance): Promise<Parts>
       ['Limit', limit],
       ['Expires', expires],
     ],
-    danger: {
-      title: `This lets ${grantee} spend your tokens on fees`,
-      text: 'Fees they pay are taken from this address until the allowance runs out or expires.',
-    },
+    danger: feeGrantDanger(grantee),
   };
 }
 
-function execParts(l: Lookups, msg: MsgExec): Parts {
-  const grantee = l.who(msg.grantee);
-  const inner = msg.msgs.map((m) => lastSegment(m.typeUrl));
+/** The red box of a fee grant; `grantee` is display text. */
+function feeGrantDanger(grantee: string): DangerNotice {
+  return {
+    title: `This lets ${grantee} spend your tokens on fees`,
+    text: 'Fees they pay are taken from this address until the allowance runs out or expires.',
+  };
+}
+
+/** Exec messages inside exec messages read before the rest is reported as unreadable. */
+const MAX_EXEC_DEPTH = 2;
+const MAX_EXEC_ROWS = 10;
+const OWN_ACCOUNT = 'Your own account';
+const UNKNOWN_ACCOUNT = 'An account the wallet cannot read';
+
+/** Whose authority a message wrapped in an exec uses. */
+type Authority = { kind: 'own' } | { kind: 'other'; address: string } | { kind: 'unknown' };
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
+/**
+ * A wrapped message signed by `me` (the address signing the transaction) acts on that
+ * address's own account: the chain needs no grant for it. Another signer is a granter whose
+ * permission is used. Anything but exactly one valid `bze1…` signer cannot be read. A nested
+ * exec at `depth` is read for its grantee only, and not at all past the depth limit.
+ */
+function authorityOf(me: string, msg: AnyMsg, depth: number): Authority {
+  const unknown: Authority = { kind: 'unknown' };
+  let signers: string[] | null;
+  try {
+    if (msg.typeUrl === MsgExec.typeUrl) {
+      if (depth >= MAX_EXEC_DEPTH) return unknown;
+      signers = [MsgExec.decode(msg.value).grantee];
+    } else {
+      signers = signersOf(msg);
+    }
+  } catch {
+    return unknown;
+  }
+  const [signer] = signers ?? [];
+  if (signers?.length !== 1 || signer === undefined) return unknown;
+  const mine = bzeAddressHash(me);
+  const theirs = bzeAddressHash(signer);
+  if (mine === null || theirs === null) return unknown;
+  return sameBytes(mine, theirs) ? { kind: 'own' } : { kind: 'other', address: signer };
+}
+
+function authorityWords(l: Lookups, a: Authority): string {
+  switch (a.kind) {
+    case 'own':
+      return 'from your own account';
+    case 'other':
+      return `on behalf of ${l.who(a.address)}`;
+    case 'unknown':
+      return 'from an account the wallet cannot read';
+  }
+}
+
+function authorityRow(a: Authority): SummaryRow {
+  switch (a.kind) {
+    case 'own':
+      return ['Runs from', OWN_ACCOUNT];
+    case 'other':
+      return ['Runs from', safeText(a.address, 80), 'mono'];
+    case 'unknown':
+      return ['Runs from', UNKNOWN_ACCOUNT];
+  }
+}
+
+function execDanger(l: Lookups, authorities: Authority[]): DangerNotice {
+  const [only] = authorities;
+  if (authorities.length === 0) {
+    return {
+      title: 'This runs no messages',
+      text: 'The request asks to act for other accounts but holds nothing to run. Continue only if you expect that.',
+    };
+  }
+  if (authorities.length === 1 && only) {
+    const text = {
+      own: 'The message inside acts with your own address and its tokens, as if you signed it directly.',
+      other: 'The message inside uses a permission another address gave yours.',
+      unknown:
+        'The wallet cannot tell whose account the message inside acts for: it may be your own.',
+    }[only.kind];
+    return {
+      title: `This runs ${authorityWords(l, only)}`,
+      text: `${text} Continue only if you expect that.`,
+    };
+  }
+  if (authorities.some((a) => a.kind === 'own')) {
+    return {
+      title: 'Some of these run from your own account',
+      text: 'Messages marked as running from your own account act with your own address and its tokens, as if you signed them directly. Continue only if you expect that.',
+    };
+  }
+  if (authorities.some((a) => a.kind === 'unknown')) {
+    return {
+      title: 'Some of these may run from your own account',
+      text: 'The wallet cannot tell whose account some of the messages inside act for: they may act with your own address and its tokens. Continue only if you expect that.',
+    };
+  }
+  return {
+    title: 'This runs messages on behalf of other accounts',
+    text: 'The messages inside use permissions other addresses gave yours. Continue only if you expect that.',
+  };
+}
+
+/** A wrapped message that could not be summarised. */
+function unreadableParts(msg: AnyMsg): Parts {
+  return { ...unknownParts(msg, `${safeText(msg.typeUrl)} (unreadable)`), level: 'dangerous' };
+}
+
+const NESTED_LABEL = /^Message (\d+(?:\.\d+)*)$/;
+
+/** The rows of a nested exec, its `Message N` labels numbered under message `n`. */
+function nestRows(rows: SummaryRow[], n: number): SummaryRow[] {
+  return rows.map((r) => {
+    const match = NESTED_LABEL.exec(r[0]);
+    if (!match) return r;
+    const label = `Message ${String(n)}.${match[1] ?? ''}`;
+    return r.length === 3 ? [label, r[1], r[2]] : [label, r[1]];
+  });
+}
+
+/**
+ * `me` is the grantee of the outermost exec, which the request checks pin to the signing
+ * address; nested execs compare their messages' signers with it too. Only the first
+ * `MAX_EXEC_ROWS` messages are shown; the rest are summarised without node calls and warned
+ * about when they need care.
+ */
+async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): Promise<Parts> {
+  const self = me ?? msg.grantee;
+  const authorities = msg.msgs.map((m) => authorityOf(self, m, depth + 1));
+  const summarised = async (m: AnyMsg, i: number): Promise<Parts> => {
+    const lookups = i < MAX_EXEC_ROWS ? l : l.offline();
+    try {
+      return await partsOf(lookups, m, depth + 1, self);
+    } catch {
+      return unreadableParts(m);
+    }
+  };
+  const inner = await Promise.all(msg.msgs.map(summarised));
+  const nested: DangerNotice[] = [];
+  // A hidden message needs a look unless it is an ordinary message of another readable account.
+  let flagged = 0;
+  for (let i = MAX_EXEC_ROWS; i < inner.length; i += 1) {
+    if (inner[i]?.level !== 'normal' || authorities[i]?.kind !== 'other') flagged += 1;
+  }
+  if (flagged > 0) {
+    nested.push({
+      title:
+        flagged === 1
+          ? '1 message not shown here needs a closer look'
+          : `${String(flagged)} messages not shown here need a closer look`,
+      text: 'They run from your own account, need extra care, or cannot be read. Read them in the message details before you continue.',
+    });
+  }
+  // Red boxes of the shown messages only. A wrapped message's own red box speaks of "your
+  // address": kept only when that holds, and for nested execs, whose notices are worded for
+  // the same signing address. One box per title.
+  inner.slice(0, MAX_EXEC_ROWS).forEach((p, i) => {
+    if (authorities[i]?.kind !== 'own' && msg.msgs[i]?.typeUrl !== MsgExec.typeUrl) return;
+    for (const notice of [...(p.danger ? [p.danger] : []), ...(p.nested ?? [])]) {
+      if (!nested.some((n) => n.title === notice.title)) nested.push(notice);
+    }
+  });
+  const danger = execDanger(l, authorities);
+  const [only] = inner;
+  const [onlyAuthority] = authorities;
+  if (msg.msgs.length === 1 && only && onlyAuthority) {
+    return {
+      level: 'dangerous',
+      icon: only.icon,
+      title: only.title,
+      hero: only.hero,
+      sub: `${only.sub} · ${authorityWords(l, onlyAuthority)}`,
+      rows: [authorityRow(onlyAuthority), ...only.rows],
+      danger,
+      nested,
+    };
+  }
+  const rows: SummaryRow[] = [];
+  inner.slice(0, MAX_EXEC_ROWS).forEach((p, i) => {
+    const a: Authority = authorities[i] ?? { kind: 'unknown' };
+    const own = msg.msgs[i]?.typeUrl === MsgExec.typeUrl ? nestRows(p.rows, i + 1) : p.rows;
+    rows.push([`Message ${String(i + 1)}`, `${p.title} · ${p.hero} · ${p.sub}`]);
+    rows.push(authorityRow(a), ...own);
+  });
+  const more = msg.msgs.length - MAX_EXEC_ROWS;
+  if (more > 0) rows.push(['…', `${String(more)} more ${more === 1 ? 'message' : 'messages'}`]);
+  const count = msg.msgs.length;
   return {
     level: 'dangerous',
     icon: 'grant',
-    title: 'Act for other accounts',
-    hero: `${String(inner.length)} ${inner.length === 1 ? 'message' : 'messages'}`,
-    sub: `run by ${grantee}`,
-    rows: [
-      ['Grantee', safeText(msg.grantee, 80), 'mono'],
-      ['Messages', inner.slice(0, 10).join(', ') + (inner.length > 10 ? ', …' : '')],
-    ],
-    danger: {
-      title: 'This runs messages on behalf of other accounts',
-      text: 'The messages inside are executed with the permissions other addresses gave. Continue only if you expect that.',
-    },
+    title: `${String(count)} ${count === 1 ? 'message' : 'messages'}`,
+    hero: 'Run together',
+    sub: `run by ${l.who(msg.grantee)}`,
+    rows,
+    danger,
+    nested,
   };
 }
 
@@ -1341,7 +1547,8 @@ async function transferParts(l: Lookups, msg: MsgTransfer): Promise<Parts> {
   };
 }
 
-async function partsOf(l: Lookups, msg: AnyMsg): Promise<Parts> {
+/** `depth` and `me` are set for messages wrapped in an exec; see `execParts`. */
+async function partsOf(l: Lookups, msg: AnyMsg, depth = 0, me?: string): Promise<Parts> {
   const action = GOVERNANCE_ONLY.get(msg.typeUrl);
   if (action !== undefined) return governanceParts(msg.typeUrl, action);
   try {
@@ -1371,7 +1578,10 @@ async function partsOf(l: Lookups, msg: AnyMsg): Promise<Parts> {
       case MsgGrantAllowance.typeUrl:
         return await feeGrantParts(l, MsgGrantAllowance.decode(msg.value));
       case MsgExec.typeUrl:
-        return execParts(l, MsgExec.decode(msg.value));
+        // Past the limit the bytes are not decoded at all.
+        if (depth >= MAX_EXEC_DEPTH)
+          return { ...unknownParts(msg, 'Nested too deeply to read'), level: 'dangerous' };
+        return await execParts(l, MsgExec.decode(msg.value), depth, me);
       case MsgCreateMarket.typeUrl:
         return await createMarketParts(l, MsgCreateMarket.decode(msg.value));
       case MsgCreateLiquidityPool.typeUrl:
@@ -1601,7 +1811,7 @@ export async function summarise(
   }));
   const level = riskiest(parts.map((p) => p.level));
   const memo = memoText(options.memo ?? '');
-  const dangers = parts.flatMap((p) => (p.danger ? [p.danger] : []));
+  const dangers = parts.flatMap((p) => [...(p.danger ? [p.danger] : []), ...(p.nested ?? [])]);
 
   const [only] = parts;
   if (parts.length === 1 && only) {

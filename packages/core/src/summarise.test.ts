@@ -1,3 +1,4 @@
+import { bech32 } from '@scure/base';
 import { describe, expect, it, vi } from 'vitest';
 import { stubChain, stubScan } from '../test/stubs';
 import {
@@ -53,7 +54,7 @@ import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
 import { Any } from './proto/google/protobuf/any';
 
 const ME = 'bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g';
-const ALEX = 'bze1q8t5x0yvl9jzx5pq4m3vvrmkz8cndhqky4x4kf';
+const ALEX = 'bze1q8t5x0yvl9jzx5pq4m3vvrmkz8cndhqk8z9rfc';
 const STRANGER = 'bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p';
 const VDL = 'factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl';
 const USDC = `ibc/${'AB'.repeat(32)}`;
@@ -144,6 +145,18 @@ const grant = (expiration?: Date) =>
       ...(expiration ? { expiration } : {}),
     },
   });
+/** A grant from the connected address to a stranger. */
+const selfGrant = () =>
+  pack(MsgGrant, {
+    granter: ME,
+    grantee: STRANGER,
+    grant: {
+      authorization: wrap(GenericAuthorization, { msg: '/cosmos.bank.v1beta1.MsgSend' }),
+    },
+  });
+/** An authz exec run by the connected address. */
+const exec = (...msgs: AnyMsg[]) =>
+  pack(MsgExec, { grantee: ME, msgs: msgs.map((m) => Any.fromPartial(m)) });
 /** A type outside BZE's modules and the cosmos/ibc types its dapps send. */
 const wasm: AnyMsg = {
   typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
@@ -713,17 +726,369 @@ describe('dangerous messages', () => {
   });
 
   it('flags any authz exec, whatever it wraps', async () => {
-    const exec = pack(MsgExec, { grantee: ME, msgs: [Any.fromPartial(send())] });
-    const s = await run([exec]);
-    expect(s.level).toBe('dangerous');
-    expect(s.hero).toBe('1 message');
-    expect(s.rows[1]).toEqual(['Messages', 'MsgSend']);
-    expect(s.dangers).toHaveLength(1);
+    for (const inner of [send(), vote(VoteOption.VOTE_OPTION_YES), wasm]) {
+      const s = await run([exec(inner)]);
+      expect(s.level).toBe('dangerous');
+      expect(s.messages[0]?.level).toBe('dangerous');
+      expect(s.dangers.length).toBeGreaterThan(0);
+    }
   });
 
   it('keeps a grant dangerous even when its bytes are broken', async () => {
     const broken: AnyMsg = { typeUrl: MsgGrant.typeUrl, value: new Uint8Array([10, 99]) };
     expect((await run([broken])).level).toBe('dangerous');
+  });
+});
+
+describe('authz exec', () => {
+  it('shows the recipient and amount of a wrapped send from your own account', async () => {
+    const s = await run([exec(send(STRANGER, [{ denom: 'ubze', amount: '2500000' }]))]);
+    expect(s.level).toBe('dangerous');
+    expect(s.title).toBe('Send');
+    expect(s.hero).toBe('2.50 BZE');
+    const stranger = `${STRANGER.slice(0, 8)}…${STRANGER.slice(-6)}`;
+    expect(s.sub).toBe(`to ${stranger} · from your own account`);
+    expect(s.rows).toEqual([
+      ['Runs from', 'Your own account'],
+      ['To', STRANGER, 'mono'],
+      ['Amount', '2.50 BZE'],
+    ]);
+    expect(s.dangers[0]?.title).toBe('This runs from your own account');
+    expect(s.dangers[0]?.text).toContain('your own address');
+  });
+
+  it('shows a wrapped grant from your own account like a top-level grant', async () => {
+    const wrapped = pack(MsgGrant, {
+      granter: ME,
+      grantee: STRANGER,
+      grant: {
+        authorization: wrap(GenericAuthorization, { msg: '/cosmos.bank.v1beta1.MsgSend' }),
+      },
+    });
+    const s = await run([exec(wrapped)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.title).toBe('Grant permission');
+    expect(s.hero).toBe('Any MsgSend');
+    expect(s.rows).toEqual([
+      ['Runs from', 'Your own account'],
+      ['Grantee', STRANGER, 'mono'],
+      ['Permission', 'Any MsgSend'],
+      ['Expires', 'Never'],
+    ]);
+    expect(s.dangers.map((d) => d.title)).toEqual([
+      'This runs from your own account',
+      `This gives ${STRANGER.slice(0, 8)}…${STRANGER.slice(-6)} power over your address`,
+    ]);
+  });
+
+  it('names the granter whose permission a wrapped message uses', async () => {
+    const theirs = pack(MsgSend, {
+      fromAddress: ALEX,
+      toAddress: STRANGER,
+      amount: [{ denom: 'ubze', amount: '1000000' }],
+    });
+    const s = await run([exec(theirs)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.hero).toBe('1.00 BZE');
+    expect(s.sub).toContain('on behalf of Alex');
+    expect(s.rows[0]).toEqual(['Runs from', ALEX, 'mono']);
+    expect(s.rows).toContainEqual(['To', STRANGER, 'mono']);
+    expect(s.dangers[0]?.title).toBe('This runs on behalf of Alex');
+    expect(s.dangers[0]?.text).not.toContain('your own address');
+  });
+
+  it('marks the account of each wrapped message when they mix accounts', async () => {
+    const theirs = pack(MsgSend, {
+      fromAddress: ALEX,
+      toAddress: ME,
+      amount: [{ denom: 'ubze', amount: '1000000' }],
+    });
+    const s = await run([exec(theirs, send(STRANGER))]);
+    expect(s.level).toBe('dangerous');
+    expect(s.title).toBe('2 messages');
+    const me = `${ME.slice(0, 8)}…${ME.slice(-6)}`;
+    expect(s.rows).toContainEqual(['Message 1', `Send · 1.00 BZE · to ${me}`]);
+    expect(s.rows).toContainEqual(['Runs from', ALEX, 'mono']);
+    expect(s.rows).toContainEqual(['Runs from', 'Your own account']);
+    expect(s.rows).toContainEqual(['To', STRANGER, 'mono']);
+    expect(s.dangers[0]?.title).toBe('Some of these run from your own account');
+  });
+
+  it('lists how many wrapped messages it does not show', async () => {
+    const many = Array.from({ length: 12 }, () => send(STRANGER));
+    const s = await run([exec(...many)]);
+    expect(s.rows.filter((r) => r[0].startsWith('Message '))).toHaveLength(10);
+    expect(s.rows[s.rows.length - 1]).toEqual(['…', '2 more messages']);
+    expect(s.level).toBe('dangerous');
+  });
+
+  it('reports a wrapped message of an unknown type or with broken bytes', async () => {
+    const unknown = await run([exec(wasm)]);
+    expect(unknown.level).toBe('dangerous');
+    expect(unknown.hero).toBe('Unknown message');
+    expect(unknown.rows[0]).toEqual(['Runs from', 'An account the wallet cannot read']);
+    const brokenSend: AnyMsg = { typeUrl: MsgSend.typeUrl, value: new Uint8Array([10, 99]) };
+    const broken = await run([exec(brokenSend)]);
+    expect(broken.level).toBe('dangerous');
+    expect(broken.sub).toContain('unreadable');
+    expect(broken.rows[0]).toEqual(['Runs from', 'An account the wallet cannot read']);
+  });
+
+  it.each<[string, AnyMsg]>([
+    [
+      'an IBC transfer',
+      pack(MsgTransfer, {
+        sourcePort: 'transfer',
+        sourceChannel: 'channel-3',
+        token: { denom: 'ubze', amount: '1000000' },
+        sender: ME,
+        receiver: STRANGER,
+      }),
+    ],
+    [
+      'a delegation',
+      pack(MsgDelegate, {
+        delegatorAddress: ME,
+        validatorAddress: STRANGER,
+        amount: { denom: 'ubze', amount: '1000000' },
+      }),
+    ],
+    ['an order', order('buy')],
+    ['a new token', pack(factory.MsgCreateDenom, { creator: ME, subdenom: 'coin' })],
+    [
+      'a fee grant',
+      pack(MsgGrantAllowance, {
+        granter: ME,
+        grantee: STRANGER,
+        allowance: wrap(BasicAllowance, { spendLimit: [] }),
+      }),
+    ],
+    [
+      'a multi-send with one input',
+      pack(MsgMultiSend, {
+        inputs: [{ address: ME, coins: [{ denom: 'ubze', amount: '1000000' }] }],
+        outputs: [{ address: STRANGER, coins: [{ denom: 'ubze', amount: '1000000' }] }],
+      }),
+    ],
+  ])('says %s wrapped from your own account runs from it', async (_, inner) => {
+    const s = await run([exec(inner)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows[0]).toEqual(['Runs from', 'Your own account']);
+    expect(s.dangers[0]?.title).toBe('This runs from your own account');
+  });
+
+  it('reads your own address written in upper case as your own account', async () => {
+    const s = await run([exec(pack(MsgSend, { fromAddress: ME.toUpperCase(), toAddress: ALEX }))]);
+    expect(s.rows[0]).toEqual(['Runs from', 'Your own account']);
+    expect(s.dangers[0]?.title).toBe('This runs from your own account');
+  });
+
+  it.each<[string, AnyMsg]>([
+    [
+      'an address of another chain with your bytes',
+      pack(MsgSend, {
+        fromAddress: bech32.encode('cosmos', bech32.decode(ME as `${string}1${string}`).words),
+        toAddress: ALEX,
+      }),
+    ],
+    ['an empty signer', pack(MsgSend, { fromAddress: '', toAddress: ALEX })],
+    ['an invalid address', pack(MsgSend, { fromAddress: 'bze1nope', toAddress: ALEX })],
+    [
+      'two signers',
+      pack(MsgMultiSend, {
+        inputs: [
+          { address: ME, coins: [{ denom: 'ubze', amount: '1' }] },
+          { address: ALEX, coins: [{ denom: 'ubze', amount: '1' }] },
+        ],
+        outputs: [{ address: STRANGER, coins: [{ denom: 'ubze', amount: '2' }] }],
+      }),
+    ],
+  ])('cannot read the account of %s', async (_, inner) => {
+    const s = await run([exec(inner)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows[0]).toEqual(['Runs from', 'An account the wallet cannot read']);
+    expect(s.sub).toContain('from an account the wallet cannot read');
+    expect(JSON.stringify(s)).not.toContain('on behalf of');
+  });
+
+  it('stays dangerous with no wrapped messages', async () => {
+    const s = await run([exec()]);
+    expect(s.level).toBe('dangerous');
+    expect(s.dangers.length).toBeGreaterThan(0);
+  });
+
+  it('reads the account of a nested exec from its grantee', async () => {
+    const theirs = await run([
+      exec(pack(MsgExec, { grantee: ALEX, msgs: [Any.fromPartial(send(STRANGER))] })),
+    ]);
+    expect(theirs.rows[0]).toEqual(['Runs from', ALEX, 'mono']);
+    const mine = await run([exec(exec(send(STRANGER)))]);
+    expect(mine.rows[0]).toEqual(['Runs from', 'Your own account']);
+  });
+
+  it('keeps every red box in a batch that holds an exec', async () => {
+    const s = await run([send(), exec(selfGrant())]);
+    expect(s.level).toBe('dangerous');
+    expect(s.dangers.map((d) => d.title)).toEqual([
+      'This runs from your own account',
+      `This gives ${short(STRANGER)} power over your address`,
+    ]);
+  });
+
+  it("keeps a wrapped grant's red box next to another granter's message", async () => {
+    const theirs = pack(MsgSend, {
+      fromAddress: ALEX,
+      toAddress: STRANGER,
+      amount: [{ denom: 'ubze', amount: '1000000' }],
+    });
+    const s = await run([exec(theirs, selfGrant())]);
+    expect(s.rows).toContainEqual(['Runs from', ALEX, 'mono']);
+    expect(s.dangers.map((d) => d.title)).toEqual([
+      'Some of these run from your own account',
+      `This gives ${short(STRANGER)} power over your address`,
+    ]);
+  });
+
+  it('keeps an exec with broken bytes dangerous', async () => {
+    const broken: AnyMsg = { typeUrl: MsgExec.typeUrl, value: new Uint8Array([10, 99]) };
+    expect((await run([broken])).level).toBe('dangerous');
+  });
+
+  describe('past the rows it shows', () => {
+    const theirs = pack(MsgSend, {
+      fromAddress: ALEX,
+      toAddress: STRANGER,
+      amount: [{ denom: 'ubze', amount: '1' }],
+    });
+    const harmless = Array.from({ length: 10 }, () => theirs);
+    const titles = (s: TxSummary) => s.dangers.map((d) => d.title);
+
+    it('warns about a hidden nested exec', async () => {
+      const nested = pack(MsgExec, { grantee: ALEX, msgs: [Any.fromPartial(theirs)] });
+      const s = await run([exec(...harmless, nested)]);
+      expect(titles(s)).toContain('1 message not shown here needs a closer look');
+    });
+
+    it('warns about a hidden admin hand-over from your own account', async () => {
+      const handOver = pack(factory.MsgChangeAdmin, {
+        creator: ME,
+        denom: VDL,
+        newAdmin: STRANGER,
+      });
+      const s = await run([exec(...harmless, handOver)]);
+      expect(titles(s)[1]).toBe('1 message not shown here needs a closer look');
+    });
+
+    it('keeps the red boxes of many wrapped messages few', async () => {
+      const handOver = pack(factory.MsgChangeAdmin, {
+        creator: ME,
+        denom: VDL,
+        newAdmin: STRANGER,
+      });
+      const s = await run([exec(...Array.from({ length: 50 }, () => handOver))]);
+      expect(titles(s)[1]).toBe('40 messages not shown here need a closer look');
+      expect(new Set(titles(s)).size).toBe(titles(s).length);
+      expect(s.dangers.length).toBeLessThanOrEqual(3);
+    });
+
+    it('warns about hidden messages it cannot read', async () => {
+      const brokenSend: AnyMsg = { typeUrl: MsgSend.typeUrl, value: new Uint8Array([10, 99]) };
+      const s = await run([exec(...harmless, wasm, brokenSend)]);
+      expect(titles(s)).toContain('2 messages not shown here need a closer look');
+    });
+
+    it('stays quiet about hidden ordinary messages of other accounts', async () => {
+      const s = await run([exec(...harmless, theirs, theirs)]);
+      expect(titles(s)).toEqual(['This runs messages on behalf of other accounts']);
+    });
+  });
+
+  it('shows the good messages around one it cannot read', async () => {
+    const brokenSend: AnyMsg = { typeUrl: MsgSend.typeUrl, value: new Uint8Array([10, 99]) };
+    const theirs = pack(MsgSend, {
+      fromAddress: ALEX,
+      toAddress: STRANGER,
+      amount: [{ denom: 'ubze', amount: '1000000' }],
+    });
+    const s = await run([exec(send(STRANGER), brokenSend, theirs)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows).toContainEqual(['To', STRANGER, 'mono']);
+    expect(s.rows).toContainEqual(['Runs from', ALEX, 'mono']);
+    expect(s.rows).toContainEqual(['Runs from', 'An account the wallet cannot read']);
+    expect(s.dangers[0]?.title).toBe('Some of these run from your own account');
+  });
+
+  it('says messages it cannot read may run from your own account', async () => {
+    const theirs = pack(MsgSend, { fromAddress: ALEX, toAddress: STRANGER });
+    const s = await run([exec(theirs, wasm)]);
+    expect(s.dangers[0]?.title).toBe('Some of these may run from your own account');
+    const one = await run([exec(wasm)]);
+    expect(one.dangers[0]?.text).toContain('it may be your own');
+  });
+
+  it('numbers the messages of a nested exec under their parent', async () => {
+    const inner = pack(MsgExec, {
+      grantee: ME,
+      msgs: [Any.fromPartial(send(STRANGER)), Any.fromPartial(send(ALEX))],
+    });
+    const s = await run([exec(send(ALEX), inner)]);
+    const labels = s.rows.map((r) => r[0]).filter((l) => l.startsWith('Message '));
+    expect(labels).toEqual(['Message 1', 'Message 2', 'Message 2.1', 'Message 2.2']);
+  });
+
+  it('does not decode an exec past the depth limit', async () => {
+    const s = await run([exec(exec(exec(send(STRANGER))))]);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows).toEqual([
+      ['Runs from', 'Your own account'],
+      ['Runs from', 'An account the wallet cannot read'],
+    ]);
+    expect(JSON.stringify(s)).toContain('Nested too deeply to read');
+    expect(JSON.stringify(s).toLowerCase()).not.toContain('unreadable');
+  });
+
+  it('shows an over-long signer as unreadable and never in full', async () => {
+    const long = `bze1${'q'.repeat(200)}`;
+    const s = await run([exec(pack(MsgSend, { fromAddress: long, toAddress: ALEX }))]);
+    expect(s.rows[0]).toEqual(['Runs from', 'An account the wallet cannot read']);
+    for (const [, value] of s.rows) expect(value.length).toBeLessThanOrEqual(81);
+    expect(JSON.stringify(s)).not.toContain(long);
+  });
+
+  it('reads a nested exec grantee in upper case as your own account', async () => {
+    const nested = pack(MsgExec, { grantee: ME.toUpperCase(), msgs: [Any.fromPartial(send())] });
+    const s = await run([exec(nested)]);
+    expect(s.rows[0]).toEqual(['Runs from', 'Your own account']);
+  });
+
+  it('still warns about wrapped messages past the rows it shows', async () => {
+    const theirs = pack(MsgSend, {
+      fromAddress: ALEX,
+      toAddress: STRANGER,
+      amount: [{ denom: 'ubze', amount: '1' }],
+    });
+    const harmless = Array.from({ length: 10 }, () => theirs);
+    const s = await run([exec(...harmless, send(STRANGER), selfGrant())]);
+    expect(s.rows[s.rows.length - 1]).toEqual(['…', '2 more messages']);
+    expect(JSON.stringify(s.rows)).not.toContain('Your own account');
+    const titles = s.dangers.map((d) => d.title);
+    expect(titles[0]).toBe('Some of these run from your own account');
+    expect(titles[1]).toBe('2 messages not shown here need a closer look');
+  });
+
+  it('does not read nesting past its depth limit', async () => {
+    const deep = exec(
+      pack(MsgExec, {
+        grantee: ME,
+        msgs: [Any.fromPartial(exec(send(STRANGER)))],
+      }),
+    );
+    const s = await run([deep]);
+    expect(s.level).toBe('dangerous');
+    expect(JSON.stringify(s)).not.toContain(STRANGER.slice(-6));
+    expect(JSON.stringify(s)).toContain('Nested too deeply to read');
+    const shallow = await run([exec(exec(send(STRANGER)))]);
+    expect(shallow.rows).toContainEqual(['To', STRANGER, 'mono']);
   });
 });
 
