@@ -64,7 +64,7 @@ import type {
   MsgSetDenomMetadata,
 } from './proto/bze/tokenfactory/tx';
 import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
-import { signersOf } from './signers';
+import { bzeAddressHash, signersOf } from './signers';
 import { sanitiseText } from './text';
 import { LP_DECIMALS, type TokenInfo } from './tokens';
 import type { AnyMsg } from './tx';
@@ -713,10 +713,15 @@ async function grantParts(l: Lookups, msg: MsgGrant): Promise<Parts> {
       ['Permission', permission],
       ['Expires', expiry(msg.grant.expiration)],
     ],
-    danger: {
-      title: `This gives ${grantee} power over your address`,
-      text: 'They can make transactions from this address until the permission expires or you revoke it.',
-    },
+    danger: grantDanger(grantee),
+  };
+}
+
+/** The red box of an authz grant; `grantee` is display text. */
+function grantDanger(grantee: string): DangerNotice {
+  return {
+    title: `This gives ${grantee} power over your address`,
+    text: 'They can make transactions from this address until the permission expires or you revoke it.',
   };
 }
 
@@ -775,10 +780,15 @@ async function feeGrantParts(l: Lookups, msg: MsgGrantAllowance): Promise<Parts>
       ['Limit', limit],
       ['Expires', expires],
     ],
-    danger: {
-      title: `This lets ${grantee} spend your tokens on fees`,
-      text: 'Fees they pay are taken from this address until the allowance runs out or expires.',
-    },
+    danger: feeGrantDanger(grantee),
+  };
+}
+
+/** The red box of a fee grant; `grantee` is display text. */
+function feeGrantDanger(grantee: string): DangerNotice {
+  return {
+    title: `This lets ${grantee} spend your tokens on fees`,
+    text: 'Fees they pay are taken from this address until the allowance runs out or expires.',
   };
 }
 
@@ -789,25 +799,37 @@ const OWN_ACCOUNT = 'Your own account';
 const UNKNOWN_ACCOUNT = 'An account the wallet cannot read';
 
 /** Whose authority a message wrapped in an exec uses. */
-type Authority = { kind: 'own' } | { kind: 'other'; addresses: string[] } | { kind: 'unknown' };
+type Authority = { kind: 'own' } | { kind: 'other'; address: string } | { kind: 'unknown' };
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
 
 /**
- * A wrapped message whose signers are all `me` (the address signing the transaction) acts on
- * that address's own account: the chain needs no grant for it. Any other signer is a granter
- * whose permission is used.
+ * A wrapped message signed by `me` (the address signing the transaction) acts on that
+ * address's own account: the chain needs no grant for it. Another signer is a granter whose
+ * permission is used. Anything but exactly one valid `bze1…` signer cannot be read. A nested
+ * exec at `depth` is read for its grantee only, and not at all past the depth limit.
  */
-function authorityOf(me: string, msg: AnyMsg): Authority {
+function authorityOf(me: string, msg: AnyMsg, depth: number): Authority {
+  const unknown: Authority = { kind: 'unknown' };
   let signers: string[] | null;
   try {
-    signers = signersOf(msg);
+    if (msg.typeUrl === MsgExec.typeUrl) {
+      if (depth >= MAX_EXEC_DEPTH) return unknown;
+      signers = [MsgExec.decode(msg.value).grantee];
+    } else {
+      signers = signersOf(msg);
+    }
   } catch {
-    return { kind: 'unknown' };
+    return unknown;
   }
-  if (signers === null || signers.length === 0 || signers.some((s) => s === '')) {
-    return { kind: 'unknown' };
-  }
-  const others = [...new Set(signers.filter((s) => s !== me))];
-  return others.length === 0 ? { kind: 'own' } : { kind: 'other', addresses: others };
+  const [signer] = signers ?? [];
+  if (signers?.length !== 1 || signer === undefined) return unknown;
+  const mine = bzeAddressHash(me);
+  const theirs = bzeAddressHash(signer);
+  if (mine === null || theirs === null) return unknown;
+  return sameBytes(mine, theirs) ? { kind: 'own' } : { kind: 'other', address: signer };
 }
 
 function authorityWords(l: Lookups, a: Authority): string {
@@ -815,7 +837,7 @@ function authorityWords(l: Lookups, a: Authority): string {
     case 'own':
       return 'from your own account';
     case 'other':
-      return `on behalf of ${a.addresses.map((x) => l.who(x)).join(', ')}`;
+      return `on behalf of ${l.who(a.address)}`;
     case 'unknown':
       return 'from an account the wallet cannot read';
   }
@@ -826,15 +848,20 @@ function authorityRow(a: Authority): SummaryRow {
     case 'own':
       return ['Runs from', OWN_ACCOUNT];
     case 'other':
-      return ['Runs from', a.addresses.map((x) => safeText(x, 80)).join(', '), 'mono'];
+      return ['Runs from', safeText(a.address, 80), 'mono'];
     case 'unknown':
       return ['Runs from', UNKNOWN_ACCOUNT];
   }
 }
 
 function execDanger(l: Lookups, authorities: Authority[]): DangerNotice {
-  const own = authorities.some((a) => a.kind === 'own');
   const [only] = authorities;
+  if (authorities.length === 0) {
+    return {
+      title: 'This runs no messages',
+      text: 'The request asks to act for other accounts but holds nothing to run. Continue only if you expect that.',
+    };
+  }
   if (authorities.length === 1 && only) {
     const text = {
       own: 'The message inside acts with your own address and its tokens, as if you signed it directly.',
@@ -846,36 +873,77 @@ function execDanger(l: Lookups, authorities: Authority[]): DangerNotice {
       text: `${text} Continue only if you expect that.`,
     };
   }
-  return own
+  return authorities.some((a) => a.kind === 'own')
     ? {
         title: 'Some of these run from your own account',
         text: 'Messages marked as running from your own account act with your own address and its tokens, as if you signed them directly. Continue only if you expect that.',
       }
     : {
         title: 'This runs messages on behalf of other accounts',
-        text: 'The messages inside use permissions other addresses gave yours. Continue only if you expect that.',
+        text: 'The messages inside use permissions other addresses gave yours, or come from accounts the wallet cannot read. Continue only if you expect that.',
       };
 }
 
 /**
+ * The red box of a wrapped message past the rows shown, read without node lookups: grants
+ * from your own account and nested execs.
+ */
+function hiddenDanger(l: Lookups, msg: AnyMsg, a: Authority): DangerNotice | null {
+  try {
+    if (msg.typeUrl === MsgExec.typeUrl) {
+      return {
+        title: 'A message not shown here runs further messages',
+        text: 'Read it in the message details before you continue.',
+      };
+    }
+    if (a.kind !== 'own') return null;
+    if (msg.typeUrl === MsgGrant.typeUrl) {
+      return grantDanger(l.who(MsgGrant.decode(msg.value).grantee));
+    }
+    if (msg.typeUrl === MsgGrantAllowance.typeUrl) {
+      return feeGrantDanger(l.who(MsgGrantAllowance.decode(msg.value).grantee));
+    }
+    return null;
+  } catch {
+    return {
+      title: 'A message not shown here cannot be read',
+      text: 'Read the message details before you continue.',
+    };
+  }
+}
+
+/** A wrapped message that could not be summarised. */
+function unreadableParts(msg: AnyMsg): Parts {
+  return { ...unknownParts(msg, `${safeText(msg.typeUrl)} (unreadable)`), level: 'dangerous' };
+}
+
+/**
  * `me` is the grantee of the outermost exec, which the request checks pin to the signing
- * address; nested execs compare their messages' signers with it too.
+ * address; nested execs compare their messages' signers with it too. Every wrapped message's
+ * account is read, but only the first `MAX_EXEC_ROWS` are summarised in full.
  */
 async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): Promise<Parts> {
   const self = me ?? msg.grantee;
-  const inner = await Promise.all(msg.msgs.map((m) => partsOf(l, m, depth + 1, self)));
-  const authorities = msg.msgs.map((m) => authorityOf(self, m));
+  const authorities = msg.msgs.map((m) => authorityOf(self, m, depth + 1));
+  const shown = msg.msgs.slice(0, MAX_EXEC_ROWS);
+  const inner = await Promise.all(
+    shown.map((m) => partsOf(l, m, depth + 1, self).catch(() => unreadableParts(m))),
+  );
   // A wrapped message's own red box speaks of "your address": kept only when that holds, and
   // for nested execs, whose notices are worded for the same signing address.
   const nested = inner.flatMap((p, i) =>
-    authorities[i]?.kind === 'own' || msg.msgs[i]?.typeUrl === MsgExec.typeUrl
+    authorities[i]?.kind === 'own' || shown[i]?.typeUrl === MsgExec.typeUrl
       ? [...(p.danger ? [p.danger] : []), ...(p.nested ?? [])]
       : [],
   );
+  msg.msgs.slice(MAX_EXEC_ROWS).forEach((m, i) => {
+    const notice = hiddenDanger(l, m, authorities[MAX_EXEC_ROWS + i] ?? { kind: 'unknown' });
+    if (notice) nested.push(notice);
+  });
   const danger = execDanger(l, authorities);
   const [only] = inner;
   const [onlyAuthority] = authorities;
-  if (inner.length === 1 && only && onlyAuthority) {
+  if (msg.msgs.length === 1 && only && onlyAuthority) {
     return {
       level: 'dangerous',
       icon: only.icon,
@@ -888,19 +956,18 @@ async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): 
     };
   }
   const rows: SummaryRow[] = [];
-  inner.slice(0, MAX_EXEC_ROWS).forEach((p, i) => {
+  inner.forEach((p, i) => {
     const a: Authority = authorities[i] ?? { kind: 'unknown' };
     rows.push([`Message ${String(i + 1)}`, `${p.title} · ${p.hero} · ${p.sub}`]);
     rows.push(authorityRow(a), ...p.rows);
   });
-  if (inner.length > MAX_EXEC_ROWS) {
-    const more = inner.length - MAX_EXEC_ROWS;
-    rows.push(['…', `${String(more)} more ${more === 1 ? 'message' : 'messages'}`]);
-  }
+  const more = msg.msgs.length - shown.length;
+  if (more > 0) rows.push(['…', `${String(more)} more ${more === 1 ? 'message' : 'messages'}`]);
+  const count = msg.msgs.length;
   return {
     level: 'dangerous',
     icon: 'grant',
-    title: `${String(inner.length)} ${inner.length === 1 ? 'message' : 'messages'}`,
+    title: `${String(count)} ${count === 1 ? 'message' : 'messages'}`,
     hero: 'Run together',
     sub: `run by ${l.who(msg.grantee)}`,
     rows,

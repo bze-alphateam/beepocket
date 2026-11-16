@@ -1,6 +1,8 @@
+import { bech32 } from '@scure/base';
 import { decodeAny } from './decode';
 import { BinaryReader, WireType } from './proto/binary';
 import type { AnyMsg } from './tx';
+import { BZE_PREFIX } from './vault/keys';
 
 /** Message fields that name an account whose signature the message needs. */
 const SIGNER_FIELDS = [
@@ -78,4 +80,18 @@ export function signersOf(msg: AnyMsg): string[] | null {
     }
   }
   return found;
+}
+
+/**
+ * The 20-byte hash of a `bze1…` address, in lower or upper case; `null` for anything else,
+ * including the same bytes under another chain's prefix.
+ */
+export function bzeAddressHash(address: string): Uint8Array | null {
+  try {
+    const { prefix, words } = bech32.decode(address as `${string}1${string}`);
+    const bytes = bech32.fromWords(words);
+    return prefix === BZE_PREFIX && bytes.length === 20 ? bytes : null;
+  } catch {
+    return null;
+  }
 }
