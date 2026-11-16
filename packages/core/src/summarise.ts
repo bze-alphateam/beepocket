@@ -214,7 +214,24 @@ class Lookups {
   private marketsCache: Promise<Map<string, Market>> | undefined;
   private poolsCache: Promise<Map<string, Pool>> | undefined;
 
+  private offlineLookups: Lookups | undefined;
+
   constructor(readonly ctx: SummaryContext) {}
+
+  /** The same address book with no node calls: tokens, markets and orders are not found. */
+  offline(): Lookups {
+    if (!this.offlineLookups) {
+      const offline = new Lookups({
+        tokens: { resolve: () => Promise.reject(new Error('offline')) },
+        markets: { markets: () => Promise.resolve([]), liquidityPools: () => Promise.resolve([]) },
+        orders: { marketOrder: () => Promise.resolve(null) },
+        addressBook: this.ctx.addressBook,
+      });
+      offline.offlineLookups = offline;
+      this.offlineLookups = offline;
+    }
+    return this.offlineLookups;
+  }
 
   token(denom: string): Promise<TokenView> {
     let cached = this.tokenCache.get(denom);
@@ -866,50 +883,29 @@ function execDanger(l: Lookups, authorities: Authority[]): DangerNotice {
     const text = {
       own: 'The message inside acts with your own address and its tokens, as if you signed it directly.',
       other: 'The message inside uses a permission another address gave yours.',
-      unknown: 'The wallet cannot tell whose account the message inside acts for.',
+      unknown: 'The wallet cannot tell whose account the message inside acts for: it may be your own.',
     }[only.kind];
     return {
       title: `This runs ${authorityWords(l, only)}`,
       text: `${text} Continue only if you expect that.`,
     };
   }
-  return authorities.some((a) => a.kind === 'own')
-    ? {
-        title: 'Some of these run from your own account',
-        text: 'Messages marked as running from your own account act with your own address and its tokens, as if you signed them directly. Continue only if you expect that.',
-      }
-    : {
-        title: 'This runs messages on behalf of other accounts',
-        text: 'The messages inside use permissions other addresses gave yours, or come from accounts the wallet cannot read. Continue only if you expect that.',
-      };
-}
-
-/**
- * The red box of a wrapped message past the rows shown, read without node lookups: grants
- * from your own account and nested execs.
- */
-function hiddenDanger(l: Lookups, msg: AnyMsg, a: Authority): DangerNotice | null {
-  try {
-    if (msg.typeUrl === MsgExec.typeUrl) {
-      return {
-        title: 'A message not shown here runs further messages',
-        text: 'Read it in the message details before you continue.',
-      };
-    }
-    if (a.kind !== 'own') return null;
-    if (msg.typeUrl === MsgGrant.typeUrl) {
-      return grantDanger(l.who(MsgGrant.decode(msg.value).grantee));
-    }
-    if (msg.typeUrl === MsgGrantAllowance.typeUrl) {
-      return feeGrantDanger(l.who(MsgGrantAllowance.decode(msg.value).grantee));
-    }
-    return null;
-  } catch {
+  if (authorities.some((a) => a.kind === 'own')) {
     return {
-      title: 'A message not shown here cannot be read',
-      text: 'Read the message details before you continue.',
+      title: 'Some of these run from your own account',
+      text: 'Messages marked as running from your own account act with your own address and its tokens, as if you signed them directly. Continue only if you expect that.',
     };
   }
+  if (authorities.some((a) => a.kind === 'unknown')) {
+    return {
+      title: 'Some of these may run from your own account',
+      text: 'The wallet cannot tell whose account some of the messages inside act for: they may act with your own address and its tokens. Continue only if you expect that.',
+    };
+  }
+  return {
+    title: 'This runs messages on behalf of other accounts',
+    text: 'The messages inside use permissions other addresses gave yours. Continue only if you expect that.',
+  };
 }
 
 /** A wrapped message that could not be summarised. */
@@ -917,29 +913,57 @@ function unreadableParts(msg: AnyMsg): Parts {
   return { ...unknownParts(msg, `${safeText(msg.typeUrl)} (unreadable)`), level: 'dangerous' };
 }
 
+const NESTED_LABEL = /^Message (\d+(?:\.\d+)*)$/;
+
+/** The rows of a nested exec, its `Message N` labels numbered under message `n`. */
+function nestRows(rows: SummaryRow[], n: number): SummaryRow[] {
+  return rows.map((r) => {
+    const match = NESTED_LABEL.exec(r[0]);
+    if (!match) return r;
+    const label = `Message ${String(n)}.${match[1] ?? ''}`;
+    return r.length === 3 ? [label, r[1], r[2]] : [label, r[1]];
+  });
+}
+
 /**
  * `me` is the grantee of the outermost exec, which the request checks pin to the signing
- * address; nested execs compare their messages' signers with it too. Every wrapped message's
- * account is read, but only the first `MAX_EXEC_ROWS` are summarised in full.
+ * address; nested execs compare their messages' signers with it too. Only the first
+ * `MAX_EXEC_ROWS` messages are shown; the rest are summarised without node calls and warned
+ * about when they need care.
  */
 async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): Promise<Parts> {
   const self = me ?? msg.grantee;
   const authorities = msg.msgs.map((m) => authorityOf(self, m, depth + 1));
-  const shown = msg.msgs.slice(0, MAX_EXEC_ROWS);
-  const inner = await Promise.all(
-    shown.map((m) => partsOf(l, m, depth + 1, self).catch(() => unreadableParts(m))),
-  );
+  const summarised = async (m: AnyMsg, i: number): Promise<Parts> => {
+    const lookups = i < MAX_EXEC_ROWS ? l : l.offline();
+    try {
+      return await partsOf(lookups, m, depth + 1, self);
+    } catch {
+      return unreadableParts(m);
+    }
+  };
+  const inner = await Promise.all(msg.msgs.map(summarised));
   // A wrapped message's own red box speaks of "your address": kept only when that holds, and
   // for nested execs, whose notices are worded for the same signing address.
   const nested = inner.flatMap((p, i) =>
-    authorities[i]?.kind === 'own' || shown[i]?.typeUrl === MsgExec.typeUrl
+    authorities[i]?.kind === 'own' || msg.msgs[i]?.typeUrl === MsgExec.typeUrl
       ? [...(p.danger ? [p.danger] : []), ...(p.nested ?? [])]
       : [],
   );
-  msg.msgs.slice(MAX_EXEC_ROWS).forEach((m, i) => {
-    const notice = hiddenDanger(l, m, authorities[MAX_EXEC_ROWS + i] ?? { kind: 'unknown' });
-    if (notice) nested.push(notice);
-  });
+  // A hidden message needs a look unless it is an ordinary message of another readable account.
+  let flagged = 0;
+  for (let i = MAX_EXEC_ROWS; i < inner.length; i += 1) {
+    if (inner[i]?.level !== 'normal' || authorities[i]?.kind !== 'other') flagged += 1;
+  }
+  if (flagged > 0) {
+    nested.push({
+      title:
+        flagged === 1
+          ? '1 message not shown here needs a closer look'
+          : `${String(flagged)} messages not shown here need a closer look`,
+      text: 'They run from your own account, need extra care, or cannot be read. Read them in the message details before you continue.',
+    });
+  }
   const danger = execDanger(l, authorities);
   const [only] = inner;
   const [onlyAuthority] = authorities;
@@ -956,12 +980,13 @@ async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): 
     };
   }
   const rows: SummaryRow[] = [];
-  inner.forEach((p, i) => {
+  inner.slice(0, MAX_EXEC_ROWS).forEach((p, i) => {
     const a: Authority = authorities[i] ?? { kind: 'unknown' };
+    const own = msg.msgs[i]?.typeUrl === MsgExec.typeUrl ? nestRows(p.rows, i + 1) : p.rows;
     rows.push([`Message ${String(i + 1)}`, `${p.title} · ${p.hero} · ${p.sub}`]);
-    rows.push(authorityRow(a), ...p.rows);
+    rows.push(authorityRow(a), ...own);
   });
-  const more = msg.msgs.length - shown.length;
+  const more = msg.msgs.length - MAX_EXEC_ROWS;
   if (more > 0) rows.push(['…', `${String(more)} more ${more === 1 ? 'message' : 'messages'}`]);
   const count = msg.msgs.length;
   return {
