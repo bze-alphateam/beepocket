@@ -909,6 +909,15 @@ async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): 
   };
 }
 
+const plural = (n: bigint, one: string, many = `${one}s`): string =>
+  `${group(n.toString())} ${n === 1n ? one : many}`;
+
+/** `30 days`, or the raw text when it is not a whole number. */
+function daysText(raw: string): string {
+  const n = toUint(raw);
+  return n === null ? `${safeText(raw, 40)} days` : plural(n, 'day');
+}
+
 const baseUnits = (raw: string): string => `${safeText(raw, 40)} (base units)`;
 const idText = (id: string): string => safeText(id, 40);
 
