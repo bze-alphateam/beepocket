@@ -54,7 +54,7 @@ import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
 import { Any } from './proto/google/protobuf/any';
 
 const ME = 'bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g';
-const ALEX = 'bze1q8t5x0yvl9jzx5pq4m3vvrmkz8cndhqky4x4kf';
+const ALEX = 'bze1q8t5x0yvl9jzx5pq4m3vvrmkz8cndhqk8z9rfc';
 const STRANGER = 'bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p';
 const VDL = 'factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl';
 const USDC = `ibc/${'AB'.repeat(32)}`;
