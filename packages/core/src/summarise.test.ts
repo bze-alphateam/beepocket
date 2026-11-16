@@ -63,7 +63,8 @@ const ETH = `ibc/${'CD'.repeat(32)}`;
 const BZE_USDC: Market = { id: `ubze/${USDC}`, base: 'ubze', quote: USDC };
 const VDL_BZE: Market = { id: `${VDL}/ubze`, base: VDL, quote: 'ubze' };
 const BZE_ETH: Market = { id: `ubze/${ETH}`, base: 'ubze', quote: ETH };
-const MARKETS = [BZE_USDC, VDL_BZE, BZE_ETH];
+const ETH_BZE: Market = { id: `${ETH}/ubze`, base: ETH, quote: 'ubze' };
+const MARKETS = [BZE_USDC, VDL_BZE, BZE_ETH, ETH_BZE];
 
 const pool = (id: string, base: string, quote: string): Pool => ({
   id,
@@ -460,6 +461,34 @@ describe('Fill orders', () => {
     ]);
     expect(s.hero).toBe('You pay up to 0.000000000000000001 ETH');
     expect(shownQuote(s.hero, 'You pay up to ', 18)).toBe(1n);
+  });
+
+  it('rounds a fractional product up to pay and down to get', async () => {
+    const items = [{ price: '0.333333', amount: '3000001' }];
+    expect((await run([fill('sell', items)])).hero).toBe('You pay up to 1.00 USDC');
+    expect((await run([fill('buy', items)])).hero).toBe('You get 0.999999 USDC');
+  });
+
+  it('reads prices written with leading or trailing zeros', async () => {
+    const s = await run([
+      fill('sell', [
+        { price: '007.5', amount: '2000000' },
+        { price: '0.50', amount: '2000000' },
+      ]),
+    ]);
+    expect(s.hero).toBe('You pay up to 16.00 USDC');
+    expect(s.rows).toContainEqual(['Order 1', '2.00 BZE @ 7.5000 USDC/BZE']);
+    expect(s.rows).toContainEqual(['Order 2', '2.00 BZE @ 0.5000 USDC/BZE']);
+  });
+
+  it('shows the amount to give in full when the base token has many decimals', async () => {
+    const s = await run([fill('buy', [{ price: '1', amount: '1234567' }], ETH_BZE.id)]);
+    expect(s.sub).toBe('You pay 0.000000000001234567 ETH · ETH/BZE · 1 order');
+  });
+
+  it('is unknown when there are no orders', async () => {
+    expect((await run([fill('sell', [])])).level).toBe('unknown');
+    expect((await run([fill('buy', [])])).level).toBe('unknown');
   });
 
   it('is unknown when the market is unknown, and still lists each order', async () => {
