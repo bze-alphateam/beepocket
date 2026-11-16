@@ -249,12 +249,15 @@ class Lookups {
     return this.ctx.orders.marketOrder(marketId, type, id).catch(() => null);
   }
 
-  /** `1,000.00 BZE`; base units with a note when the token's decimals are unknown. */
-  async money(denom: string, amount: bigint | string): Promise<string> {
+  /**
+   * `1,000.00 BZE`; base units with a note when the token's decimals are unknown. `full` shows
+   * every decimal the token has instead of cutting the display short.
+   */
+  async money(denom: string, amount: bigint | string, full = false): Promise<string> {
     const t = await this.token(denom);
     const value = typeof amount === 'bigint' ? amount : toUint(amount);
     if (value === null) return `${safeText(String(amount), 40)} ${t.symbol}`;
-    const text = formatAmount(value, t.decimals);
+    const text = formatAmount(value, t.decimals, full ? { maxFraction: t.decimals } : {});
     return t.exact ? `${text} ${t.symbol}` : `${text} ${t.symbol} (base units)`;
   }
 
@@ -449,37 +452,79 @@ async function cancelOrderParts(l: Lookups, msg: MsgCancelOrder): Promise<Parts>
   };
 }
 
+interface FillItem {
+  amount: bigint;
+  price: string;
+}
+
 async function fillOrdersParts(l: Lookups, msg: MsgFillOrders): Promise<Parts> {
-  const known = msg.orderType === 'buy' || msg.orderType === 'sell';
   const market = await l.market(msg.marketId);
-  const pair = market ? await l.pair(market.base, market.quote) : safeText(msg.marketId);
-  let total = 0n;
-  let valid = true;
+  const count = msg.orders.length;
+  const orders = `${String(count)} ${count === 1 ? 'order' : 'orders'}`;
+  // The type names the orders being filled; the signer takes the other side.
+  const buying = msg.orderType === 'sell';
+  const items: FillItem[] = [];
   for (const item of msg.orders) {
     const amount = toUint(item.amount);
-    if (amount === null || !isDecimal(item.price)) valid = false;
-    else total += amount;
+    if (amount === null || !isDecimal(item.price)) break;
+    items.push({ amount, price: item.price });
   }
-  const count = msg.orders.length;
-  const totalText = !valid
-    ? 'Unreadable amounts'
-    : market
-      ? await l.money(market.base, total)
-      : `${total.toString()} (base units)`;
-  // The type names the orders being filled; the signer takes the other side.
-  const side = msg.orderType === 'buy' ? 'you sell' : msg.orderType === 'sell' ? 'you buy' : '?';
+  const known = msg.orderType === 'buy' || msg.orderType === 'sell';
+  if (!market || !known || count === 0 || items.length !== count) {
+    // Nothing to work the totals out with: list what the message says, in the chain's units.
+    const side = msg.orderType === 'buy' ? 'you sell' : buying ? 'you buy' : '?';
+    const pair = market ? await l.pair(market.base, market.quote) : safeText(msg.marketId);
+    const marketRow: SummaryRow = market
+      ? ['Market', pair]
+      : ['Market', safeText(msg.marketId), 'mono'];
+    return {
+      level: 'unknown',
+      icon: 'order',
+      title: 'Fill orders',
+      hero: orders,
+      sub: `${pair} · ${side}`,
+      rows: [
+        marketRow,
+        ...msg.orders.map((item, i): SummaryRow => [
+          `Order ${String(i + 1)}`,
+          `${safeText(item.amount, 40)} @ ${safeText(item.price, 40)} (base units)`,
+        ]),
+      ],
+      marketId: msg.marketId,
+      ...(market ? { marketPair: pair } : {}),
+    };
+  }
+  const [base, quote] = await Promise.all([l.token(market.base), l.token(market.quote)]);
+  const pair = `${base.symbol}/${quote.symbol}`;
+  const unit = `${quote.symbol}/${base.symbol}${base.exact && quote.exact ? '' : ' (base units)'}`;
+  const rows: SummaryRow[] = [['Market', pair]];
+  let baseTotal = 0n;
+  let quoteTotal = 0n;
+  for (const [i, item] of items.entries()) {
+    baseTotal += item.amount;
+    // Per order, so a buyer is never shown less than they can be charged and a seller never more
+    // than a full fill pays.
+    quoteTotal += totalQuote(item.amount, item.price, buying ? 'up' : 'down');
+    const price = priceText(displayPrice(item.price, base.decimals, quote.decimals));
+    const amount = await l.money(market.base, item.amount);
+    rows.push([`Order ${String(i + 1)}`, `${amount} @ ${price} ${unit}`]);
+  }
+  // Shown in full on the side that is given up, so it is never cut short.
+  const baseText = await l.money(market.base, baseTotal, !buying);
+  const quoteText = await l.money(market.quote, quoteTotal, buying);
+  const [hero, sub, baseLabel, quoteLabel] = buying
+    ? [`You pay up to ${quoteText}`, `You get ${baseText}`, 'You get', 'You pay up to']
+    : [`You get ${quoteText}`, `You pay ${baseText}`, 'You pay', 'You get'];
+  rows.push([baseLabel, baseText], [quoteLabel, quoteText]);
   return {
-    level: known && valid ? 'normal' : 'unknown',
+    level: 'normal',
     icon: 'order',
     title: 'Fill orders',
-    hero: `${String(count)} ${count === 1 ? 'order' : 'orders'}`,
-    sub: `${pair} · ${side}`,
-    rows: [
-      ['Market', pair],
-      ['Total amount', totalText],
-    ],
-    marketId: msg.marketId,
-    ...(market ? { marketPair: pair } : {}),
+    hero,
+    sub: `${sub} · ${pair} · ${orders}`,
+    rows,
+    marketId: market.id,
+    marketPair: pair,
   };
 }
 
