@@ -54,6 +54,8 @@ export type SiteFeeCheck =
 export type SignView = {
   status: 'sign';
   id: string;
+  /** This queued instance of the request; the answer must carry it. */
+  ticket: string;
   origin: string;
   network: NetworkId;
 } & SignDetails;

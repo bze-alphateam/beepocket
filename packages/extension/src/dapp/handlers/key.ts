@@ -1,5 +1,12 @@
 import { NETWORKS } from '@beepocket/core';
-import { ErrorCodes, fail, ok, WalletErrorCodes, type Result } from '../../protocol';
+import {
+  DappProtocolCodes,
+  ErrorCodes,
+  fail,
+  ok,
+  WalletErrorCodes,
+  type Result,
+} from '../../protocol';
 import type { Services } from '../../background/services';
 import type { WalletService } from '../../features/wallet';
 import type { Profile, ProfileAddress } from '../../features/wallet/profile';
@@ -117,6 +124,10 @@ export function keyHandler(deps: KeyDeps, mode: 'connect' | 'getKey'): DappHandl
 
     async confirm(request, user: UserAnswer) {
       if (!user.approve) return ok(refuse(DappErrorCodes.rejected, 'The request was rejected.'));
+      // The window names the site it showed: an approval never connects any other.
+      if (user.origin !== request.origin) {
+        return fail(DappProtocolCodes.unknownRequest, 'This request is no longer waiting.');
+      }
       const active = await deps.services.activeNetwork();
       const wrong = networkRefusal(request, request.params, active.id);
       if (wrong) return ok(wrong);

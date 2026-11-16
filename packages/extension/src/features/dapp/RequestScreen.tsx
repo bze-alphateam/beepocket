@@ -78,11 +78,14 @@ function Answered({ answer, waiting }: { answer: Answer | null; waiting: number 
   );
 }
 
-/** Whether the request on screen is no longer the head of the queue. */
+/**
+ * Whether the request on screen is no longer the head of the queue. Instances are compared by
+ * ticket: a request replaced under the same id is another request.
+ */
 function headLeft(shown: CurrentRequest | null, queue: QueueView): boolean {
   if (shown === null || shown.status === 'none') return false;
   if (shown.status === 'connect' || shown.status === 'sign') {
-    return queue.headId !== undefined && queue.headId !== shown.id;
+    return queue.headTicket !== undefined && queue.headTicket !== shown.ticket;
   }
   return queue.head !== shown.origin;
 }
@@ -108,7 +111,10 @@ export function RequestScreen({ close }: RequestScreenProps) {
   // Requests that arrive while one is on screen only change the count, never the view.
   const [live, setLive] = useState<number | null>(null);
 
-  /** `from` is the request just answered: when another one takes its place, "Next request" shows first. */
+  /**
+   * `from` is the ticket of the request just answered: when any other instance takes its place
+   * (even under the same id), "Next request" shows first and its screen starts afresh.
+   */
   const refresh = useCallback(
     async (from?: string) => {
       const res = await client.call('dapp.current', {});
@@ -129,7 +135,7 @@ export function RequestScreen({ close }: RequestScreenProps) {
       if (
         (view.status === 'connect' || view.status === 'sign') &&
         from !== undefined &&
-        view.id !== from
+        view.ticket !== from
       ) {
         cancelNext.current();
         setNext(view.count ?? 1);
@@ -180,9 +186,10 @@ export function RequestScreen({ close }: RequestScreenProps) {
     [client, scheduler, refresh],
   );
   const count = live ?? ready?.count;
-  const answeredThen = (id: string, answer: Answer | undefined) => {
+  /** Resolves once the worker's next view is on screen; the answered screen is inert till then. */
+  const answeredThen = (ticket: string, answer: Answer | undefined) => {
     answered.current = answer ?? null;
-    return refresh(id);
+    return refresh(ticket);
   };
 
   if (next !== null) return <Answered answer={answered.current} waiting={next} />;
@@ -235,19 +242,19 @@ export function RequestScreen({ close }: RequestScreenProps) {
     case 'connect':
       return (
         <ConnectScreen
-          key={view.id}
+          key={view.ticket}
           view={view}
           queue={count}
-          done={(a) => void answeredThen(view.id, a)}
+          done={(a) => answeredThen(view.ticket, a)}
         />
       );
     case 'sign':
       return (
         <SignScreen
-          key={view.id}
+          key={view.ticket}
           view={view}
           queue={count}
-          done={(a) => void answeredThen(view.id, a)}
+          done={(a) => answeredThen(view.ticket, a)}
         />
       );
     case 'none':

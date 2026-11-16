@@ -17,7 +17,11 @@ export type Decision =
 
 /** The user's answer from the request window. */
 export interface UserAnswer {
+  /** The ticket of the request instance the window showed. */
+  ticket: string;
   approve: boolean;
+  /** The site the window showed, for a connect. */
+  origin?: string;
   index?: number;
   /** The fee the user reviewed, for a request that signs. */
   fee?: ReviewedFee;

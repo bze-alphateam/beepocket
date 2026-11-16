@@ -30,8 +30,11 @@ import { useFirstToken } from './theme';
 
 export interface SignScreenProps {
   view: SignView;
-  /** The request was answered (or may be): ask the worker what is next. */
-  done: (answer?: Answer) => void;
+  /**
+   * The request was answered (or may be): ask the worker what is next. Resolves once that is on
+   * screen; the screen sends nothing more until then.
+   */
+  done: (answer?: Answer) => Promise<void>;
   /** Requests waiting in all, this one included; 2 or more shows "1 of N". */
   queue?: number | undefined;
 }
@@ -283,8 +286,17 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
     if (busy || (approve && !canApprove)) return;
     setBusy(true);
     setError(null);
+    try {
+      await send(approve);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const send = async (approve: boolean) => {
     const res = await client.call('dapp.answer', {
       id: view.id,
+      ticket: view.ticket,
       approve,
       ...(approve
         ? {
@@ -298,16 +310,22 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
         : {}),
       ...(approve && dangerous ? { trusted: true } : {}),
     });
-    setBusy(false);
+    // Whatever comes next, the screen stays inert until the worker's next view is on screen.
     if (res.ok) {
-      done({ kind: 'sign', approved: approve, origin: view.origin, label: view.signer.label, fee });
+      await done({
+        kind: 'sign',
+        approved: approve,
+        origin: view.origin,
+        label: view.signer.label,
+        fee,
+      });
     } else if (res.error.code === 'unknown-request') {
-      done();
+      await done();
     } else if (res.error.code === SendErrorCodes.reviewChanged) {
       setError(t('dapp.sign.changed'));
-      done();
+      await done();
     } else if (res.error.code === WalletErrorCodes.needsPassword) {
-      done();
+      await done();
     } else {
       setError(t('dapp.sign.failed'));
     }
@@ -332,7 +350,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
         labelIcon="lock"
         placeholder={t('lock.password')}
         submitLabel={t('dapp.sign.unlock')}
-        hold={!canApprove}
+        hold={busy || !canApprove}
         variant={variant}
         secondary={reject}
         onUnlocked={() => {

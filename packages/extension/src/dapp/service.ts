@@ -16,7 +16,13 @@ import type { Cancellations } from './cancellations';
 import type { DocumentLog } from './documents';
 import type { Decision, DappHandler, DappRegistry, UserAnswer } from './registry';
 import { REQUEST_TTL_MS, type RequestStore } from './requests';
-import { refuse, type DappSender, type Outcome, type PendingRequest } from './types';
+import {
+  refuse,
+  type DappSender,
+  type Outcome,
+  type PendingRequest,
+  type QueuedRequest,
+} from './types';
 import type { RequestWindow } from './window';
 import { DappErrorCodes, NOT_RESPONDING_MESSAGE, STALE_AFTER_MS, type WireError } from './wire';
 
@@ -38,9 +44,22 @@ export interface DappServiceDeps {
   changes: Pick<AccountChanges, 'notify'>;
   sites: Pick<SitesService, 'list' | 'current' | 'change' | 'disconnect'>;
   services: Pick<Services, 'activeNetwork'>;
-  /** Requests their page gave up on; shared with the handlers (`sendTx` checks it). */
+  /** Requests being handled and whether their page gave up on them; `sendTx` checks it too. */
   cancellations: Cancellations;
   clock: { now(): number };
+}
+
+/** A well-formed request, before anything is done for it. */
+interface Incoming {
+  id: string;
+  method: string;
+  params: unknown;
+}
+
+/** The checks passed: the request is taken once it is recorded. */
+interface Checked {
+  handler: DappHandler;
+  pending: Incoming;
 }
 
 const ID = /^[0-9a-f]{32}$/;
@@ -66,12 +85,24 @@ export class DappService {
   }
 
   /** `message` is the untrusted `dapp` field of a content-script message; `from` is the browser's word. */
-  receive(from: DappSender, message: unknown): Promise<Received> {
-    return Promise.resolve(this.check(from, message));
+  async receive(from: DappSender, message: unknown): Promise<Received> {
+    const checked = this.check(from, message);
+    if (!('pending' in checked)) return checked;
+    const { handler, pending } = checked;
+    // Recorded before the ack, so the page's cancel, which can only follow it, finds the request.
+    const taken = await this.deps.cancellations.sent(from, pending.id);
+    if (taken !== 'ok') {
+      const text = taken === 'duplicate' ? 'Duplicate request.' : 'Too many requests waiting';
+      return {
+        ack: { error: { code: DappErrorCodes.invalidRequest, message: text } },
+        after: nothing,
+      };
+    }
+    return { ack: { accepted: true }, after: () => this.settle(from, handler, pending) };
   }
 
   /** The synchronous checks that decide the ack. */
-  private check(from: DappSender, message: unknown): Received {
+  private check(from: DappSender, message: unknown): Received | Checked {
     const bad = (text: string): Received => ({
       ack: { error: { code: DappErrorCodes.invalidRequest, message: text } },
       after: nothing,
@@ -98,10 +129,9 @@ export class DappService {
     const valid = handler.validate(params);
     if (!valid.ok) return bad(valid.error.message);
 
-    // The ack goes out now, before anything that can take time (a node call in `decide`, the
-    // window): the page's liveness timer only waits a few seconds for it.
-    const pending = { id, method, params: valid.value };
-    return { ack: { accepted: true }, after: () => this.settle(from, handler, pending) };
+    // The ack goes out right after, before anything that can take time (a node call in
+    // `decide`, the window): the page's liveness timer only waits a few seconds for it.
+    return { handler, pending: { id, method, params: valid.value } };
   }
 
   /**
@@ -110,7 +140,7 @@ export class DappService {
    * on to the next one. Nothing is answered: the page already stopped waiting.
    */
   private async cancel(from: DappSender, id: string): Promise<void> {
-    this.deps.cancellations.add(from, id);
+    await this.deps.cancellations.cancel(from, id);
     await this.deps.requests.cancel(id, from.tabId, from.documentId);
   }
 
@@ -118,11 +148,15 @@ export class DappService {
    * Everything after the ack. It never throws and never ends without the request either
    * answered or queued: a failure is delivered to the page instead of leaving it waiting.
    */
-  private async settle(
-    from: DappSender,
-    handler: DappHandler,
-    pending: { id: string; method: string; params: unknown },
-  ): Promise<void> {
+  private async settle(from: DappSender, handler: DappHandler, pending: Incoming): Promise<void> {
+    try {
+      await this.handle(from, handler, pending);
+    } finally {
+      await this.deps.cancellations.settled(from, pending.id).catch(() => undefined);
+    }
+  }
+
+  private async handle(from: DappSender, handler: DappHandler, pending: Incoming): Promise<void> {
     try {
       // Requests that waited their 10 minutes make room before the caps are checked.
       await this.expireDue();
@@ -143,7 +177,7 @@ export class DappService {
       });
       const decision = await handler.decide(request);
       // Given up on while it was being decided: nobody waits for a window or an answer.
-      if (this.deps.cancellations.has(request)) return;
+      if (await this.deps.cancellations.has(request)) return;
       if (decision.kind === 'answer') {
         await this.deliver(request, decision.outcome);
         return;
@@ -167,7 +201,7 @@ export class DappService {
         );
       }
       // A cancel that arrived while the request was being added found nothing to take out.
-      if (this.deps.cancellations.has(request)) {
+      if (await this.deps.cancellations.has(request)) {
         await this.deps.requests.cancel(request.id, request.tabId, request.documentId);
         return;
       }
@@ -201,7 +235,7 @@ export class DappService {
       }
       const decision = await handler.decide(request);
       if (decision.kind === 'answer') {
-        if (await this.deps.requests.claim(request.id))
+        if (await this.deps.requests.claim(request.id, request.ticket))
           await this.deliver(request, decision.outcome);
         continue;
       }
@@ -220,7 +254,7 @@ export class DappService {
     const head = queue[0];
     return {
       head: head?.origin ?? null,
-      ...(head ? { headId: head.id } : {}),
+      ...(head ? { headId: head.id, headTicket: head.ticket } : {}),
       count: queue.length,
       origins: [...new Set(queue.map((r) => r.origin))],
     };
@@ -252,9 +286,14 @@ export class DappService {
     );
   }
 
+  /**
+   * The user's answer to the request on screen. It applies only to that exact instance (its id
+   * and the ticket the window was shown): anything else is `unknown-request`, and the window
+   * asks again for what waits.
+   */
   async answer(id: string, user: UserAnswer): Promise<Result<Record<string, never>>> {
     await this.expireDue();
-    const request = await this.deps.requests.claim(id);
+    const request = await this.deps.requests.claim(id, user.ticket);
     if (!request)
       return fail(DappProtocolCodes.unknownRequest, 'This request is no longer waiting.');
     const handler = this.deps.registry.get(request.method);
@@ -270,7 +309,10 @@ export class DappService {
     }
     if (!result.ok) {
       // The user can try again (wrong state, password needed): the request keeps waiting.
-      await this.deps.requests.restore(request);
+      const displaced = await this.deps.requests.restore(request);
+      if (displaced) {
+        await this.deliver(displaced, refuse(DappErrorCodes.invalidRequest, 'Duplicate request.'));
+      }
       return result;
     }
     await this.deliver(request, result.value);
@@ -282,8 +324,8 @@ export class DappService {
     return this.deps.requests.removeTab(tabId).then(() => this.deps.documents.removeTab(tabId));
   }
 
-  private finish(request: PendingRequest, outcome: Outcome): Promise<void> {
-    return this.deps.requests.claim(request.id).then((claimed) => {
+  private finish(request: QueuedRequest, outcome: Outcome): Promise<void> {
+    return this.deps.requests.claim(request.id, request.ticket).then((claimed) => {
       if (claimed) return this.deliver(claimed, outcome);
     });
   }
@@ -294,7 +336,7 @@ export class DappService {
 }
 
 function view(
-  request: PendingRequest,
+  request: QueuedRequest,
   decision: Exclude<Decision, { kind: 'answer' }>,
 ): RequestView {
   switch (decision.kind) {
@@ -306,6 +348,7 @@ function view(
       return {
         status: 'connect',
         id: request.id,
+        ticket: request.ticket,
         origin: request.origin,
         network: request.network,
         addresses: decision.addresses,
@@ -314,6 +357,7 @@ function view(
       return {
         status: 'sign',
         id: request.id,
+        ticket: request.ticket,
         origin: request.origin,
         network: request.network,
         ...decision.details,
