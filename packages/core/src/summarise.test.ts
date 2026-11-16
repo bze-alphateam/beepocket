@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { stubChain, stubScan } from '../test/stubs';
 import {
+  parseAmount,
   rawJson,
   summarise,
   TokenResolver,
@@ -56,10 +57,13 @@ const ALEX = 'bze1q8t5x0yvl9jzx5pq4m3vvrmkz8cndhqky4x4kf';
 const STRANGER = 'bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p';
 const VDL = 'factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl';
 const USDC = `ibc/${'AB'.repeat(32)}`;
+/** A quote token with more decimals than amounts are usually shown with. */
+const ETH = `ibc/${'CD'.repeat(32)}`;
 
 const BZE_USDC: Market = { id: `ubze/${USDC}`, base: 'ubze', quote: USDC };
 const VDL_BZE: Market = { id: `${VDL}/ubze`, base: VDL, quote: 'ubze' };
-const MARKETS = [BZE_USDC, VDL_BZE];
+const BZE_ETH: Market = { id: `ubze/${ETH}`, base: 'ubze', quote: ETH };
+const MARKETS = [BZE_USDC, VDL_BZE, BZE_ETH];
 
 const pool = (id: string, base: string, quote: string): Pool => ({
   id,
@@ -99,7 +103,9 @@ function context(overrides: Partial<SummaryContext> = {}): SummaryContext {
       Promise.resolve(
         denom === USDC
           ? { denom, symbol: 'USDC', name: 'USD Coin', exponent: 6, kind: 'ibc', halted: false }
-          : null,
+          : denom === ETH
+            ? { denom, symbol: 'ETH', name: 'Ether', exponent: 18, kind: 'ibc', halted: false }
+            : null,
       ),
     ),
   });
@@ -328,30 +334,145 @@ describe('Cancel order', () => {
 });
 
 describe('Fill orders', () => {
+  interface Item {
+    price: string;
+    amount: string;
+  }
   const fill = (
     orderType: string,
-    items = [
+    items: Item[] = [
       { price: '0.3', amount: '100000000' },
       { price: '0.31', amount: '50000000' },
     ],
-  ) => pack(MsgFillOrders, { creator: ME, marketId: BZE_USDC.id, orderType, orders: items });
+    marketId = BZE_USDC.id,
+  ) => pack(MsgFillOrders, { creator: ME, marketId, orderType, orders: items });
 
-  it('counts the orders, sums the amount and names the side the signer takes', async () => {
+  /** `amount × price` in quote base units, as `exact / scale`. */
+  const product = ({ amount, price }: Item): { exact: bigint; scale: bigint } => {
+    const [whole = '', fraction = ''] = price.split('.');
+    return {
+      exact: BigInt(amount) * BigInt(whole + fraction),
+      scale: 10n ** BigInt(fraction.length),
+    };
+  };
+  const ceil = (item: Item): bigint => {
+    const { exact, scale } = product(item);
+    return (exact + scale - 1n) / scale;
+  };
+  const trunc = (item: Item): bigint => {
+    const { exact, scale } = product(item);
+    return exact / scale;
+  };
+  /** The most the chain can take for one order: the truncated product, plus one unit of dust. */
+  const mostTaken = (item: Item): bigint => {
+    const { exact, scale } = product(item);
+    return exact / scale + (exact % scale === 0n ? 0n : 1n);
+  };
+  const sum = (items: Item[], f: (item: Item) => bigint): bigint =>
+    items.reduce((total, item) => total + f(item), 0n);
+  /** The quote amount in a hero like `You pay up to 1,234.50 USDC`, in base units. */
+  const shownQuote = (hero: string, prefix: string, decimals = 6): bigint => {
+    expect(hero.startsWith(prefix)).toBe(true);
+    const text = hero.slice(prefix.length).split(' ')[0]?.replace(/,/g, '') ?? '';
+    const value = parseAmount(text, decimals);
+    if (value instanceof Error) throw value;
+    return value;
+  };
+
+  it('shows what the signer pays, what they get and every order price when buying', async () => {
     const s = await run([fill('sell')]);
-    expect(headline(s)).toBe('Fill orders · 2 orders · BZE/USDC · you buy');
+    expect(headline(s)).toBe(
+      'Fill orders · You pay up to 45.50 USDC · You get 150.00 BZE · BZE/USDC · 2 orders',
+    );
+    expect(s.level).toBe('normal');
     expect(s.rows).toEqual([
       ['Market', 'BZE/USDC'],
-      ['Total amount', '150.00 BZE'],
+      ['Order 1', '100.00 BZE @ 0.3000 USDC/BZE'],
+      ['Order 2', '50.00 BZE @ 0.3100 USDC/BZE'],
+      ['You get', '150.00 BZE'],
+      ['You pay up to', '45.50 USDC'],
     ]);
-    expect((await run([fill('buy')])).sub).toBe('BZE/USDC · you sell');
+  });
+
+  it('shows what the signer gives, what they get and every order price when selling', async () => {
+    const s = await run([fill('buy')]);
+    expect(headline(s)).toBe(
+      'Fill orders · You get 45.50 USDC · You pay 150.00 BZE · BZE/USDC · 2 orders',
+    );
+    expect(s.level).toBe('normal');
+    expect(s.rows).toEqual([
+      ['Market', 'BZE/USDC'],
+      ['Order 1', '100.00 BZE @ 0.3000 USDC/BZE'],
+      ['Order 2', '50.00 BZE @ 0.3100 USDC/BZE'],
+      ['You pay', '150.00 BZE'],
+      ['You get', '45.50 USDC'],
+    ]);
+  });
+
+  it('tells apart fills that differ only in price', async () => {
+    const cheap = await run([fill('sell', [{ price: '0.3', amount: '10000000' }])]);
+    const dear = await run([fill('sell', [{ price: '300', amount: '10000000' }])]);
+    expect(cheap.hero).toBe('You pay up to 3.00 USDC');
+    expect(dear.hero).toBe('You pay up to 3,000.00 USDC');
+    expect(cheap.rows).toContainEqual(['Order 1', '10.00 BZE @ 0.3000 USDC/BZE']);
+    expect(dear.rows).toContainEqual(['Order 1', '10.00 BZE @ 300.0000 USDC/BZE']);
+    expect(headline(cheap)).not.toBe(headline(dear));
   });
 
   it('uses the singular for one order', async () => {
-    expect((await run([fill('sell', [{ price: '1', amount: '1' }])])).hero).toBe('1 order');
+    const s = await run([fill('sell', [{ price: '1', amount: '1' }])]);
+    expect(s.sub.endsWith(' · 1 order')).toBe(true);
+  });
+
+  const cases: Record<string, Item[]> = {
+    'a whole price': [{ price: '2', amount: '100000000' }],
+    'a fractional product': [{ price: '0.333333', amount: '3' }],
+    'orders that each leave a fraction': [
+      { price: '0.5', amount: '1' },
+      { price: '0.5', amount: '1' },
+    ],
+    'several mixed orders': [
+      { price: '0.123456789', amount: '1234567' },
+      { price: '1.5', amount: '7' },
+      { price: '3', amount: '1000000' },
+    ],
+  };
+
+  for (const [name, items] of Object.entries(cases)) {
+    it(`never shows less to pay than can be taken, for ${name}`, async () => {
+      const s = await run([fill('sell', items)]);
+      expect(s.level).toBe('normal');
+      const shown = shownQuote(s.hero, 'You pay up to ');
+      expect(shown).toBe(sum(items, ceil));
+      expect(shown >= sum(items, mostTaken)).toBe(true);
+    });
+
+    it(`never shows more to get than a full fill pays, for ${name}`, async () => {
+      const s = await run([fill('buy', items)]);
+      expect(s.level).toBe('normal');
+      expect(shownQuote(s.hero, 'You get ')).toBe(sum(items, trunc));
+    });
+  }
+
+  it('shows the amount to pay in full when the quote token has many decimals', async () => {
+    const s = await run([
+      fill('sell', [{ price: '0.333333333333333333', amount: '3' }], BZE_ETH.id),
+    ]);
+    expect(s.hero).toBe('You pay up to 0.000000000000000001 ETH');
+    expect(shownQuote(s.hero, 'You pay up to ', 18)).toBe(1n);
+  });
+
+  it('is unknown when the market is unknown, and still lists each order', async () => {
+    const s = await run([fill('sell', undefined, 'nope/market')]);
+    expect(s.level).toBe('unknown');
+    expect(s.rows).toContainEqual(['Order 1', '100000000 @ 0.3 (base units)']);
+    expect(s.rows).toContainEqual(['Order 2', '50000000 @ 0.31 (base units)']);
   });
 
   it('is unknown when an item is unreadable or the type is not buy/sell', async () => {
     expect((await run([fill('sell', [{ price: '1', amount: 'x' }])])).level).toBe('unknown');
+    expect((await run([fill('sell', [{ price: 'abc', amount: '1' }])])).level).toBe('unknown');
+    expect((await run([fill('sell', [{ price: '1e3', amount: '1' }])])).level).toBe('unknown');
     expect((await run([fill('both')])).level).toBe('unknown');
   });
 });
