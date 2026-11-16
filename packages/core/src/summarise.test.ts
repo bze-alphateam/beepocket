@@ -1110,7 +1110,6 @@ describe('unknown messages', () => {
     expect(s.level).toBe('unknown');
     expect(s.sub).toContain('unreadable');
   });
-
 });
 
 describe('the trust tick', () => {
