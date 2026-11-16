@@ -1,5 +1,6 @@
 import {
   feePricing,
+  needsTrust,
   priceGasOverride,
   signDocBytes,
   simulatedGasFor,
@@ -53,9 +54,9 @@ export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
         return fail(WalletErrorCodes.needsPassword, 'Enter your password to approve this.');
       }
       const p = prep.prepared;
-      // Hiding the button is not enough: a dangerous request needs the tick, checked here too,
-      // and the page is told so instead of waiting.
-      if (p.summary.level === 'dangerous' && user.trusted !== true) {
+      // Hiding the button is not enough: a dangerous request, or one with a message the wallet
+      // cannot show, needs the tick, checked here too, and the page is told so instead of waiting.
+      if (needsTrust(p.summary) && user.trusted !== true) {
         return ok(
           refuse(DappErrorCodes.invalidRequest, 'The request was not confirmed as trusted.'),
         );

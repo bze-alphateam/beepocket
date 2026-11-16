@@ -1,4 +1,11 @@
-import { NETWORKS, formatAmount, type MsgIcon, type MsgSummary } from '@beepocket/core';
+import {
+  NETWORKS,
+  formatAmount,
+  isUnreadable as unreadable,
+  needsTrust,
+  type MsgIcon,
+  type MsgSummary,
+} from '@beepocket/core';
 import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
@@ -58,9 +65,6 @@ const ICONS: Record<MsgIcon, IconName> = {
   settings: 'sliders',
   unknown: 'question',
 };
-
-/** A type BeePocket has no summary for at all (not a known type that failed a check). */
-const unreadable = (m: MsgSummary): boolean => m.level === 'unknown' && m.icon === 'unknown';
 
 /** The raw view shows this many characters until "Show all": a huge payload stays cheap. */
 const RAW_CAP = 20_000;
@@ -252,7 +256,8 @@ function feeNote(
  * The sign screen, in as few words as it takes: the site and the signing address on one line,
  * one hero (or one row per message), the fee and Details. Details (type, rows, memo, raw message)
  * is a sheet that stops above the footer, so Reject and Approve never leave the screen. A
- * dangerous request needs the tick before Approve works; the worker checks it again.
+ * dangerous request, or one with a message BeePocket cannot show, needs the tick before Approve
+ * works; the worker checks it again.
  */
 export function SignScreen({ view, done, queue }: SignScreenProps) {
   const client = useClient();
@@ -277,10 +282,12 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
   const note = feeNote(view, base, override !== null);
   const { summary } = view;
   const dangerous = summary.level === 'dangerous';
+  const anyUnreadable = summary.messages.some(unreadable);
+  const mustTrust = needsTrust(summary);
   const count = summary.messages.length;
   const many = count > 1;
   const only = summary.messages[0];
-  const canApprove = !dangerous || trusted;
+  const canApprove = !mustTrust || trusted;
 
   const answer = async (approve: boolean) => {
     if (busy || (approve && !canApprove)) return;
@@ -308,7 +315,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
             },
           }
         : {}),
-      ...(approve && dangerous ? { trusted: true } : {}),
+      ...(approve && mustTrust ? { trusted: true } : {}),
     });
     // Whatever comes next, the screen stays inert until the worker's next view is on screen.
     if (res.ok) {
@@ -342,7 +349,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
       {t('dapp.sign.reject')}
     </Button>
   );
-  const variant = dangerous ? 'danger' : 'primary';
+  const variant = mustTrust ? 'danger' : 'primary';
   const actions = view.locked ? (
     <div class="bp-dapp-foot">
       <PasswordGate
@@ -452,13 +459,16 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
         ) : (
           <Hero message={only} json={view.messageJson[0]} />
         )}
-        {dangerous && (
+        {mustTrust && (
           <RiskBox
             tone="red"
-            title={danger?.title ?? t('dapp.sign.dangerFallback')}
+            title={
+              danger?.title ??
+              (dangerous ? t('dapp.sign.dangerFallback') : t('dapp.sign.unreadable.title'))
+            }
             action={
               <Check checked={trusted} onChange={setTrusted}>
-                {t('dapp.sign.trust')}
+                {dangerous ? t('dapp.sign.trust') : t('dapp.sign.unreadable.trust')}
               </Check>
             }
           >
@@ -468,6 +478,12 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
                 {d.text}
               </p>
             ))}
+            {anyUnreadable && (
+              <p>
+                {danger !== undefined && <strong>{t('dapp.sign.unreadable.title')}. </strong>}
+                {t('dapp.sign.unreadable.text')}
+              </p>
+            )}
           </RiskBox>
         )}
         <div class="bp-sign-card">

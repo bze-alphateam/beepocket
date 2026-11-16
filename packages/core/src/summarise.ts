@@ -1782,6 +1782,17 @@ function memoText(raw: string): string | null {
   return chars.length > MAX_MEMO ? `${text}… (truncated)` : text;
 }
 
+/** A message of a type the wallet cannot read: it has no summary at all, not a failed check. */
+export const isUnreadable = (m: MsgSummary): boolean =>
+  m.level === 'unknown' && m.icon === 'unknown';
+
+/**
+ * Whether approving needs the user's explicit "I trust this" tick: a dangerous request, or one
+ * with a message the wallet cannot show. The screen and the worker both ask this.
+ */
+export const needsTrust = (s: TxSummary): boolean =>
+  s.level === 'dangerous' || s.messages.some(isUnreadable);
+
 const riskiest = (levels: RiskLevel[]): RiskLevel =>
   levels.reduce<RiskLevel>((a, b) => (RISK_ORDER[b] > RISK_ORDER[a] ? b : a), 'normal');
 

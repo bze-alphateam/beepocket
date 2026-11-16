@@ -13,4 +13,6 @@ export const GOVERNANCE_ONLY: ReadonlyMap<string, string> = new Map([
   ['/bze.tradebin.MsgUnhaltDenoms', 'Resume trading of tokens'],
   ['/bze.cointrunk.MsgAcceptDomain', 'Change an accepted news domain'],
   ['/bze.cointrunk.MsgSavePublisher', 'Save a CoinTrunk publisher'],
+  ['/bze.tokenfactory.MsgSetDenomAdmin', 'Change a token admin'],
+  ['/bze.tradebin.MsgUpdatePools', 'Update liquidity pools'],
 ]);

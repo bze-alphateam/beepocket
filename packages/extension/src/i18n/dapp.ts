@@ -46,6 +46,10 @@ export const dapp = {
   'dapp.sign.unchecked': "Couldn't verify this message",
   'dapp.sign.dangerFallback': 'This message gives another address power over yours',
   'dapp.sign.trust': 'I set this up myself and trust this address',
+  'dapp.sign.unreadable.title': "BeePocket can't show what this message does",
+  'dapp.sign.unreadable.text':
+    'It could move your funds or hand over control of your address, and the wallet cannot tell. Approve only if you know exactly what it does.',
+  'dapp.sign.unreadable.trust': 'I know what this message does and trust this site',
   'dapp.sign.actions': '{count} actions',
   'dapp.sign.together.two': 'Both happen, or neither',
   'dapp.sign.together.many': 'All happen, or none',
