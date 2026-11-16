@@ -883,7 +883,8 @@ function execDanger(l: Lookups, authorities: Authority[]): DangerNotice {
     const text = {
       own: 'The message inside acts with your own address and its tokens, as if you signed it directly.',
       other: 'The message inside uses a permission another address gave yours.',
-      unknown: 'The wallet cannot tell whose account the message inside acts for: it may be your own.',
+      unknown:
+        'The wallet cannot tell whose account the message inside acts for: it may be your own.',
     }[only.kind];
     return {
       title: `This runs ${authorityWords(l, only)}`,
