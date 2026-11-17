@@ -1600,17 +1600,11 @@ function permanentLockedParts(l: Lookups, msg: MsgCreatePermanentLockedAccount):
 
 function periodicVestingParts(l: Lookups, msg: MsgCreatePeriodicVestingAccount): Promise<Parts> {
   const length = msg.vestingPeriods.reduce((sum, p) => sum + p.length, 0n);
-  return vestingParts(
-    l,
-    'Create vesting account',
-    msg.toAddress,
-    periodTotal(msg.vestingPeriods),
-    [
-      ['Vesting starts', unixTime(msg.startTime)],
-      ['Vesting ends', unixTime(msg.startTime + length)],
-      ['Periods', String(msg.vestingPeriods.length)],
-    ],
-  );
+  return vestingParts(l, 'Create vesting account', msg.toAddress, periodTotal(msg.vestingPeriods), [
+    ['Vesting starts', unixTime(msg.startTime)],
+    ['Vesting ends', unixTime(msg.startTime + length)],
+    ['Periods', String(msg.vestingPeriods.length)],
+  ]);
 }
 
 /** Coins the signer gives away to a pool, a validator's delegators or a proposal. */
