@@ -30,6 +30,7 @@ const key = await beepocket?.connect('beezee-1');
 - BeePocket serves BeeZee only: `beezee-1` and `bzetestnet-3`. Connecting to any other chain throws, and the wallet never suggests a chain.
 - BeePocket signs **direct only** (`signDirect`). `signAmino` and `signArbitrary` throw. A dapp that sets `preferredSignType: 'amino'` must route BeePocket to direct signing.
 - `signDirect` answers with the wallet's own fee in `signed`. Build and broadcast the transaction from `signed`, never from the request. The wallet may change only the fee: the connector rejects an answer whose `bodyBytes` differ from the request's.
+- The connector's `dist/` has no dependencies, but its `@interchain-kit/core` peer brings its own tree into your app, including `elliptic` and `deepmerge` versions with open advisories that have no upstream fix yet. BeePocket itself signs with `@noble/curves` inside the extension, never with `elliptic`. Check your own lockfile and audit tooling for that tree.
 - Disconnecting is done in the wallet's Settings, so `disconnect` does nothing.
 - Account changes arrive as the window event `beepocket_keystorechange` (the wallet emits `accountChanged`) or through `provider.on('accountChanged', …)`.
 - Provider errors carry a `code`: `rejected`, `locked-timeout`, `not-connected`, `wrong-chain`, `invalid-request`, `expired` or `unavailable`.
