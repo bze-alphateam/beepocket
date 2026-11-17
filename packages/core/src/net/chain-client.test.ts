@@ -170,12 +170,17 @@ describe('RestChainClient.balances', () => {
 });
 
 /**
- * A node holding `count` denoms for one address, served `perPage` at a time in denom order (the
- * dust first: `ibc/…` sorts before `ubze`), with `by_denom` answering any one of them.
+ * A node listing `count` other denoms for one address, `perPage` at a time, then the address's
+ * `held` ones; `by_denom` answers any one of them.
  */
-function dustedNode(address: string, count: number, perPage: number, held: Map<string, bigint>) {
+function manyDenomsNode(
+  address: string,
+  count: number,
+  perPage: number,
+  held: Map<string, bigint>,
+) {
   const requests: string[] = [];
-  const dust = (i: number) => `ibc/${i.toString(16).padStart(64, '0')}`;
+  const other = (i: number) => `ibc/${i.toString(16).padStart(64, '0')}`;
   const transport: HttpTransport = {
     request(req) {
       requests.push(req.url);
@@ -191,7 +196,7 @@ function dustedNode(address: string, count: number, perPage: number, held: Map<s
       const from = page * perPage;
       const to = Math.min(from + perPage, count);
       const balances: { denom: string; amount: string }[] = [];
-      for (let i = from; i < to; i++) balances.push({ denom: dust(i), amount: '1' });
+      for (let i = from; i < to; i++) balances.push({ denom: other(i), amount: '1' });
       if (to >= count) {
         for (const [denom, amount] of held) balances.push({ denom, amount: amount.toString() });
       }
@@ -203,10 +208,10 @@ function dustedNode(address: string, count: number, perPage: number, held: Map<s
 }
 
 describe('RestChainClient.balances of an address holding many denoms', () => {
-  const address = 'bze1dusted';
+  const address = 'bze1many';
 
   it('reads at most MAX_BALANCES, past the old page limit, without throwing', async () => {
-    const node = dustedNode(address, 150_000, 100, new Map([['ubze', 5n]]));
+    const node = manyDenomsNode(address, 150_000, 100, new Map([['ubze', 5n]]));
     const balances = await new RestChainClient(node.transport, MAINNET).balances(address);
     expect(balances.size).toBe(MAX_BALANCES);
     expect(balancesMayBeCut(balances)).toBe(true);
@@ -214,14 +219,14 @@ describe('RestChainClient.balances of an address holding many denoms', () => {
   });
 
   it('is complete, and says so, under the cap', async () => {
-    const node = dustedNode(address, 3, 100, new Map([['ubze', 5n]]));
+    const node = manyDenomsNode(address, 3, 100, new Map([['ubze', 5n]]));
     const balances = await new RestChainClient(node.transport, MAINNET).balances(address);
     expect(balances.get('ubze')).toBe(5n);
     expect(balancesMayBeCut(balances)).toBe(false);
   });
 
   it('completes a cut list with the denoms a flow needs, each read on its own', async () => {
-    const node = dustedNode(address, 150_000, 100, new Map([['ubze', 5n]]));
+    const node = manyDenomsNode(address, 150_000, 100, new Map([['ubze', 5n]]));
     const client = new RestChainClient(node.transport, MAINNET);
     const balances = await client.balances(address);
     expect(balances.has('ubze')).toBe(false);
@@ -232,7 +237,7 @@ describe('RestChainClient.balances of an address holding many denoms', () => {
   });
 
   it('reads nothing more for a list that is complete', async () => {
-    const node = dustedNode(address, 3, 100, new Map([['ubze', 5n]]));
+    const node = manyDenomsNode(address, 3, 100, new Map([['ubze', 5n]]));
     const client = new RestChainClient(node.transport, MAINNET);
     const balances = await client.balances(address);
     const before = node.requests.length;

@@ -74,13 +74,13 @@ interface Options {
   pools?: [string, bigint, bigint][];
   /**
    * Read balances from a node, a page of 100 at a time, where the address also holds this many
-   * other denoms of one unit each, listed ahead of its own.
+   * other denoms of one unit each.
    */
-  dust?: number;
+  otherDenoms?: number;
 }
 
-/** The node behind `Options.dust`: it lists `count` dust denoms, then the address's own. */
-function dustedNode(count: number, held: () => Record<string, bigint>) {
+/** The node behind `Options.otherDenoms`: it lists `count` other denoms, then the address's own. */
+function manyDenomsNode(count: number, held: () => Record<string, bigint>) {
   const requests: string[] = [];
   const PER_PAGE = 100;
   const transport: HttpTransport = {
@@ -142,8 +142,11 @@ function setup(opts: Options = {}) {
     signature: bytes(golden('send-ubze').signature),
   };
   const pools = opts.pools ?? [[FACTORY, 21_000_000_000n, 50_000_000_000n]];
-  const dusted = opts.dust === undefined ? null : dustedNode(opts.dust, () => control.balances);
-  const node = dusted && new RestChainClient(dusted.transport, NETWORK);
+  const listing =
+    opts.otherDenoms === undefined
+      ? null
+      : manyDenomsNode(opts.otherDenoms, () => control.balances);
+  const node = listing && new RestChainClient(listing.transport, NETWORK);
   const chain = {
     account: () => {
       calls.account++;
@@ -273,7 +276,7 @@ function setup(opts: Options = {}) {
     waits,
     control,
     simulatedFees,
-    nodeRequests: dusted?.requests ?? [],
+    nodeRequests: listing?.requests ?? [],
   };
 }
 
@@ -929,7 +932,7 @@ describe('send.status', () => {
 
 describe('an address holding a great many tokens', () => {
   it('still sends, past the old page limit, with a bounded number of reads', async () => {
-    const s = setup({ dust: 150_000, balances: { ubze: 100_000_000n } });
+    const s = setup({ otherDenoms: 150_000, balances: { ubze: 100_000_000n } });
     const quote = await quoteOf(s);
     expect(quote.balance).toBe('100000000');
     expect(quote.fee.denom).toBe('ubze');
@@ -941,7 +944,7 @@ describe('an address holding a great many tokens', () => {
   });
 
   it('reads one list and nothing else for an ordinary address', async () => {
-    const s = setup({ dust: 3, balances: { ubze: 100_000_000n } });
+    const s = setup({ otherDenoms: 3, balances: { ubze: 100_000_000n } });
     await quoteOf(s);
     expect(s.nodeRequests).toHaveLength(1);
     expect(s.calls.balance).toBe(0);

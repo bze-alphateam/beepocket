@@ -1510,7 +1510,7 @@ describe('token lookups of sign requests', () => {
         `factory/${MAIN.address}/r${String(r)}d${String(i)}`,
         '1',
       ]);
-      await t.ask(
+      const a = await t.ask(
         'signDirect',
         request({
           messages: [sendGrantMsg(MAIN.address, OTHER.address, spendLimit)],
@@ -1520,6 +1520,8 @@ describe('token lookups of sign requests', () => {
           },
         }).params,
       );
+      // Each one is rejected, so the next one is prepared as well.
+      await t.answer(a.id, { approve: false });
     }
 
     expect(cacheBytes(local)).toBeGreaterThan(0);
