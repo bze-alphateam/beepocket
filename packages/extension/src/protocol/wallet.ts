@@ -31,6 +31,8 @@ export const WalletErrorCodes = {
   invalidSettings: 'invalid_settings',
   vaultInvalid: 'vault_invalid',
   profileInvalid: 'profile_invalid',
+  /** The wallet could not record a password attempt, so the password was not checked. */
+  storageUnavailable: 'storage_unavailable',
 } as const;
 
 export interface WalletProtocol {

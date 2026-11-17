@@ -330,7 +330,8 @@ export class FeeEstimator {
   }
 
   async feeData(): Promise<FeeData> {
-    const cached = this.readCache(await this.cache?.get(this.cacheKey));
+    // A cache that fails is a miss: the data is read from the chain.
+    const cached = this.readCache(await this.cache?.get(this.cacheKey).catch(() => undefined));
     if (cached) return cached;
 
     const [fee, params, pools, halted] = await Promise.all([
@@ -365,7 +366,7 @@ export class FeeEstimator {
     }
 
     const data = { nativeDenom: native, rates };
-    await this.cache?.set(this.cacheKey, this.serialize(data), FEE_TTL_MS);
+    await this.cache?.set(this.cacheKey, this.serialize(data), FEE_TTL_MS).catch(() => undefined);
     return data;
   }
 

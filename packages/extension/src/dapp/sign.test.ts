@@ -1486,7 +1486,10 @@ describe('token lookups of sign requests', () => {
       asset: () => Promise.resolve(null),
       token: () => Promise.resolve(null),
     } as unknown as ScanClient;
-    const cache = new StorageCache(new ChromeStorage(local), t.clock, { maxBytes: CACHE_BYTES });
+    const cache = new StorageCache(new ChromeStorage(local), t.clock, {
+      maxBytes: CACHE_BYTES,
+      reserveBytes: 16 * 1024,
+    });
     t.env.tokens = createTokenResolver({ chain, scan, cache }, 'mainnet');
 
     for (let r = 0; r < 20; r++) {
