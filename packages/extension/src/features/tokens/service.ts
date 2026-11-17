@@ -175,7 +175,7 @@ export class TokenService {
     address: string,
     denom: string,
   ): Promise<StoredBalances | null> {
-    if (!entry || entry.cut !== true || Object.hasOwn(entry.balances, denom)) return entry;
+    if (entry?.cut !== true || Object.hasOwn(entry.balances, denom)) return entry;
     try {
       const amount = await this.deps.chain.balance(address, denom);
       return { ...entry, balances: { ...entry.balances, [denom]: amount.toString() } };
