@@ -186,7 +186,8 @@ export class TokenService {
 
   /**
    * The last read of every address, however old, without asking the node: what Home shows at
-   * once while it reads again. `null` when some address has never been read.
+   * once while it reads again. `null` when some address has never been read, or when its list
+   * was cut short without the denom (its amount is not known until it is read).
    */
   async lastBalances(denom: string): Promise<Result<TokenBalances | null>> {
     const addresses = await this.deps.addresses.list(this.deps.network);
@@ -196,7 +197,9 @@ export class TokenService {
         return isStoredBalances(raw) ? raw : null;
       }),
     );
-    if (stored.some((entry) => entry === null)) return ok(null);
+    const known = (entry: StoredBalances | null) =>
+      entry !== null && (entry.cut !== true || Object.hasOwn(entry.balances, denom));
+    if (!stored.every(known)) return ok(null);
     return ok(balancesOf(denom, addresses, stored));
   }
 

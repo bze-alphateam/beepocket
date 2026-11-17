@@ -871,7 +871,7 @@ describe('tokens.lookup through the real REST and Scan clients', () => {
   });
 });
 
-/** A list as long as the node will give: dust ahead of the address's own tokens. */
+/** A list as long as the wallet reads, of other denoms only. */
 function cutList(): Map<string, bigint> {
   const list = new Map<string, bigint>();
   for (let i = 0; i < MAX_BALANCES; i++) list.set(`ibc/${i.toString(16).padStart(64, '0')}`, 1n);
@@ -888,6 +888,23 @@ describe('tokens of an address holding a great many denoms', () => {
     expect(r).toMatchObject({ ok: true, value: { total: '9', partial: false } });
     // Only the address whose list was cut short is asked again.
     expect(t.chainData.denomCalls).toEqual([`bze1a ${FACTORY}`]);
+  });
+
+  it('shows no last balance for a denom the cut list misses, until it is read', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.balances.bze1a = cutList();
+    t.chainData.exact.bze1a = new Map([['ubze', 4n]]);
+    t.chainData.balances.bze1b = new Map([['ubze', 2n]]);
+    await t.call('tokens.balances', { denom: FACTORY });
+    expect(await t.call('tokens.lastBalances', { denom: 'ubze' })).toEqual({
+      ok: true,
+      value: null,
+    });
+    // A denom the list holds is known.
+    const listed = await t.call('tokens.lastBalances', {
+      denom: `ibc/${(0).toString(16).padStart(64, '0')}`,
+    });
+    expect(listed).toMatchObject({ ok: true, value: { total: '1' } });
   });
 
   it('says more tokens are held than the search can list', async () => {
