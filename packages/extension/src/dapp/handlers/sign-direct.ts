@@ -29,10 +29,11 @@ import {
  */
 export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
   return {
+    usesNode: true,
     validate: validateSignParams,
 
-    async decide(request) {
-      const prep = await prepareSign(deps, request, request.params);
+    async decide(request, signal) {
+      const prep = await prepareSign(deps, request, request.params, signal);
       switch (prep.kind) {
         case 'ready':
           return { kind: 'sign', details: detailsOf(prep.prepared) };

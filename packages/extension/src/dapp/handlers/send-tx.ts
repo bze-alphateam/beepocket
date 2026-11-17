@@ -52,8 +52,10 @@ function hashBytes(hex: string): Uint8Array {
  */
 export function sendTxHandler(deps: TxDeps): DappHandler<SendTxParams> {
   return {
+    usesNode: true,
     validate,
 
+    // No signal: a broadcast cannot be called back once sent; the cancel check before it counts.
     async decide(request) {
       const done = (outcome: Outcome) => ({ kind: 'answer', outcome }) as const;
       const active = await deps.services.activeNetwork();

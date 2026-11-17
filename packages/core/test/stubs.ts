@@ -12,6 +12,7 @@ export function stubChain(overrides: Partial<ChainClient> = {}): ChainClient {
   return {
     account: vi.fn(notStubbed('account')),
     balances: vi.fn(notStubbed('balances')),
+    balance: vi.fn(notStubbed('balance')),
     supply: vi.fn(notStubbed('supply')),
     denomMetadata: vi.fn(notStubbed('denomMetadata')),
     denomBranding: vi.fn(notStubbed('denomBranding')),

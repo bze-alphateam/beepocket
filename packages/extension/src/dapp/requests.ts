@@ -15,6 +15,11 @@ export const REQUEST_TTL_MS = 10 * 60_000;
 export const MAX_PENDING = 20;
 export const MAX_PER_ORIGIN = 5;
 /**
+ * Requests whose decision reads the node, decided at once in all. Per site they share
+ * `MAX_PER_ORIGIN` with the site's queued requests.
+ */
+export const MAX_PREPARING = MAX_PENDING;
+/**
  * Ids are remembered for `REQUEST_TTL_MS` after their last use. A site with this many remembered
  * has its new requests refused (none of its ids is forgotten early); past `MAX_SEEN` in all, the
  * oldest are forgotten, so busy sites cannot shut out the others.

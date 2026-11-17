@@ -1,10 +1,12 @@
 import {
+  balancesMayBeCut,
   feePricing,
   minimumFee,
   rawJson,
   simulatedGasFor,
   summarise,
   verifySignRequest,
+  withBalancesOf,
   type AnyMsg,
   type FeeData,
   type FeeEstimate,
@@ -263,6 +265,7 @@ export async function prepareSign(
   deps: TxDeps,
   request: PendingRequest,
   params: SignParams,
+  signal?: AbortSignal,
 ): Promise<Preparation> {
   const active = await deps.services.activeNetwork();
   const wrong = networkRefusal(request, params, active.id);
@@ -279,7 +282,7 @@ export async function prepareSign(
   if (pubKeyText === null) return { kind: 'unlock' };
   const pubKey = bytesFromWire(pubKeyText);
 
-  const env = await deps.env();
+  const env = await deps.env(signal);
   const bodyBytes = bytesFromWire(params.signDoc.bodyBytes);
   const authInfoBytes = bytesFromWire(params.signDoc.authInfoBytes);
   const accountNumber = bigintFromWire(params.signDoc.accountNumber);
@@ -289,7 +292,7 @@ export async function prepareSign(
     () => null,
   );
   if (!read.ok) return { kind: 'refuse', outcome: read.outcome };
-  const [account, balances] = read.value;
+  const [account, listed] = read.value;
   if (account === null) {
     return refused(DappErrorCodes.invalidRequest, 'Fund this address first.');
   }
@@ -314,6 +317,19 @@ export async function prepareSign(
 
   const siteFee = siteFeeOf(verified.authInfo.fee);
   const siteDenom = siteFee?.coins.length === 1 ? siteFee.coins[0]?.denom : undefined;
+  // A list cut short may miss the fee tokens: those are read on their own.
+  const exact = balancesMayBeCut(listed)
+    ? await guarded(
+        async () =>
+          withBalancesOf(env.chain, entry.address, listed, [
+            ...(await env.fees.feeData()).rates.keys(),
+            ...(siteDenom === undefined ? [] : [siteDenom]),
+          ]),
+        () => null,
+      )
+    : { ok: true as const, value: listed };
+  if (!exact.ok) return { kind: 'refuse', outcome: exact.outcome };
+  const balances = exact.value;
   const estimated = await guarded(
     () =>
       Promise.all([

@@ -67,3 +67,20 @@ export class FetchTransport implements HttpTransport {
     }
   }
 }
+
+/**
+ * `transport` with every request tied to `signal`: once it aborts, a request in flight stops and
+ * no new one is sent. A request that brings its own signal keeps it.
+ */
+export function withSignal(transport: HttpTransport, signal: AbortSignal): HttpTransport {
+  return {
+    request(req) {
+      if (signal.aborted) return Promise.reject(abortReason(signal));
+      return transport.request({ ...req, signal: req.signal ?? signal });
+    },
+  };
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new TransportError('request aborted');
+}

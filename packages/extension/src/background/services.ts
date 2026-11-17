@@ -2,6 +2,7 @@ import {
   HttpScanClient,
   NETWORKS,
   RestChainClient,
+  withSignal,
   type ChainClient,
   type Network,
   type NetworkId,
@@ -24,8 +25,11 @@ export interface NetworkClients {
  */
 export interface Services {
   activeNetwork(): Promise<Network>;
-  /** Clients for the active network, or for a given one. */
-  clients(network?: NetworkId): Promise<NetworkClients>;
+  /**
+   * Clients for the active network, or for a given one. With `signal`, every request they make
+   * stops once it aborts.
+   */
+  clients(network?: NetworkId, signal?: AbortSignal): Promise<NetworkClients>;
 }
 
 export function createServices(platform: Platform): Services {
@@ -37,12 +41,13 @@ export function createServices(platform: Platform): Services {
   };
   return {
     activeNetwork,
-    async clients(id) {
+    async clients(id, signal) {
       const network = id === undefined ? await activeNetwork() : NETWORKS[id];
+      const transport = signal ? withSignal(platform.transport, signal) : platform.transport;
       return {
         network,
-        chain: new RestChainClient(platform.transport, network),
-        scan: new HttpScanClient(platform.transport, network),
+        chain: new RestChainClient(transport, network),
+        scan: new HttpScanClient(transport, network),
       };
     },
   };

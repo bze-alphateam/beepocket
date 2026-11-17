@@ -6,6 +6,7 @@ import {
   TransportError,
   TxTimeoutError,
   UnexpectedResponseError,
+  balancesMayBeCut,
   buildAuthInfo,
   buildBody,
   encodeMsgSend,
@@ -16,6 +17,7 @@ import {
   signDocBytes,
   txHash,
   txRawBytes,
+  withBalancesOf,
   type ChainClient,
   type Clock,
   type FeeData,
@@ -50,7 +52,7 @@ export interface SendWallet {
 
 export interface SendDeps {
   network: Pick<Network, 'chainId' | 'scan'>;
-  chain: Pick<ChainClient, 'account' | 'balances' | 'broadcast' | 'waitForTx'>;
+  chain: Pick<ChainClient, 'account' | 'balances' | 'balance' | 'broadcast' | 'waitForTx'>;
   fees: Pick<FeeEstimator, 'estimate' | 'feeData'>;
   tokens: { resolve(denom: string): Promise<TokenInfo> };
   wallet: SendWallet;
@@ -135,7 +137,10 @@ export class SendService {
     if (typed instanceof Error) return fail(SendErrorCodes.invalidAmount, typed.message);
     if (typed === 0n) return fail(SendErrorCodes.invalidAmount, 'Enter an amount above zero.');
 
-    const context = await this.context(req.fromIndex);
+    const context = await this.context(req.fromIndex, [
+      req.denom,
+      ...(req.feeDenom === undefined ? [] : [req.feeDenom]),
+    ]);
     if (!context.ok) return context;
     const ctx = context.value;
     const balance = ctx.balances.get(req.denom) ?? 0n;
@@ -215,7 +220,7 @@ export class SendService {
     }
     if (state !== 'unlocked') return fail(WalletErrorCodes.locked, 'The wallet is locked.');
 
-    const context = await this.context(req.fromIndex);
+    const context = await this.context(req.fromIndex, [req.denom, req.feeDenom]);
     if (!context.ok) return context;
     const ctx = context.value;
     const held = ctx.balances.get(req.denom) ?? 0n;
@@ -352,16 +357,24 @@ export class SendService {
     }
   }
 
-  private async context(fromIndex: number): Promise<Result<Context>> {
+  /** The sender's account and balances; `denoms` (and every fee token) with exact amounts. */
+  private async context(fromIndex: number, denoms: string[]): Promise<Result<Context>> {
     const addresses = await this.deps.wallet.addresses();
     if (!addresses.ok) return addresses;
     const from = addresses.value.addresses.find((a) => a.index === fromIndex);
     if (!from) return fail(SendErrorCodes.unknownAddress, 'No such address.');
     const read = await guarded(async () => {
-      const [account, balances] = await Promise.all([
+      const [account, listed] = await Promise.all([
         this.deps.chain.account(from.address),
         this.deps.chain.balances(from.address),
       ]);
+      // A list cut short may miss the tokens this send needs: those are read on their own.
+      const balances = balancesMayBeCut(listed)
+        ? await withBalancesOf(this.deps.chain, from.address, listed, [
+            ...denoms,
+            ...(await this.deps.fees.feeData()).rates.keys(),
+          ])
+        : listed;
       return { account, balances };
     });
     if (!read.ok) return read;

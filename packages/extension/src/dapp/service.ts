@@ -15,7 +15,7 @@ import type { SitesService } from './sites';
 import type { Cancellations } from './cancellations';
 import type { DocumentLog } from './documents';
 import type { Decision, DappHandler, DappRegistry, UserAnswer } from './registry';
-import { REQUEST_TTL_MS, type RequestStore } from './requests';
+import { MAX_PER_ORIGIN, MAX_PREPARING, REQUEST_TTL_MS, type RequestStore } from './requests';
 import {
   refuse,
   type DappSender,
@@ -64,14 +64,29 @@ interface Checked {
 
 const ID = /^[0-9a-f]{32}$/;
 const nothing = (): Promise<void> => Promise.resolve();
+const TOO_MANY = 'Too many requests waiting';
+
+/** One request of one document: what a cancel names. */
+const handlingKey = (from: DappSender, id: string) =>
+  `${String(from.tabId)}\n${from.documentId}\n${id}`;
 
 /**
  * The dapp channel inside the worker. A well-formed request is acked at once, before any work;
  * its answer is delivered later to the exact document that asked, so it survives the worker
  * stopping while the user decides.
- * Nothing is kept in memory: pending requests live in session storage.
+ * Pending requests live in session storage; only the requests this worker is deciding right now
+ * are kept in memory, since they stop with it.
  */
 export class DappService {
+  /**
+   * The requests being decided right now, to stop their node requests when their page gives up.
+   * Kept in memory: they run in this worker, and stop with it.
+   */
+  private readonly handling = new Map<string, AbortController>();
+  /** Requests whose decision reads the node, being decided right now: per site, and in all. */
+  private readonly preparing = new Map<string, number>();
+  private preparingTotal = 0;
+
   constructor(private readonly deps: DappServiceDeps) {}
 
   /** Settings › Connected sites. */
@@ -92,7 +107,7 @@ export class DappService {
     // Recorded before the ack, so the page's cancel, which can only follow it, finds the request.
     const taken = await this.deps.cancellations.sent(from, pending.id);
     if (taken !== 'ok') {
-      const text = taken === 'duplicate' ? 'Duplicate request.' : 'Too many requests waiting';
+      const text = taken === 'duplicate' ? 'Duplicate request.' : TOO_MANY;
       return {
         ack: { error: { code: DappErrorCodes.invalidRequest, message: text } },
         after: nothing,
@@ -140,6 +155,7 @@ export class DappService {
    * on to the next one. Nothing is answered: the page already stopped waiting.
    */
   private async cancel(from: DappSender, id: string): Promise<void> {
+    this.handling.get(handlingKey(from, id))?.abort();
     await this.deps.cancellations.cancel(from, id);
     await this.deps.requests.cancel(id, from.tabId, from.documentId);
   }
@@ -149,14 +165,48 @@ export class DappService {
    * answered or queued: a failure is delivered to the page instead of leaving it waiting.
    */
   private async settle(from: DappSender, handler: DappHandler, pending: Incoming): Promise<void> {
+    // Before anything is awaited: a cancel, which can only follow the ack, always finds it.
+    const key = handlingKey(from, pending.id);
+    const controller = new AbortController();
+    this.handling.set(key, controller);
     try {
-      await this.handle(from, handler, pending);
+      await this.handle(from, handler, pending, controller.signal);
     } finally {
+      if (this.handling.get(key) === controller) this.handling.delete(key);
       await this.deps.cancellations.settled(from, pending.id).catch(() => undefined);
     }
   }
 
-  private async handle(from: DappSender, handler: DappHandler, pending: Incoming): Promise<void> {
+  /**
+   * Takes a place for a request whose decision reads the node, or says there is none: a site's
+   * requests being decided and those waiting in the queue share its `MAX_PER_ORIGIN`, and at most
+   * `MAX_PREPARING` are decided at once in all. The check and the taking are one step.
+   */
+  private async takePlace(origin: string): Promise<(() => void) | null> {
+    const queued = (await this.deps.requests.list()).filter((r) => r.origin === origin).length;
+    const mine = this.preparing.get(origin) ?? 0;
+    if (mine + queued >= MAX_PER_ORIGIN || this.preparingTotal >= MAX_PREPARING) return null;
+    this.preparing.set(origin, mine + 1);
+    this.preparingTotal++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.preparingTotal--;
+      const left = (this.preparing.get(origin) ?? 1) - 1;
+      if (left > 0) this.preparing.set(origin, left);
+      else this.preparing.delete(origin);
+    };
+  }
+
+  private async handle(
+    from: DappSender,
+    handler: DappHandler,
+    pending: Incoming,
+    signal: AbortSignal,
+  ): Promise<void> {
+    // Held until the request is answered or queued, so it always counts in one place or the other.
+    let release: (() => void) | null = null;
     try {
       // Requests that waited their 10 minutes make room before the caps are checked.
       await this.expireDue();
@@ -175,9 +225,16 @@ export class DappService {
         origin: from.origin,
         network: network.id,
       });
-      const decision = await handler.decide(request);
+      if (handler.usesNode === true) {
+        release = await this.takePlace(from.origin);
+        if (!release) {
+          await this.deliver(request, refuse(DappErrorCodes.invalidRequest, TOO_MANY));
+          return;
+        }
+      }
+      const decision = await handler.decide(request, signal);
       // Given up on while it was being decided: nobody waits for a window or an answer.
-      if (await this.deps.cancellations.has(request)) return;
+      if (signal.aborted || (await this.deps.cancellations.has(request))) return;
       if (decision.kind === 'answer') {
         await this.deliver(request, decision.outcome);
         return;
@@ -188,17 +245,11 @@ export class DappService {
         return;
       }
       if (added.status !== 'added') {
-        await this.deliver(
-          request,
-          refuse(DappErrorCodes.invalidRequest, 'Too many requests waiting'),
-        );
+        await this.deliver(request, refuse(DappErrorCodes.invalidRequest, TOO_MANY));
         return;
       }
       if (added.evicted) {
-        await this.deliver(
-          added.evicted,
-          refuse(DappErrorCodes.invalidRequest, 'Too many requests waiting'),
-        );
+        await this.deliver(added.evicted, refuse(DappErrorCodes.invalidRequest, TOO_MANY));
       }
       // A cancel that arrived while the request was being added found nothing to take out.
       if (await this.deps.cancellations.has(request)) {
@@ -206,12 +257,16 @@ export class DappService {
         return;
       }
     } catch {
+      // Stopped because its page gave up: nobody waits for an answer.
+      if (signal.aborted) return;
       await this.deps.deliverer.answer(
         from,
         pending.id,
         refuse(DappErrorCodes.invalidRequest, 'The wallet could not handle the request.'),
       );
       return;
+    } finally {
+      release?.();
     }
     // The request is safe in the queue: a window that fails to open loses nothing (the toolbar
     // icon and the expiry still reach it), so its failure is not the page's error.

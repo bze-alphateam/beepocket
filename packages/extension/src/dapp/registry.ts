@@ -35,8 +35,11 @@ export interface UserAnswer {
  * the stored request and the wallet), `confirm` completes a request once the user approved.
  */
 export interface DappHandler<P = unknown> {
+  /** `decide` reads the node: while it runs, the request counts toward its site's share. */
+  readonly usesNode?: boolean;
   validate(params: unknown): Result<P>;
-  decide(request: PendingRequest & { params: P }): Promise<Decision>;
+  /** `signal` aborts when the page gives up on the request while it is being decided. */
+  decide(request: PendingRequest & { params: P }, signal?: AbortSignal): Promise<Decision>;
   confirm(request: PendingRequest & { params: P }, answer: UserAnswer): Promise<Result<Outcome>>;
 }
 
