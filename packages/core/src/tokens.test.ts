@@ -7,6 +7,7 @@ import {
   TOKEN_TTL_MS,
   TokenResolver,
   TransportError,
+  type Cache,
   type DenomBranding,
   type DenomMetadata,
   type ScanAsset,
@@ -383,6 +384,78 @@ describe('TokenResolver cache', () => {
     cache.store.set(`token:${VDL}`, entry);
     expect((await resolver.resolve(VDL)).symbol).toBe('VDL');
     expect(chain.denomMetadata).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('TokenResolver cache safety', () => {
+  const failing: Cache = {
+    get: () => Promise.reject(new Error('read failed')),
+    set: () => Promise.reject(new Error('storage full')),
+  };
+
+  it('shows BZE with its own decimals and name, whatever the cache holds', async () => {
+    const cache = new MemoryCache();
+    cache.store.set('test:token:ubze', {
+      denom: 'ubze',
+      symbol: 'XYZ',
+      name: 'Other',
+      decimals: 18,
+      kind: 'native',
+      source: 'builtin',
+      branding: null,
+    });
+    const chain = stubChain({ denomBranding: vi.fn().mockResolvedValue(null) });
+    const resolver = new TokenResolver(chain, stubScan(), { cache, cacheKeyPrefix: 'test:' });
+    expect(await resolver.resolve('ubze')).toMatchObject({
+      symbol: 'BZE',
+      name: 'BeeZee',
+      decimals: 6,
+      source: 'builtin',
+    });
+  });
+
+  it('does not take a stored entry claiming to be built in for another denom', async () => {
+    const chain = stubChain({
+      denomMetadata: vi.fn().mockResolvedValue(vdlMeta),
+      denomBranding: vi.fn().mockResolvedValue(null),
+    });
+    const cache = new MemoryCache();
+    cache.store.set(`token:${VDL}`, {
+      denom: VDL,
+      symbol: 'X',
+      name: 'X',
+      decimals: 0,
+      kind: 'factory',
+      source: 'builtin',
+      branding: null,
+    });
+    expect(await new TokenResolver(chain, stubScan(), { cache }).resolve(VDL)).toMatchObject({
+      symbol: 'VDL',
+      decimals: 6,
+    });
+  });
+
+  it('stores nothing for a denom that neither the chain nor Scan knows', async () => {
+    const chain = stubChain({
+      denomMetadata: vi.fn().mockResolvedValue(null),
+      denomBranding: vi.fn().mockResolvedValue(null),
+    });
+    const scan = stubScan({ asset: vi.fn().mockResolvedValue(null) });
+    const cache = new MemoryCache();
+    const resolver = new TokenResolver(chain, scan, { cache });
+    expect((await resolver.resolve(VDL)).source).toBe('fallback');
+    expect((await resolver.resolve('ufoo')).source).toBe('fallback');
+    expect(cache.store.size).toBe(0);
+  });
+
+  it('resolves as if nothing were cached when the cache fails', async () => {
+    const chain = stubChain({
+      denomMetadata: vi.fn().mockResolvedValue(vdlMeta),
+      denomBranding: vi.fn().mockResolvedValue(null),
+    });
+    const resolver = new TokenResolver(chain, stubScan(), { cache: failing });
+    expect(await resolver.resolve(VDL)).toMatchObject({ symbol: 'VDL', decimals: 6 });
+    expect((await resolver.resolve('ubze')).decimals).toBe(6);
   });
 });
 

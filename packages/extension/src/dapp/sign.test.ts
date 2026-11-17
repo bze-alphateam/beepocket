@@ -19,11 +19,13 @@ import {
   type FeeData,
   type FeeEstimate,
   type Random,
+  type ScanClient,
 } from '@beepocket/core';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 import type { Services } from '../background/services';
-import { ChromeSessionStorage, ChromeStorage } from '../platform';
-import { FakeArea } from '../platform/test-support';
+import { ChromeSessionStorage, ChromeStorage, StorageCache } from '../platform';
+import { FakeArea, itemBytes } from '../platform/test-support';
+import { createTokenResolver } from '../features/tokens/resolver';
 import { FULL_LOCK_ALARM, WEAK_LOCK_ALARM } from '../features/wallet/alarms';
 import { WalletService } from '../features/wallet/service';
 import { AccountChanges } from './account-changes';
@@ -32,7 +34,7 @@ import { DocumentLog } from './documents';
 import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
 import { DappRegistry, type UserAnswer } from './registry';
-import { execMsg, grantMsg, nothingMsg, vestingMsg } from './test-support';
+import { execMsg, grantMsg, nothingMsg, sendGrantMsg, vestingMsg } from './test-support';
 import { RequestStore } from './requests';
 import { Cancellations } from './cancellations';
 import { DappService } from './service';
@@ -109,8 +111,8 @@ const FEE_DATA: FeeData = {
   ]),
 };
 
-async function rig() {
-  const local = new FakeArea();
+async function rig(options: { local?: FakeArea } = {}) {
+  const local = options.local ?? new FakeArea();
   const session = await ChromeSessionStorage.open(new FakeArea());
   const random = counterRandom();
   const vault = new Vault({
@@ -1454,5 +1456,68 @@ describe('an approval is bound to the request on screen', () => {
     await handling;
     expect(t.node.broadcast).not.toHaveBeenCalled();
     expect(t.answerOf(id)).toBeUndefined();
+  });
+});
+
+describe('token lookups of sign requests', () => {
+  const CACHE_BYTES = 32 * 1024;
+  const cacheBytes = (area: FakeArea) =>
+    [...area.data]
+      .filter(([key]) => key.startsWith('cache:'))
+      .reduce((n, [key, value]) => n + itemBytes(key, value), 0);
+
+  it('keep the token cache bounded, so the wallet can still store its own data', async () => {
+    const local = new FakeArea({ quotaBytes: 256 * 1024 });
+    const t = await rig({ local });
+    await t.connect();
+    // Every denom is known to the chain, so each lookup is worth keeping.
+    const chain = {
+      denomMetadata: () =>
+        Promise.resolve({
+          name: 'Token',
+          symbol: 'TKN',
+          display: 'TKN',
+          exponent: 6,
+          description: '',
+        }),
+      denomBranding: () => Promise.resolve(null),
+    } as unknown as ChainClient;
+    const scan = {
+      asset: () => Promise.resolve(null),
+      token: () => Promise.resolve(null),
+    } as unknown as ScanClient;
+    const cache = new StorageCache(new ChromeStorage(local), t.clock, {
+      maxBytes: CACHE_BYTES,
+      reserveBytes: 16 * 1024,
+    });
+    t.env.tokens = createTokenResolver({ chain, scan, cache }, 'mainnet');
+
+    for (let r = 0; r < 20; r++) {
+      const spendLimit = Array.from({ length: 100 }, (_, i): [string, string] => [
+        `factory/${MAIN.address}/r${String(r)}d${String(i)}`,
+        '1',
+      ]);
+      await t.ask(
+        'signDirect',
+        request({
+          messages: [sendGrantMsg(MAIN.address, OTHER.address, spendLimit)],
+          requestFee: {
+            coins: [[`factory/${MAIN.address}/fee${String(r)}`, 5000n]],
+            gasLimit: 300_000n,
+          },
+        }).params,
+      );
+    }
+
+    expect(cacheBytes(local)).toBeGreaterThan(0);
+    expect(cacheBytes(local)).toBeLessThanOrEqual(CACHE_BYTES);
+    // The profile and the password throttle can still be written.
+    expect((await t.wallet.deriveNext()).ok).toBe(true);
+    await t.wallet.lock();
+    expect(await t.wallet.unlock('not the password')).toEqual({
+      ok: true,
+      value: { status: 'wrong-password', retryAt: null },
+    });
+    expect(local.data.get('throttle')).toMatchObject({ failures: 1 });
   });
 });

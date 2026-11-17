@@ -11,14 +11,14 @@ import {
   type Random,
 } from '@beepocket/core';
 import { StorageCache } from './cache';
-import type { SessionAreaLike, SessionStorage, Storage, StorageAreaLike } from './ports';
+import type { LocalAreaLike, SessionAreaLike, SessionStorage, Storage } from './ports';
 import { CryptoRandom } from './random';
-import { ChromeSessionStorage, ChromeStorage } from './storage';
+import { ChromeLocalStorage, ChromeSessionStorage } from './storage';
 
 export * from './ports';
-export { StorageCache } from './cache';
+export { StorageCache, type StorageCacheOptions } from './cache';
 export { CryptoRandom } from './random';
-export { ChromeSessionStorage, ChromeStorage } from './storage';
+export { ChromeLocalStorage, ChromeSessionStorage, ChromeStorage } from './storage';
 
 /** Everything the extension needs from the browser, behind core's interfaces. */
 export interface Platform {
@@ -34,13 +34,13 @@ export interface Platform {
 
 /** The browser globals the platform is built from; injected so nothing reads a global itself. */
 export interface PlatformEnv {
-  chrome: { storage: { local: StorageAreaLike; session: SessionAreaLike } };
+  chrome: { storage: { local: LocalAreaLike; session: SessionAreaLike } };
   crypto: Pick<Crypto, 'getRandomValues' | 'subtle'>;
   fetch: typeof fetch;
 }
 
 export async function createPlatform(env: PlatformEnv): Promise<Platform> {
-  const storage = new ChromeStorage(env.chrome.storage.local);
+  const storage = await ChromeLocalStorage.open(env.chrome.storage.local);
   const clock = new SystemClock();
   return {
     storage,

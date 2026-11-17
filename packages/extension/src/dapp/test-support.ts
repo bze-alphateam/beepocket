@@ -41,6 +41,23 @@ export function grantMsg(granter: string, grantee: string, msgTypeUrl: string): 
   };
 }
 
+/** An authz `MsgGrant` of a send authorization limited to `spendLimit` ([denom, amount] pairs). */
+export function sendGrantMsg(
+  granter: string,
+  grantee: string,
+  spendLimit: [string, string][],
+): AnyMsg {
+  const coins = spendLimit.map(([denom, amount]) =>
+    bytesField(1, cat(textField(1, denom), textField(2, amount))),
+  );
+  const authorization = any('/cosmos.bank.v1beta1.SendAuthorization', cat(...coins));
+  const grant = bytesField(1, authorization);
+  return {
+    typeUrl: '/cosmos.authz.v1beta1.MsgGrant',
+    value: cat(textField(1, granter), textField(2, grantee), bytesField(3, grant)),
+  };
+}
+
 /** A message of a type the wallet has never heard of, with arbitrary bytes. */
 export const nothingMsg = (): AnyMsg => ({
   typeUrl: '/test.v1.MsgNothing',

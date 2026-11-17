@@ -42,6 +42,9 @@ export const NATIVE_DENOM = 'ubze';
 /** Decimals of every LP share token. The chain's bank metadata says 6, which is wrong. */
 export const LP_DECIMALS = 12;
 
+/** The native token as the wallet knows it, whatever any store says. */
+const NATIVE = { symbol: 'BZE', name: 'BeeZee', decimals: 6, source: 'builtin' } as const;
+
 const MAX_DENOM_LENGTH = 128;
 const DENOM_PATTERN = /^[A-Za-z][A-Za-z0-9/:._-]*$/;
 const MAX_SYMBOL_LENGTH = 32;
@@ -122,7 +125,8 @@ function isTokenInfo(value: unknown, denom: string): value is TokenInfo {
     t.decimals >= 0 &&
     t.decimals <= 18 &&
     t.kind === kindOf(denom) &&
-    (t.source === 'builtin' || t.source === 'chain' || t.source === 'scan') &&
+    // Only the native token is built in; nothing else may claim to be.
+    (t.kind === 'native' ? t.source === 'builtin' : t.source === 'chain' || t.source === 'scan') &&
     (branding === null || typeof branding === 'object')
   );
 }
@@ -135,6 +139,12 @@ function isStoredLogo(value: unknown): value is StoredLogo {
   const v = value as Record<string, unknown>;
   if ('url' in v) return v.url === null || (typeof v.url === 'string' && safeLogo(v.url) === v.url);
   return typeof v.failedAt === 'number';
+}
+
+/** A logo lookup's answer and, when it asked Scan, what to store once the token is known. */
+interface FoundLogo {
+  url: string | null;
+  keep: { key: string; value: StoredLogo; ttlMs: number } | null;
 }
 
 export interface TokenResolverOptions {
@@ -177,8 +187,30 @@ export class TokenResolver {
     // Async, so even a client that throws on the spot is a rejected promise.
     const asset = () => (asked ??= (async () => this.scan.asset(denom))());
     const logo = this.logo(denom, kind, asset);
-    const [info, url] = await Promise.all([this.info(denom, kind, asset), logo]);
-    return { ...info, logo: url };
+    const [info, found] = await Promise.all([this.info(denom, kind, asset), logo]);
+    // Nothing is kept for a denom that neither the chain nor Scan knows.
+    if (found.keep && info.source !== 'fallback') {
+      await this.put(found.keep.key, found.keep.value, found.keep.ttlMs);
+    }
+    return { ...info, logo: found.url };
+  }
+
+  /** A cache read that fails is a miss. */
+  private async cached(key: string): Promise<unknown> {
+    try {
+      return await this.cache?.get(key);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** A cache write that fails only means the next lookup asks again. */
+  private async put(key: string, value: unknown, ttlMs: number): Promise<void> {
+    try {
+      await this.cache?.set(key, value, ttlMs);
+    } catch {
+      // nothing kept
+    }
   }
 
   /** Everything but the logo, cached on its own. */
@@ -188,8 +220,9 @@ export class TokenResolver {
     asset: () => Promise<ScanAsset | null>,
   ): Promise<Omit<TokenInfo, 'logo'>> {
     const key = `${this.prefix}token:${denom}`;
-    const cached = await this.cache?.get(key);
-    if (isTokenInfo(cached, denom)) return cached;
+    const cached = await this.cached(key);
+    // The native token's name and decimals are the wallet's own; only its brand kit is stored.
+    if (isTokenInfo(cached, denom)) return kind === 'native' ? { ...cached, ...NATIVE } : cached;
 
     const [display, branding] = await Promise.all([
       this.displayData(denom, kind, asset),
@@ -197,7 +230,7 @@ export class TokenResolver {
     ]);
     const info = { denom, kind, ...display, branding };
     // A fallback is a guess (and often a symptom of Scan being down): never keep it.
-    if (info.source !== 'fallback') await this.cache?.set(key, info, TOKEN_TTL_MS);
+    if (info.source !== 'fallback') await this.put(key, info, TOKEN_TTL_MS);
     return info;
   }
 
@@ -215,25 +248,24 @@ export class TokenResolver {
     denom: string,
     kind: TokenKind,
     asset: () => Promise<ScanAsset | null>,
-  ): Promise<string | null> {
-    if (kind === 'native') return this.nativeLogo;
+  ): Promise<FoundLogo> {
+    if (kind === 'native') return { url: this.nativeLogo, keep: null };
     const key = `${this.prefix}logo:${denom}`;
-    const stored = await this.cache?.get(key);
+    const stored = await this.cached(key);
     if (isStoredLogo(stored)) {
-      if ('url' in stored) return stored.url;
+      if ('url' in stored) return { url: stored.url, keep: null };
       const since = this.clock.now() - stored.failedAt;
-      if (since >= 0 && since < LOGO_RETRY_MS) return null;
+      if (since >= 0 && since < LOGO_RETRY_MS) return { url: null, keep: null };
     }
 
     const timedOut = this.clock.sleep(LOGO_TIMEOUT_MS).then((): typeof TIMED_OUT => TIMED_OUT);
     const answer = await Promise.race([asset(), timedOut]).catch((): typeof TIMED_OUT => TIMED_OUT);
     if (answer === TIMED_OUT) {
-      await this.cache?.set(key, { failedAt: this.clock.now() }, LOGO_RETRY_MS);
-      return null;
+      const value: StoredLogo = { failedAt: this.clock.now() };
+      return { url: null, keep: { key, value, ttlMs: LOGO_RETRY_MS } };
     }
     const url = safeLogo(answer?.logo);
-    await this.cache?.set(key, { url }, TOKEN_TTL_MS);
-    return url;
+    return { url, keep: { key, value: { url }, ttlMs: TOKEN_TTL_MS } };
   }
 
   private async displayData(
@@ -241,7 +273,7 @@ export class TokenResolver {
     kind: TokenKind,
     asset: () => Promise<ScanAsset | null>,
   ): Promise<Pick<TokenInfo, 'symbol' | 'name' | 'decimals' | 'source'>> {
-    if (kind === 'native') return { symbol: 'BZE', name: 'BeeZee', decimals: 6, source: 'builtin' };
+    if (kind === 'native') return { ...NATIVE };
 
     // Decimals from a source that answered are authoritative even when its text is
     // unusable: guessing 0 would show wrong amounts. Only the text falls back.

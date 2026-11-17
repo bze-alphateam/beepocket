@@ -1,7 +1,13 @@
-import type { SessionAreaLike, SessionStorage, Storage, StorageAreaLike } from './ports';
+import type {
+  CacheStorage,
+  LocalAreaLike,
+  SessionAreaLike,
+  SessionStorage,
+  StorageAreaLike,
+} from './ports';
 
 /** `Storage` over a `chrome.storage` area (`chrome.storage.local`). */
-export class ChromeStorage implements Storage {
+export class ChromeStorage implements CacheStorage {
   constructor(private readonly area: StorageAreaLike) {}
 
   async get(key: string): Promise<unknown> {
@@ -19,6 +25,43 @@ export class ChromeStorage implements Storage {
 
   remove(key: string): Promise<void> {
     return this.area.remove(key);
+  }
+
+  async entries(prefix: string): Promise<Record<string, unknown>> {
+    const items = await this.area.get(null);
+    return Object.fromEntries(Object.entries(items).filter(([key]) => key.startsWith(prefix)));
+  }
+
+  async freeBytes(): Promise<number | null> {
+    const quota = this.area.QUOTA_BYTES;
+    if (typeof quota !== 'number' || typeof this.area.getBytesInUse !== 'function') return null;
+    try {
+      return quota - (await this.area.getBytesInUse(null));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * `ChromeStorage` over `chrome.storage.local`. Content scripts have no business with wallet
+ * data, so the access level is restricted to trusted contexts on open, where the browser
+ * supports it. A browser without it keeps its default, and the wallet still works.
+ */
+export class ChromeLocalStorage extends ChromeStorage {
+  private constructor(area: LocalAreaLike) {
+    super(area);
+  }
+
+  static async open(area: LocalAreaLike): Promise<ChromeLocalStorage> {
+    if (typeof area.setAccessLevel === 'function') {
+      try {
+        await area.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+      } catch {
+        // Not supported for this area here: the default access level stays.
+      }
+    }
+    return new ChromeLocalStorage(area);
   }
 }
 

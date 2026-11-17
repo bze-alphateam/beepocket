@@ -73,6 +73,11 @@ interface Opened {
   vault: EncryptedRecord;
 }
 
+/** A password attempt the wallet could not record: the password is not checked. */
+function unsaved(): Result<never> {
+  return fail(Codes.storageUnavailable, 'The wallet could not save its data. Try again.');
+}
+
 function toBase64(bytes: Uint8Array): string {
   let s = '';
   for (const b of bytes) s += String.fromCharCode(b);
@@ -442,21 +447,25 @@ export class WalletService {
   // ---- internals ----
 
   private async retryAt(): Promise<number | null> {
-    const { lockedUntil } = await this.loadThrottle();
+    const { lockedUntil } = (await this.loadThrottle()).state;
     return lockedUntil > this.deps.clock.now() ? lockedUntil : null;
   }
 
-  private async loadThrottle(): Promise<ThrottleState> {
+  /** The throttle state; `saved` is false when a damaged record could not be replaced. */
+  private async loadThrottle(): Promise<{ state: ThrottleState; saved: boolean }> {
     const stored = await this.deps.storage.get(THROTTLE_KEY);
-    if (stored === undefined) return { ...INITIAL_THROTTLE_STATE };
-    if (validThrottle(stored)) return stored;
+    if (stored === undefined) return { state: { ...INITIAL_THROTTLE_STATE }, saved: true };
+    if (validThrottle(stored)) return { state: stored, saved: true };
     // A damaged record must not hand out free guesses: fall back to the strictest lockout.
     const strict = {
       failures: CORRUPT_FAILURES,
       lockedUntil: this.deps.clock.now() + MAX_LOCKOUT_MS,
     };
-    await this.deps.storage.set(THROTTLE_KEY, strict);
-    return strict;
+    const saved = await this.deps.storage.set(THROTTLE_KEY, strict).then(
+      () => true,
+      () => false,
+    );
+    return { state: strict, saved };
   }
 
   private async sessionKey(): Promise<Uint8Array | null> {
@@ -479,29 +488,51 @@ export class WalletService {
     return ok({ key, vault });
   }
 
-  /** Checks the password through the throttle. A corrupt record is no wrong guess. */
+  /**
+   * Checks the password through the throttle. The attempt is counted as a failure before the
+   * password is checked, so a check that never returns (a stopped worker) still counts; a right
+   * password clears it again. When the attempt cannot be recorded, the password is not checked.
+   * A corrupt record is no wrong guess.
+   */
   private async attempt(password: string): Promise<Result<Opened | Rejection>> {
     const stored = await this.deps.storage.get(VAULT_KEY);
     if (stored === undefined) return fail(Codes.uninitialised, 'There is no wallet yet.');
     if (!isRecord(stored)) return fail(Codes.vaultInvalid, 'The stored wallet is damaged.');
-    const state = await this.loadThrottle();
+    const { state, saved } = await this.loadThrottle();
+    if (!saved) return unsaved();
     const now = this.deps.clock.now();
     if (state.lockedUntil > now) return ok({ status: 'throttled', retryAt: state.lockedUntil });
+    const failed = this.throttle.next(state, now, false);
     try {
-      const key = await this.deps.vault.unlock(password, stored);
-      if (state.failures > 0 || state.lockedUntil > 0) await this.deps.storage.remove(THROTTLE_KEY);
-      return ok({ key, vault: stored });
+      await this.deps.storage.set(THROTTLE_KEY, failed.state);
+    } catch {
+      return unsaved();
+    }
+    let key: Uint8Array;
+    try {
+      key = await this.deps.vault.unlock(password, stored);
     } catch (e) {
       if (e instanceof WrongPasswordError) {
-        const next = this.throttle.next(state, now, false);
-        await this.deps.storage.set(THROTTLE_KEY, next.state);
-        return ok({ status: 'wrong-password', retryAt: next.lockedUntil });
+        return ok({ status: 'wrong-password', retryAt: failed.lockedUntil });
       }
+      // Not a guess: the throttle goes back to what it was.
+      await this.restoreThrottle(state);
       if (e instanceof InvalidRecordError) {
         return fail(Codes.vaultInvalid, 'The stored wallet is damaged.');
       }
       throw e;
     }
+    // The right password unlocks even when the recorded attempt cannot be cleared.
+    await this.deps.storage.remove(THROTTLE_KEY).catch(() => undefined);
+    return ok({ key, vault: stored });
+  }
+
+  /** Puts the throttle back as it was before an attempt that was not a guess. Best effort. */
+  private async restoreThrottle(state: ThrottleState): Promise<void> {
+    const fresh = state.failures === 0 && state.lockedUntil === 0;
+    await (
+      fresh ? this.deps.storage.remove(THROTTLE_KEY) : this.deps.storage.set(THROTTLE_KEY, state)
+    ).catch(() => undefined);
   }
 
   private async loadProfile(key: Uint8Array): Promise<Result<Profile>> {

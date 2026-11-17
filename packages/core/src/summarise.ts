@@ -74,7 +74,7 @@ import type {
 import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
 import { bzeAddressHash, signersOf } from './signers';
 import { sanitiseText } from './text';
-import { LP_DECIMALS, type TokenInfo } from './tokens';
+import { LP_DECIMALS, NATIVE_DENOM, type TokenInfo } from './tokens';
 import type { AnyMsg } from './tx';
 import { shortAddress } from './vault';
 
@@ -220,9 +220,17 @@ interface TokenView {
   exact: boolean;
 }
 
+/**
+ * Most distinct tokens one summary looks up (BZE comes on top). Past it, a token shows in base
+ * units under its denom: a request naming hundreds of tokens is not worth hundreds of lookups.
+ */
+const MAX_TOKEN_LOOKUPS = 32;
+
 /** One summarising run's lookups: each is made at most once and never throws. */
 class Lookups {
   private readonly tokenCache = new Map<string, Promise<TokenView>>();
+  /** Tokens other than BZE looked up so far. */
+  private lookups = 0;
   private marketsCache: Promise<Map<string, Market>> | undefined;
   private poolsCache: Promise<Map<string, Pool>> | undefined;
 
@@ -248,6 +256,10 @@ class Lookups {
   token(denom: string): Promise<TokenView> {
     let cached = this.tokenCache.get(denom);
     if (!cached) {
+      if (denom !== NATIVE_DENOM && this.lookups >= MAX_TOKEN_LOOKUPS) {
+        return Promise.resolve({ symbol: safeText(denom, 40), decimals: 0, exact: false });
+      }
+      if (denom !== NATIVE_DENOM) this.lookups++;
       cached = this.ctx.tokens.resolve(denom).then(
         (t) => ({
           symbol: sanitiseText(t.symbol, 64),

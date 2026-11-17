@@ -25,7 +25,29 @@ describe('createPlatform', () => {
     const e = env();
     await createPlatform(e.env);
     expect(e.session.accessLevels).toEqual(['TRUSTED_CONTEXTS']);
-    expect(e.local.accessLevels).toEqual([]);
+  });
+
+  it('restricts persistent storage to trusted contexts once, when the browser supports it', async () => {
+    const e = env();
+    await createPlatform(e.env);
+    expect(e.local.accessLevels).toEqual(['TRUSTED_CONTEXTS']);
+  });
+
+  it('still starts when persistent storage has no access level to set', async () => {
+    const e = env();
+    // Older browsers have no access level on persistent storage.
+    Object.defineProperty(e.local, 'setAccessLevel', { value: undefined });
+    const p = await createPlatform(e.env);
+    await p.storage.set('a', 1);
+    expect(await p.storage.get('a')).toBe(1);
+  });
+
+  it('still starts when the browser refuses the access level of persistent storage', async () => {
+    const e = env();
+    e.local.setAccessLevel = () => Promise.reject(new Error('not supported'));
+    const p = await createPlatform(e.env);
+    await p.storage.set('a', 1);
+    expect(await p.storage.get('a')).toBe(1);
   });
 
   it('keeps persistent and session data apart', async () => {
