@@ -2,7 +2,9 @@ packages:
   - packages/core
   - packages/extension
   - packages/connector
-onlyBuiltDependencies: []
+# Explicit so a default change cannot loosen it: versions younger than one day
+# are never installed. Never lower it; pin an older version instead.
+minimumReleaseAge: 1440
 allowBuilds:
   bufferutil: false
   esbuild: false
@@ -11,8 +13,9 @@ allowBuilds:
   utf-8-validate: false
 overrides:
   minimatch: 11.0.1
-  # Dev-only transitive deps of @interchain-kit/core (never shipped); pinned to
-  # the releases that fix the OSV advisories the security check reports.
+  # Transitive deps of @interchain-kit/core (dev and connector peer tree, not in
+  # the extension or the connector's dist/); pinned to the releases that fix
+  # the OSV advisories the security check reports.
   protobufjs: 7.6.5
   stream-json: 3.7.0
   uuid@8.3.2: 11.1.1
