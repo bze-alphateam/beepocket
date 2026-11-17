@@ -32,7 +32,7 @@ import { DocumentLog } from './documents';
 import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
 import { DappRegistry, type UserAnswer } from './registry';
-import { grantMsg, nothingMsg } from './test-support';
+import { execMsg, grantMsg, nothingMsg, vestingMsg } from './test-support';
 import { RequestStore } from './requests';
 import { Cancellations } from './cancellations';
 import { DappService } from './service';
@@ -545,15 +545,64 @@ describe('signDirect review and approval', () => {
     expect(t.alarms).toEqual(expect.arrayContaining([WEAK_LOCK_ALARM, FULL_LOCK_ALARM]));
   });
 
-  it('shows an unknown message with its own raw JSON, and signs it on Approve', async () => {
+  it('shows an unknown message with its own raw JSON, and signs it only with the tick', async () => {
     const t = await rig();
     await t.connect();
     const r = await review(t, { messages: [nothingMsg()] });
     expect(r.view.summary.level).toBe('unknown');
     expect(r.view.messageJson[0]).toContain('/test.v1.MsgNothing');
-    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view), trusted: true });
     expect(res.ok).toBe(true);
     expect(t.signedOf(r.id)).toBeDefined();
+  });
+
+  it('refuses a message it cannot read without the tick, even when the screen is bypassed', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, { messages: [nothingMsg()] });
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    expect(res.ok).toBe(true);
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
+  });
+
+  it('refuses a send next to a message it cannot read without the tick', async () => {
+    const t = await rig();
+    await t.connect();
+    const send = encodeMsgSend({
+      fromAddress: MAIN.address,
+      toAddress: OTHER.address,
+      amount: [{ denom: 'ubze', amount: '1' }],
+    });
+    const r = await review(t, { messages: [send, nothingMsg()] });
+    expect(r.view.summary.level).toBe('unknown');
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view), trusted: false });
+    expect(res.ok).toBe(true);
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
+  });
+
+  it('refuses an exec of a message it cannot read without the tick', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, { messages: [execMsg(MAIN.address, nothingMsg())] });
+    expect(r.view.summary.level).toBe('dangerous');
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    expect(res.ok).toBe(true);
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
+  });
+
+  it('does not sign a vesting account for another address on a plain Approve', async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t, {
+      messages: [vestingMsg(MAIN.address, OTHER.address, '1000000000000')],
+    });
+    const res = await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    expect(res.ok).toBe(true);
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'invalid-request' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
   });
 
   it('refuses a dangerous request without the tick and answers the page', async () => {

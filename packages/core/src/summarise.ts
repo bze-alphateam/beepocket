@@ -11,16 +11,24 @@ import {
   MsgUndelegate,
 } from './proto/cosmos/staking/v1beta1/tx';
 import {
+  MsgDepositValidatorRewardsPool,
+  MsgFundCommunityPool,
   MsgSetWithdrawAddress,
   MsgWithdrawDelegatorReward,
 } from './proto/cosmos/distribution/v1beta1/tx';
+import {
+  MsgCreatePeriodicVestingAccount,
+  MsgCreatePermanentLockedAccount,
+  MsgCreateVestingAccount,
+} from './proto/cosmos/vesting/v1beta1/tx';
+import type { Period } from './proto/cosmos/vesting/v1beta1/vesting';
 import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
 import { SendAuthorization } from './proto/cosmos/bank/v1beta1/authz';
 import { GenericAuthorization, Grant } from './proto/cosmos/authz/v1beta1/authz';
 import { MsgExec, MsgGrant } from './proto/cosmos/authz/v1beta1/tx';
 import type { Coin } from './proto/cosmos/base/v1beta1/coin';
 import { VoteOption } from './proto/cosmos/gov/v1/gov';
-import { MsgVote } from './proto/cosmos/gov/v1/tx';
+import { MsgDeposit, MsgVote } from './proto/cosmos/gov/v1/tx';
 import { MsgGrantAllowance } from './proto/cosmos/feegrant/v1beta1/tx';
 import {
   AllowedMsgAllowance,
@@ -113,6 +121,8 @@ export interface MsgSummary {
   /** The message's own rows, the same ones a single-message summary shows. */
   rows: SummaryRow[];
   danger: DangerNotice | null;
+  /** A type the wallet cannot read at all: approving it needs the user's explicit tick. */
+  unreadable: boolean;
 }
 
 export interface TxSummary {
@@ -156,6 +166,8 @@ interface Parts {
   danger?: DangerNotice;
   /** Red-box texts of the messages an exec wraps. */
   nested?: DangerNotice[];
+  /** Set only by `unknownParts`: the wallet cannot say what the message does. */
+  unreadable?: true;
   /** The market a trade message acts on, for the shared-market line of a multi-message tx. */
   marketId?: string;
   marketPair?: string;
@@ -320,6 +332,7 @@ function unknownParts(msg: AnyMsg, sub?: string): Parts {
     hero: 'Unknown message',
     sub: sub ?? safeText(msg.typeUrl),
     rows: [],
+    unreadable: true,
   };
 }
 
@@ -1526,6 +1539,94 @@ function withdrawRewardParts(l: Lookups, msg: MsgWithdrawDelegatorReward): Parts
   };
 }
 
+/** Coins as text; `null` when one has no denom or an amount that is not a plain integer. */
+async function coinsText(l: Lookups, coins: Coin[]): Promise<string | null> {
+  if (coins.some((c) => c.denom === '' || toUint(c.amount) === null)) return null;
+  return coins.length === 0 ? 'No tokens' : l.coins(coins);
+}
+
+/** Unix seconds as a date, `Unknown` when no date can hold them. */
+const unixTime = (seconds: bigint): string => expiry(new Date(Number(seconds) * 1000));
+
+/** Every period's coins added up per denom, or `null` when one cannot be read. */
+function periodTotal(periods: Period[]): Coin[] | null {
+  const sums = new Map<string, bigint>();
+  for (const period of periods) {
+    for (const coin of period.amount) {
+      const value = toUint(coin.amount);
+      if (value === null || coin.denom === '') return null;
+      sums.set(coin.denom, (sums.get(coin.denom) ?? 0n) + value);
+    }
+  }
+  return [...sums].map(([denom, amount]) => ({ denom, amount: amount.toString() }));
+}
+
+/** A new vesting account for another address: the coins leave the signer's for good. */
+async function vestingParts(
+  l: Lookups,
+  title: string,
+  to: string,
+  coins: Coin[] | null,
+  rows: SummaryRow[],
+): Promise<Parts> {
+  const amount = (coins === null ? null : await coinsText(l, coins)) ?? 'Unreadable amount';
+  const who = l.who(to);
+  return {
+    level: 'dangerous',
+    icon: 'send',
+    title,
+    hero: amount,
+    sub: `to ${who}`,
+    rows: [['To', safeText(to, 80), 'mono'], ['Amount', amount], ...rows],
+    danger: {
+      title: `This sends ${amount} to ${who}`,
+      text: "The tokens leave your address for a new account that the other address owns. You can't undo this.",
+    },
+  };
+}
+
+function createVestingParts(l: Lookups, msg: MsgCreateVestingAccount): Promise<Parts> {
+  return vestingParts(l, 'Create vesting account', msg.toAddress, msg.amount, [
+    ['Vesting ends', unixTime(msg.endTime)],
+    ['Unlocks', msg.delayed ? 'All at the end' : 'Gradually until the end'],
+  ]);
+}
+
+function permanentLockedParts(l: Lookups, msg: MsgCreatePermanentLockedAccount): Promise<Parts> {
+  return vestingParts(l, 'Create locked account', msg.toAddress, msg.amount, [
+    ['Unlocks', 'Never: the tokens can only be staked'],
+  ]);
+}
+
+function periodicVestingParts(l: Lookups, msg: MsgCreatePeriodicVestingAccount): Promise<Parts> {
+  const length = msg.vestingPeriods.reduce((sum, p) => sum + p.length, 0n);
+  return vestingParts(l, 'Create vesting account', msg.toAddress, periodTotal(msg.vestingPeriods), [
+    ['Vesting starts', unixTime(msg.startTime)],
+    ['Vesting ends', unixTime(msg.startTime + length)],
+    ['Periods', String(msg.vestingPeriods.length)],
+  ]);
+}
+
+/** Coins the signer gives away to a pool, a validator's delegators or a proposal. */
+async function givingParts(
+  l: Lookups,
+  icon: MsgIcon,
+  title: string,
+  coins: Coin[],
+  sub: string,
+  rows: SummaryRow[],
+): Promise<Parts> {
+  const amount = await coinsText(l, coins);
+  return {
+    level: amount === null ? 'unknown' : 'normal',
+    icon,
+    title,
+    hero: amount ?? 'Unreadable amount',
+    sub,
+    rows: [...rows, ['Amount', amount ?? 'Unreadable amount']],
+  };
+}
+
 async function transferParts(l: Lookups, msg: MsgTransfer): Promise<Parts> {
   const amount = await coinText(l, msg.token);
   const channel = safeText(msg.sourceChannel, 40);
@@ -1760,6 +1861,41 @@ async function partsOf(l: Lookups, msg: AnyMsg, depth = 0, me?: string): Promise
         return setWithdrawAddressParts(l, MsgSetWithdrawAddress.decode(msg.value));
       case MsgTransfer.typeUrl:
         return await transferParts(l, MsgTransfer.decode(msg.value));
+      case MsgCreateVestingAccount.typeUrl:
+        return await createVestingParts(l, MsgCreateVestingAccount.decode(msg.value));
+      case MsgCreatePermanentLockedAccount.typeUrl:
+        return await permanentLockedParts(l, MsgCreatePermanentLockedAccount.decode(msg.value));
+      case MsgCreatePeriodicVestingAccount.typeUrl:
+        return await periodicVestingParts(l, MsgCreatePeriodicVestingAccount.decode(msg.value));
+      case MsgFundCommunityPool.typeUrl: {
+        const m = MsgFundCommunityPool.decode(msg.value);
+        return await givingParts(
+          l,
+          'send',
+          'Fund community pool',
+          m.amount,
+          'to the community pool',
+          [],
+        );
+      }
+      case MsgDepositValidatorRewardsPool.typeUrl: {
+        const m = MsgDepositValidatorRewardsPool.decode(msg.value);
+        return await givingParts(
+          l,
+          'send',
+          'Fund validator rewards',
+          m.amount,
+          `for the delegators of ${l.who(m.validatorAddress)}`,
+          [['Validator', safeText(m.validatorAddress, 80), 'mono']],
+        );
+      }
+      case MsgDeposit.typeUrl: {
+        const m = MsgDeposit.decode(msg.value);
+        const id = m.proposalId.toString();
+        return await givingParts(l, 'vote', 'Deposit', m.amount, `on proposal #${id}`, [
+          ['Proposal', `#${id}`],
+        ]);
+      }
       default:
         return unknownParts(msg);
     }
@@ -1781,6 +1917,16 @@ function memoText(raw: string): string | null {
   const text = sanitiseText(chars.slice(0, MAX_MEMO).join(''));
   return chars.length > MAX_MEMO ? `${text}… (truncated)` : text;
 }
+
+/** A message of a type the wallet cannot read: it has no summary at all, not a failed check. */
+export const isUnreadable = (m: MsgSummary): boolean => m.unreadable;
+
+/**
+ * Whether approving needs the user's explicit "I trust this" tick: a dangerous request, or one
+ * with a message the wallet cannot show. The screen and the worker both ask this.
+ */
+export const needsTrust = (s: TxSummary): boolean =>
+  s.level === 'dangerous' || s.messages.some(isUnreadable);
 
 const riskiest = (levels: RiskLevel[]): RiskLevel =>
   levels.reduce<RiskLevel>((a, b) => (RISK_ORDER[b] > RISK_ORDER[a] ? b : a), 'normal');
@@ -1808,6 +1954,7 @@ export async function summarise(
     sub: p.sub,
     rows: p.rows,
     danger: p.danger ?? null,
+    unreadable: p.unreadable === true,
   }));
   const level = riskiest(parts.map((p) => p.level));
   const memo = memoText(options.memo ?? '');

@@ -310,6 +310,7 @@ const SIGN: Extract<RequestView, { status: 'sign' }> = {
           ['Amount', '1 BZE'],
         ],
         danger: null,
+        unreadable: false,
       },
     ],
     dangers: [],
@@ -756,12 +757,11 @@ const tick = (host: HTMLElement) =>
 const ticked = (host: HTMLElement) => tick(host).getAttribute('aria-checked') === 'true';
 
 describe('the sign screen: risk levels', () => {
-  it('shows an unknown message by name with one amber line, and its raw message in Details', async () => {
+  it('shows an unknown message by name with one note, and its raw message in Details', async () => {
     const t = signRig(await signView([nothingMsg()]));
     await settle();
     expect(t.host.querySelector('.bp-sign-big')?.textContent).toBe('MsgNothing');
     expect(t.host.querySelector('[role=note]')?.textContent).toBe(en['dapp.sign.unknown']);
-    expect(t.host.querySelector('[role=alert]')).toBeNull();
     expect(t.host.querySelector('pre')).toBeNull();
     fireEvent(detailsRow(t.host), 'click');
     await settle();
@@ -773,9 +773,64 @@ describe('the sign screen: risk levels', () => {
     expect([...(sheet?.querySelectorAll('dd') ?? [])].map((d) => d.textContent)).toContain(
       'Not decoded · 4 bytes',
     );
+  });
+
+  it('keeps a message it cannot read disabled until the tick, and approves with trusted', async () => {
+    const t = signRig(await signView([nothingMsg()]));
+    await settle();
+    const box = t.host.querySelector('[role=alert]');
+    expect(box?.textContent).toContain(en['dapp.sign.unreadable.title']);
+    expect(box?.textContent).toContain(en['dapp.sign.unreadable.text']);
+    expect(box?.textContent).toContain(en['dapp.sign.unreadable.trust']);
+    expect(ticked(t.host)).toBe(false);
+    expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
+    expect(disabled(t.host, 'Approve')).toBe(true);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).not.toHaveBeenCalledWith('dapp.answer', expect.anything());
+
+    setTick(t.host);
+    await settle();
+    expect(disabled(t.host, 'Approve')).toBe(false);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('dapp.answer', {
+      id: 's1',
+      ticket: 'k-s1',
+      approve: true,
+      fee: { denom: 'ubze', amount: '2000', gasLimit: '200000' },
+      trusted: true,
+    });
+  });
+
+  it('needs the tick when one of several messages cannot be read', async () => {
+    const t = signRig(await signView([sendMsg(), nothingMsg()]));
+    await settle();
+    expect(t.host.querySelectorAll('[role=alert]')).toHaveLength(1);
+    expect(t.host.querySelectorAll('[role=checkbox]')).toHaveLength(1);
+    expect(disabled(t.host, 'Approve')).toBe(true);
+    setTick(t.host);
+    await settle();
+    expect(disabled(t.host, 'Approve')).toBe(false);
+  });
+
+  it('keeps a readable message it could not verify approvable without the tick', async () => {
+    const view = await signView([sendMsg()]);
+    const unverified = {
+      ...view,
+      summary: {
+        ...view.summary,
+        level: 'unknown' as const,
+        messages: view.summary.messages.map((m) => ({ ...m, level: 'unknown' as const })),
+      },
+    };
+    const t = signRig(unverified);
+    await settle();
+    expect(t.host.querySelector('[role=note]')?.textContent).toBe(en['dapp.sign.unchecked']);
+    expect(t.host.querySelector('[role=alert]')).toBeNull();
+    expect(t.host.querySelector('[role=checkbox]')).toBeNull();
     expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
     expect(disabled(t.host, 'Approve')).toBe(false);
-    expect(t.host.querySelector('[role=checkbox]')).toBeNull();
   });
 
   it('keeps a dangerous request disabled until the tick, and approves with trusted', async () => {
@@ -905,7 +960,7 @@ describe('the sign screen: risk levels', () => {
     expect(sheet?.querySelector('dd.bp-mono')?.textContent).toBe('/test.v1.MsgNothing');
     expect(sheet?.querySelector('pre')?.textContent).toContain('/test.v1.MsgNothing');
     expect(sheet?.querySelector('pre')?.textContent).not.toContain('/cosmos.bank.v1beta1.MsgSend');
-    expect(button(t.host, 'Approve')?.className).toContain('bp-btn-primary');
+    expect(button(t.host, 'Approve')?.className).toContain('bp-btn-danger');
   });
 
   it('turns red and needs the tick when one of several messages is dangerous', async () => {

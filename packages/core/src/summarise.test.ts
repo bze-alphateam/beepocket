@@ -2,6 +2,7 @@ import { bech32 } from '@scure/base';
 import { describe, expect, it, vi } from 'vitest';
 import { stubChain, stubScan } from '../test/stubs';
 import {
+  needsTrust,
   parseAmount,
   rawJson,
   summarise,
@@ -19,7 +20,7 @@ import { SendAuthorization } from './proto/cosmos/bank/v1beta1/authz';
 import { BasicAllowance, PeriodicAllowance } from './proto/cosmos/feegrant/v1beta1/feegrant';
 import { MsgGrantAllowance } from './proto/cosmos/feegrant/v1beta1/tx';
 import { VoteOption } from './proto/cosmos/gov/v1/gov';
-import { MsgVote } from './proto/cosmos/gov/v1/tx';
+import { MsgDeposit, MsgVote } from './proto/cosmos/gov/v1/tx';
 import {
   MsgFundBurner,
   MsgJoinRaffle,
@@ -47,9 +48,19 @@ import {
   MsgUndelegate,
 } from './proto/cosmos/staking/v1beta1/tx';
 import {
+  MsgDepositValidatorRewardsPool,
+  MsgFundCommunityPool,
   MsgSetWithdrawAddress,
   MsgWithdrawDelegatorReward,
 } from './proto/cosmos/distribution/v1beta1/tx';
+import {
+  MsgCreatePeriodicVestingAccount,
+  MsgCreatePermanentLockedAccount,
+  MsgCreateVestingAccount,
+} from './proto/cosmos/vesting/v1beta1/tx';
+import { GOVERNANCE_ONLY as GOVERNED } from './governance';
+import registryV820 from '../test/fixtures/registry/v8.2.0.json';
+import registryV83 from '../test/fixtures/registry/v8.3.json';
 import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
 import { Any } from './proto/google/protobuf/any';
 
@@ -1044,7 +1055,8 @@ describe('authz exec', () => {
       ['Runs from', 'An account the wallet cannot read'],
     ]);
     expect(JSON.stringify(s)).toContain('Nested too deeply to read');
-    expect(JSON.stringify(s).toLowerCase()).not.toContain('unreadable');
+    const text = JSON.stringify(s).replaceAll('"unreadable":false', '');
+    expect(text.toLowerCase()).not.toContain('unreadable');
   });
 
   it('shows an over-long signer as unreadable and never in full', async () => {
@@ -1108,6 +1120,38 @@ describe('unknown messages', () => {
     const s = await run([broken]);
     expect(s.level).toBe('unknown');
     expect(s.sub).toContain('unreadable');
+  });
+});
+
+describe('the trust tick', () => {
+  it('is needed for a message the wallet cannot read, alone or next to a readable one', async () => {
+    expect(needsTrust(await run([wasm]))).toBe(true);
+    expect(needsTrust(await run([send(), wasm]))).toBe(true);
+    expect(needsTrust(await run([wasm, send()]))).toBe(true);
+  });
+
+  it('is needed for a known type whose bytes do not decode', async () => {
+    const broken: AnyMsg = { typeUrl: MsgSend.typeUrl, value: new Uint8Array([10, 99]) };
+    expect(needsTrust(await run([broken]))).toBe(true);
+  });
+
+  it('is needed for a dangerous request, and for an exec of a message it cannot read', async () => {
+    expect(needsTrust(await run([exec(send(STRANGER))]))).toBe(true);
+    expect(needsTrust(await run([exec(wasm)]))).toBe(true);
+    expect(needsTrust(await run([exec(send(), wasm)]))).toBe(true);
+  });
+
+  it('is not needed for a readable message, even one it could not verify', async () => {
+    expect(needsTrust(await run([send()]))).toBe(false);
+    const unverified = await run([swap(['pool-nowhere'], 'ubze', USDC)]);
+    expect(unverified.level).toBe('unknown');
+    expect(needsTrust(unverified)).toBe(false);
+    expect(needsTrust(await run([send(), swap([])]))).toBe(false);
+  });
+
+  it('is not needed for a governance-only type: the request checks refuse those', async () => {
+    const s = await run([{ typeUrl: '/bze.tradebin.MsgUpdatePools', value: new Uint8Array() }]);
+    expect(needsTrust(s)).toBe(false);
   });
 });
 
@@ -1494,6 +1538,41 @@ const SAMPLES: Record<string, AnyMsg> = {
       coins: [bze('300000000')],
     })),
   }),
+  [MsgCreateVestingAccount.typeUrl]: pack(MsgCreateVestingAccount, {
+    fromAddress: ME,
+    toAddress: STRANGER,
+    amount: [bze('5000000000')],
+    endTime: 1_800_000_000n,
+    delayed: false,
+  }),
+  [MsgCreatePermanentLockedAccount.typeUrl]: pack(MsgCreatePermanentLockedAccount, {
+    fromAddress: ME,
+    toAddress: STRANGER,
+    amount: [bze('5000000000')],
+  }),
+  [MsgCreatePeriodicVestingAccount.typeUrl]: pack(MsgCreatePeriodicVestingAccount, {
+    fromAddress: ME,
+    toAddress: STRANGER,
+    startTime: 1_800_000_000n,
+    vestingPeriods: [
+      { length: 86_400n, amount: [bze('1000000')] },
+      { length: 86_400n, amount: [bze('2000000')] },
+    ],
+  }),
+  [MsgFundCommunityPool.typeUrl]: pack(MsgFundCommunityPool, {
+    depositor: ME,
+    amount: [bze('2500000')],
+  }),
+  [MsgDepositValidatorRewardsPool.typeUrl]: pack(MsgDepositValidatorRewardsPool, {
+    depositor: ME,
+    validatorAddress: VALOPER,
+    amount: [bze('1000000')],
+  }),
+  [MsgDeposit.typeUrl]: pack(MsgDeposit, {
+    proposalId: 42n,
+    depositor: ME,
+    amount: [bze('10000000')],
+  }),
   [MsgDelegate.typeUrl]: pack(MsgDelegate, {
     delegatorAddress: ME,
     validatorAddress: VALOPER,
@@ -1545,7 +1624,16 @@ const GOVERNANCE_ONLY: [string, string][] = [
   ['/bze.tradebin.MsgUnhaltDenoms', 'Resume trading of tokens'],
   ['/bze.cointrunk.MsgAcceptDomain', 'Change an accepted news domain'],
   ['/bze.cointrunk.MsgSavePublisher', 'Save a CoinTrunk publisher'],
+  ['/bze.tokenfactory.MsgSetDenomAdmin', 'Change a token admin'],
+  ['/bze.tradebin.MsgUpdatePools', 'Update liquidity pools'],
 ];
+
+const DANGEROUS = new Set([
+  factory.MsgChangeAdmin.typeUrl,
+  MsgCreateVestingAccount.typeUrl,
+  MsgCreatePermanentLockedAccount.typeUrl,
+  MsgCreatePeriodicVestingAccount.typeUrl,
+]);
 
 const sample = (typeUrl: string): AnyMsg => {
   const msg = SAMPLES[typeUrl];
@@ -1694,17 +1782,16 @@ describe('BZE and cosmos message summaries', () => {
       ...Object.values(SAMPLES),
       ...GOVERNANCE_ONLY.map(([typeUrl]) => ({ typeUrl, value: new Uint8Array() })),
     ];
-    expect(Object.keys(SAMPLES)).toHaveLength(36);
+    expect(Object.keys(SAMPLES)).toHaveLength(42);
     const s = await run(all);
     for (const [i, m] of s.messages.entries()) {
       const typeUrl = all[i]?.typeUrl ?? '';
       expect(m.icon, typeUrl).not.toBe('unknown');
       expect(m.hero, typeUrl).not.toBe('Unknown message');
       expect(m.title, typeUrl).not.toBe(typeUrl.split('.').pop());
-      // Handing a token's admin to another address is the one dangerous type here.
-      expect(m.level, typeUrl).toBe(
-        typeUrl === factory.MsgChangeAdmin.typeUrl ? 'dangerous' : 'normal',
-      );
+      // Handing a token's admin or coins in a vesting account to another address is dangerous.
+      expect(m.level, typeUrl).toBe(DANGEROUS.has(typeUrl) ? 'dangerous' : 'normal');
+      expect(m.unreadable, typeUrl).toBe(false);
     }
     expect(s.level).toBe('dangerous');
   });
@@ -1823,5 +1910,329 @@ describe('BZE and cosmos message summaries', () => {
         },
       },
     ]);
+  });
+});
+
+describe('vesting accounts, pool funding and deposits', () => {
+  it('shows a vesting account as dangerous, with recipient, amount and end', async () => {
+    const s = await run([sample(MsgCreateVestingAccount.typeUrl)]);
+    expect(headline(s)).toBe(`Create vesting account · 5,000.00 BZE · to ${short(STRANGER)}`);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows).toEqual([
+      ['To', STRANGER, 'mono'],
+      ['Amount', '5,000.00 BZE'],
+      ['Vesting ends', '2027-01-15 08:00 UTC'],
+      ['Unlocks', 'Gradually until the end'],
+    ]);
+    expect(s.dangers[0]?.title).toBe(`This sends 5,000.00 BZE to ${short(STRANGER)}`);
+    expect(needsTrust(s)).toBe(true);
+  });
+
+  it('shows a vesting end in the past as a date, and unreadable times as unknown', async () => {
+    const past = pack(MsgCreateVestingAccount, {
+      fromAddress: ME,
+      toAddress: STRANGER,
+      amount: [bze('1')],
+      endTime: 1n,
+      delayed: true,
+    });
+    const s = await run([past]);
+    expect(s.rows).toContainEqual(['Vesting ends', '1970-01-01 00:00 UTC']);
+    expect(s.rows).toContainEqual(['Unlocks', 'All at the end']);
+    const never = pack(MsgCreateVestingAccount, {
+      fromAddress: ME,
+      toAddress: STRANGER,
+      amount: [bze('1')],
+      endTime: 9_000_000_000_000_000_000n,
+      delayed: false,
+    });
+    expect((await run([never])).rows).toContainEqual(['Vesting ends', 'Unknown']);
+  });
+
+  it('shows a permanently locked account as dangerous, with recipient and amount', async () => {
+    const s = await run([sample(MsgCreatePermanentLockedAccount.typeUrl)]);
+    expect(headline(s)).toBe(`Create locked account · 5,000.00 BZE · to ${short(STRANGER)}`);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows.slice(0, 2)).toEqual([
+      ['To', STRANGER, 'mono'],
+      ['Amount', '5,000.00 BZE'],
+    ]);
+  });
+
+  it('adds up every period of a periodic vesting account', async () => {
+    const s = await run([sample(MsgCreatePeriodicVestingAccount.typeUrl)]);
+    expect(headline(s)).toBe(`Create vesting account · 3.00 BZE · to ${short(STRANGER)}`);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows).toEqual([
+      ['To', STRANGER, 'mono'],
+      ['Amount', '3.00 BZE'],
+      ['Vesting starts', '2027-01-15 08:00 UTC'],
+      ['Vesting ends', '2027-01-17 08:00 UTC'],
+      ['Periods', '2'],
+    ]);
+  });
+
+  it('never shows a vesting amount it cannot read as a number', async () => {
+    const odd = pack(MsgCreateVestingAccount, {
+      fromAddress: ME,
+      toAddress: STRANGER,
+      amount: [{ denom: 'ubze', amount: '1e9' }],
+      endTime: 1n,
+      delayed: false,
+    });
+    const s = await run([odd]);
+    expect(s.hero).toBe('Unreadable amount');
+    expect(s.level).toBe('dangerous');
+  });
+
+  it('shows the amount given to the community pool', async () => {
+    const s = await run([sample(MsgFundCommunityPool.typeUrl)]);
+    expect(headline(s)).toBe('Fund community pool · 2.50 BZE · to the community pool');
+    expect(s.rows).toEqual([['Amount', '2.50 BZE']]);
+    expect(s.level).toBe('normal');
+  });
+
+  it('shows the validator and the amount given to its delegators', async () => {
+    const s = await run([sample(MsgDepositValidatorRewardsPool.typeUrl)]);
+    expect(headline(s)).toBe(
+      `Fund validator rewards · 1.00 BZE · for the delegators of ${short(VALOPER)}`,
+    );
+    expect(s.rows).toEqual([
+      ['Validator', VALOPER, 'mono'],
+      ['Amount', '1.00 BZE'],
+    ]);
+  });
+
+  it('shows the proposal and the amount of a deposit', async () => {
+    const s = await run([sample(MsgDeposit.typeUrl)]);
+    expect(headline(s)).toBe('Deposit · 10.00 BZE · on proposal #42');
+    expect(s.rows).toEqual([
+      ['Proposal', '#42'],
+      ['Amount', '10.00 BZE'],
+    ]);
+  });
+
+  it('marks a deposit with an amount it cannot read as unknown, not unreadable', async () => {
+    const odd = pack(MsgDeposit, {
+      proposalId: 1n,
+      depositor: ME,
+      amount: [{ denom: '', amount: '5' }],
+    });
+    const s = await run([odd]);
+    expect(s.level).toBe('unknown');
+    expect(s.hero).toBe('Unreadable amount');
+    expect(needsTrust(s)).toBe(false);
+  });
+});
+
+/**
+ * Message types every supported chain version registers, one fixture per version. Regenerate
+ * them from the chain source at every chain upgrade (see `test/fixtures/registry/README.md`).
+ */
+const REGISTRY: [string, string[]][] = [
+  ['v8.2.0', registryV820],
+  ['v8.3', registryV83],
+];
+
+/** A well-formed message of every type the wallet summarises. */
+const WELL_FORMED: Record<string, AnyMsg> = {
+  ...SAMPLES,
+  [MsgSend.typeUrl]: send(),
+  [MsgMultiSwap.typeUrl]: swap(),
+  [MsgCreateOrder.typeUrl]: order('buy'),
+  [MsgCancelOrder.typeUrl]: pack(MsgCancelOrder, {
+    creator: ME,
+    marketId: BZE_USDC.id,
+    orderId: '1',
+    orderType: 'buy',
+  }),
+  [MsgFillOrders.typeUrl]: pack(MsgFillOrders, {
+    creator: ME,
+    marketId: BZE_USDC.id,
+    orderType: 'buy',
+    orders: [{ price: '0.3', amount: '100000000' }],
+  }),
+  [MsgAddLiquidity.typeUrl]: pack(MsgAddLiquidity, {
+    creator: ME,
+    poolId: 'pool-bze-usdc',
+    baseAmount: '100000000',
+    quoteAmount: '33500000',
+    minLpTokens: '5000000000000',
+  }),
+  [MsgRemoveLiquidity.typeUrl]: pack(MsgRemoveLiquidity, {
+    creator: ME,
+    poolId: 'pool-bze-usdc',
+    lpTokens: '12500000000000',
+    minBase: '10000000',
+    minQuote: '3350000',
+  }),
+  [MsgFundBurner.typeUrl]: pack(MsgFundBurner, { creator: ME, amount: '1500000ubze' }),
+  [MsgJoinRaffle.typeUrl]: pack(MsgJoinRaffle, { creator: ME, denom: VDL, tickets: 1n }),
+  [MsgVote.typeUrl]: vote(VoteOption.VOTE_OPTION_YES),
+  [MsgGrant.typeUrl]: grant(),
+  [MsgGrantAllowance.typeUrl]: pack(MsgGrantAllowance, {
+    granter: ME,
+    grantee: ALEX,
+    allowance: wrap(BasicAllowance, { spendLimit: [bze('2000000')] }),
+  }),
+  [MsgExec.typeUrl]: exec(send()),
+};
+
+/**
+ * Types the wallet knowingly cannot read: approving one needs the trust tick. Moving a type out
+ * of here means giving it a summary or making it governance-only.
+ */
+const TICK_ONLY = new Set([
+  '/bze.dao.MsgAcceptAdminNomination',
+  '/bze.dao.MsgAdminExecute',
+  '/bze.dao.MsgCancelProposal',
+  '/bze.dao.MsgCleanupProposal',
+  '/bze.dao.MsgCreateDao',
+  '/bze.dao.MsgNominateAdmin',
+  '/bze.dao.MsgSettleProposal',
+  '/bze.dao.MsgSubmitProposal',
+  '/bze.dao.MsgUpdateDaoConfig',
+  '/bze.dao.MsgUpdateElectorate',
+  '/bze.dao.MsgUpdateMembers',
+  '/bze.dao.MsgUpdateMetadata',
+  '/bze.dao.MsgUpdateParams',
+  '/bze.dao.MsgVote',
+  '/bze.dao.MsgWithdrawAdminNomination',
+  '/bze.tokenfactory.MsgDisableMinting',
+  '/bze.tokenfactory.MsgSetDenomConfig',
+  '/cosmos.auth.v1beta1.MsgUpdateParams',
+  '/cosmos.authz.v1beta1.MsgRevoke',
+  '/cosmos.bank.v1beta1.MsgSetSendEnabled',
+  '/cosmos.bank.v1beta1.MsgUpdateParams',
+  '/cosmos.circuit.v1.MsgAuthorizeCircuitBreaker',
+  '/cosmos.circuit.v1.MsgResetCircuitBreaker',
+  '/cosmos.circuit.v1.MsgTripCircuitBreaker',
+  '/cosmos.consensus.v1.MsgUpdateParams',
+  '/cosmos.distribution.v1beta1.MsgCommunityPoolSpend',
+  '/cosmos.distribution.v1beta1.MsgUpdateParams',
+  '/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission',
+  '/cosmos.evidence.v1beta1.MsgSubmitEvidence',
+  '/cosmos.feegrant.v1beta1.MsgPruneAllowances',
+  '/cosmos.feegrant.v1beta1.MsgRevokeAllowance',
+  '/cosmos.gov.v1.MsgCancelProposal',
+  '/cosmos.gov.v1.MsgExecLegacyContent',
+  '/cosmos.gov.v1.MsgSubmitProposal',
+  '/cosmos.gov.v1.MsgUpdateParams',
+  '/cosmos.gov.v1.MsgVoteWeighted',
+  '/cosmos.gov.v1beta1.MsgDeposit',
+  '/cosmos.gov.v1beta1.MsgSubmitProposal',
+  '/cosmos.gov.v1beta1.MsgVote',
+  '/cosmos.gov.v1beta1.MsgVoteWeighted',
+  '/cosmos.group.v1.MsgCreateGroup',
+  '/cosmos.group.v1.MsgCreateGroupPolicy',
+  '/cosmos.group.v1.MsgCreateGroupWithPolicy',
+  '/cosmos.group.v1.MsgExec',
+  '/cosmos.group.v1.MsgLeaveGroup',
+  '/cosmos.group.v1.MsgSubmitProposal',
+  '/cosmos.group.v1.MsgUpdateGroupAdmin',
+  '/cosmos.group.v1.MsgUpdateGroupMembers',
+  '/cosmos.group.v1.MsgUpdateGroupMetadata',
+  '/cosmos.group.v1.MsgUpdateGroupPolicyAdmin',
+  '/cosmos.group.v1.MsgUpdateGroupPolicyDecisionPolicy',
+  '/cosmos.group.v1.MsgUpdateGroupPolicyMetadata',
+  '/cosmos.group.v1.MsgVote',
+  '/cosmos.group.v1.MsgWithdrawProposal',
+  '/cosmos.mint.v1beta1.MsgUpdateParams',
+  '/cosmos.nft.v1beta1.MsgSend',
+  '/cosmos.slashing.v1beta1.MsgUnjail',
+  '/cosmos.slashing.v1beta1.MsgUpdateParams',
+  '/cosmos.staking.v1beta1.MsgCreateValidator',
+  '/cosmos.staking.v1beta1.MsgEditValidator',
+  '/cosmos.staking.v1beta1.MsgUpdateParams',
+  '/cosmos.upgrade.v1beta1.MsgCancelUpgrade',
+  '/cosmos.upgrade.v1beta1.MsgSoftwareUpgrade',
+  '/ibc.applications.fee.v1.MsgPayPacketFee',
+  '/ibc.applications.fee.v1.MsgPayPacketFeeAsync',
+  '/ibc.applications.fee.v1.MsgRegisterCounterpartyPayee',
+  '/ibc.applications.fee.v1.MsgRegisterPayee',
+  '/ibc.applications.interchain_accounts.controller.v1.MsgRegisterInterchainAccount',
+  '/ibc.applications.interchain_accounts.controller.v1.MsgSendTx',
+  '/ibc.applications.interchain_accounts.controller.v1.MsgUpdateParams',
+  '/ibc.applications.interchain_accounts.host.v1.MsgModuleQuerySafe',
+  '/ibc.applications.interchain_accounts.host.v1.MsgUpdateParams',
+  '/ibc.applications.transfer.v1.MsgUpdateParams',
+  '/ibc.core.channel.v1.MsgAcknowledgement',
+  '/ibc.core.channel.v1.MsgChannelCloseConfirm',
+  '/ibc.core.channel.v1.MsgChannelCloseInit',
+  '/ibc.core.channel.v1.MsgChannelOpenAck',
+  '/ibc.core.channel.v1.MsgChannelOpenConfirm',
+  '/ibc.core.channel.v1.MsgChannelOpenInit',
+  '/ibc.core.channel.v1.MsgChannelOpenTry',
+  '/ibc.core.channel.v1.MsgChannelUpgradeAck',
+  '/ibc.core.channel.v1.MsgChannelUpgradeCancel',
+  '/ibc.core.channel.v1.MsgChannelUpgradeConfirm',
+  '/ibc.core.channel.v1.MsgChannelUpgradeInit',
+  '/ibc.core.channel.v1.MsgChannelUpgradeOpen',
+  '/ibc.core.channel.v1.MsgChannelUpgradeTimeout',
+  '/ibc.core.channel.v1.MsgChannelUpgradeTry',
+  '/ibc.core.channel.v1.MsgPruneAcknowledgements',
+  '/ibc.core.channel.v1.MsgRecvPacket',
+  '/ibc.core.channel.v1.MsgTimeout',
+  '/ibc.core.channel.v1.MsgTimeoutOnClose',
+  '/ibc.core.channel.v1.MsgUpdateParams',
+  '/ibc.core.channel.v2.MsgAcknowledgement',
+  '/ibc.core.channel.v2.MsgRecvPacket',
+  '/ibc.core.channel.v2.MsgSendPacket',
+  '/ibc.core.channel.v2.MsgTimeout',
+  '/ibc.core.client.v1.MsgCreateClient',
+  '/ibc.core.client.v1.MsgDeleteClientCreator',
+  '/ibc.core.client.v1.MsgIBCSoftwareUpgrade',
+  '/ibc.core.client.v1.MsgRecoverClient',
+  '/ibc.core.client.v1.MsgSubmitMisbehaviour',
+  '/ibc.core.client.v1.MsgUpdateClient',
+  '/ibc.core.client.v1.MsgUpdateParams',
+  '/ibc.core.client.v1.MsgUpgradeClient',
+  '/ibc.core.client.v2.MsgRegisterCounterparty',
+  '/ibc.core.client.v2.MsgUpdateClientConfig',
+  '/ibc.core.connection.v1.MsgConnectionOpenAck',
+  '/ibc.core.connection.v1.MsgConnectionOpenConfirm',
+  '/ibc.core.connection.v1.MsgConnectionOpenInit',
+  '/ibc.core.connection.v1.MsgConnectionOpenTry',
+  '/ibc.core.connection.v1.MsgUpdateParams',
+]);
+
+describe('every message type the chain registers', () => {
+  it.each(REGISTRY)('%s: each type is summarised, governed or ticked', async (version, types) => {
+    const uncovered: string[] = [];
+    for (const typeUrl of types) {
+      if (GOVERNED.has(typeUrl)) {
+        const s = await run([{ typeUrl, value: new Uint8Array() }]);
+        expect(s.messages[0]?.icon, typeUrl).toBe('settings');
+        continue;
+      }
+      const msg = WELL_FORMED[typeUrl];
+      if (msg) {
+        const s = await run([msg]);
+        expect(s.messages[0]?.unreadable, typeUrl).toBe(false);
+        expect(s.messages[0]?.icon, typeUrl).not.toBe('unknown');
+        continue;
+      }
+      if (!TICK_ONLY.has(typeUrl)) {
+        uncovered.push(`${version}: ${typeUrl}`);
+        continue;
+      }
+      const s = await run([{ typeUrl, value: new Uint8Array([1, 2, 3]) }]);
+      expect(s.messages[0]?.unreadable, typeUrl).toBe(true);
+      expect(needsTrust(s), typeUrl).toBe(true);
+    }
+    expect(uncovered).toEqual([]);
+  });
+
+  it('lists only types some supported version registers', () => {
+    const all = new Set(REGISTRY.flatMap(([, types]) => types));
+    expect([...TICK_ONLY].filter((t) => !all.has(t))).toEqual([]);
+    expect(Object.keys(WELL_FORMED).filter((t) => !all.has(t))).toEqual([]);
+  });
+
+  it('fails for a registered type with no summary, policy or tick entry', async () => {
+    const typeUrl = '/bze.newmodule.MsgDoSomething';
+    expect(GOVERNED.has(typeUrl) || typeUrl in WELL_FORMED || TICK_ONLY.has(typeUrl)).toBe(false);
+    // The tick still catches it at signing time.
+    expect(needsTrust(await run([{ typeUrl, value: new Uint8Array() }]))).toBe(true);
   });
 });
