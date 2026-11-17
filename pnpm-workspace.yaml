@@ -5,8 +5,6 @@ packages:
 # Explicit so a default change cannot loosen it: versions younger than one day
 # are never installed. Never lower it; pin an older version instead.
 minimumReleaseAge: 1440
-# Refuse a version published with weaker trust evidence than an earlier one.
-trustPolicy: no-downgrade
 allowBuilds:
   bufferutil: false
   esbuild: false
