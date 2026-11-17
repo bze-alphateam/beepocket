@@ -1261,7 +1261,7 @@ describe('many tokens in one request', () => {
     const resolve = vi.fn((denom: string) =>
       Promise.resolve({
         denom,
-        symbol: 'TKN',
+        symbol: denom === 'ubze' ? 'BZE' : 'TKN',
         name: 'Token',
         decimals: 6,
         kind: 'factory' as const,

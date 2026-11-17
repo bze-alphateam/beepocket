@@ -60,8 +60,7 @@ export class FakeArea implements SessionAreaLike {
     return this.quotaBytes;
   }
 
-  getBytesInUse(keys: null): Promise<number> {
-    void keys;
+  getBytesInUse(): Promise<number> {
     return Promise.resolve(this.bytes());
   }
 
