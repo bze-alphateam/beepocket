@@ -1,5 +1,6 @@
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
+import { hex } from '@scure/base';
 import { describe, expect, it, vi } from 'vitest';
 import { testMnemonic } from '../test/golden';
 import { LocalSigner, deriveAccount } from './index';
@@ -37,7 +38,7 @@ describe('LocalSigner', () => {
       const doc = new Uint8Array([i, i >> 1, 7, 7, 7]);
       const sig = await signer.signDirect(0, doc);
       expect(sig).toHaveLength(64);
-      const s = BigInt(`0x${Buffer.from(sig.subarray(32)).toString('hex')}`);
+      const s = BigInt(`0x${hex.encode(sig.subarray(32))}`);
       expect(s <= half).toBe(true);
       expect(secp256k1.verify(sig, sha256(doc), pubKey, { prehash: false })).toBe(true);
     }
