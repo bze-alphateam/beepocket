@@ -16,6 +16,9 @@ import { checkVersion } from './manifest-version.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
 const zipPath = join(root, 'beepocket.zip');
+// Bundle inputs of both builds, checked against the runtime allowlist by
+// `pnpm check-bundle`. Kept outside dist/ so it never ends up in the zip.
+const metaPath = join(root, 'bundle-meta.json');
 
 // The version lives in package.json only; the manifest gets it at build time.
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
@@ -23,9 +26,12 @@ checkVersion(version);
 
 rmSync(dist, { recursive: true, force: true });
 rmSync(zipPath, { force: true });
+rmSync(metaPath, { force: true });
 mkdirSync(dist, { recursive: true });
 
-await build({
+const modules = await build({
+  absWorkingDir: root,
+  metafile: true,
   entryPoints: {
     popup: join(root, 'src/popup/main.tsx'),
     'service-worker': join(root, 'src/service-worker.ts'),
@@ -43,7 +49,9 @@ await build({
 });
 
 // Content scripts are classic scripts, not modules.
-await build({
+const scripts = await build({
+  absWorkingDir: root,
+  metafile: true,
   entryPoints: {
     inpage: join(root, 'src/dapp/inpage/main.ts'),
     relay: join(root, 'src/dapp/relay-main.ts'),
@@ -58,6 +66,9 @@ await build({
   legalComments: 'none',
   logLevel: 'warning',
 });
+
+const inputs = { ...modules.metafile.inputs, ...scripts.metafile.inputs };
+writeFileSync(metaPath, `${JSON.stringify({ inputs }, null, 2)}\n`);
 
 cpSync(join(root, 'public'), dist, { recursive: true });
 

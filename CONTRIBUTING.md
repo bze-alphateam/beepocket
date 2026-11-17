@@ -26,7 +26,7 @@ pnpm e2e
 - Install scripts are disabled. If a package genuinely needs one, discuss it first.
 - Commit `pnpm-lock.yaml` with every dependency change.
 
-`pnpm check-deps` enforces the allowlist and the exact pinning, and CI runs it in the `lint` check.
+`pnpm check-deps` enforces the allowlist and the exact pinning for every workspace package (a new workspace package needs a policy entry in `scripts/check-deps.mjs`), and CI runs it in the `lint` check. After a build, `pnpm check-bundle` reads the esbuild metafile of the extension (`packages/extension/bundle-meta.json`) and fails if anything outside the extension, `@beepocket/core` and the runtime allowlist was bundled; CI runs it in the `build` check.
 
 ## Code style
 
