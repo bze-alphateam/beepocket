@@ -104,32 +104,48 @@ export class StorageCache implements Cache {
     const stored = await this.load();
     const free = await this.storage.freeBytes();
     const growth = bytes - (stored.get(storageKey)?.bytes ?? 0);
-    if (free !== null && free - growth < this.limits.reserveBytes) return;
+    // How far the write would take the storage into the wallet's reserve.
+    const shortBy = free === null ? 0 : this.limits.reserveBytes - (free - growth);
 
-    // Room first, so the stored entries never go over the bounds, even for a moment.
-    stored.delete(storageKey);
-    await this.makeRoom(stored, bytes, now);
+    // Room first, so the stored entries never go over the bounds, even for a moment. This also
+    // clears entries left over the bounds or in the reserve (by an earlier build, say), even
+    // when the write itself then does not happen.
+    const freed = await this.makeRoom(stored, storageKey, bytes, shortBy, now);
+    if (freed < shortBy) return;
     await this.storage.set(storageKey, entry);
     stored.set(storageKey, { bytes, expires: entry.expires });
     this.writesSinceScan++;
   }
 
+  /**
+   * Drops entries, soonest to expire first (expired and unreadable ones always), until `keep`'s
+   * new entry of `incoming` bytes fits the bounds and at least `mustFree` bytes were freed.
+   * Returns the bytes freed.
+   */
   private async makeRoom(
     stored: Map<string, Stored>,
+    keep: string,
     incoming: number,
+    mustFree: number,
     now: number,
-  ): Promise<void> {
-    let total = 0;
-    for (const s of stored.values()) total += s.bytes;
-    const soonestFirst = [...stored].sort(([, a], [, b]) => a.expires - b.expires);
-    for (const [key, s] of soonestFirst) {
-      const roomy =
-        stored.size < this.limits.maxEntries && total + incoming <= this.limits.maxBytes;
-      if (roomy && s.expires > now) break;
+  ): Promise<number> {
+    const others = [...stored].filter(([key]) => key !== keep);
+    let total = others.reduce((n, [, s]) => n + s.bytes, 0);
+    let count = others.length;
+    let freed = 0;
+    for (const [key, s] of others.sort(([, a], [, b]) => a.expires - b.expires)) {
+      const fits =
+        count < this.limits.maxEntries &&
+        total + incoming <= this.limits.maxBytes &&
+        freed >= mustFree;
+      if (fits && s.expires > now) break;
       await this.storage.remove(key);
       stored.delete(key);
       total -= s.bytes;
+      count--;
+      freed += s.bytes;
     }
+    return freed;
   }
 
   /** What is stored under the prefix, read again every `RESCAN_EVERY` writes. */

@@ -782,6 +782,26 @@ describe('storage safety', () => {
     expect(t.local.data.has('throttle')).toBe(false);
   });
 
+  it('unlocks with the right password even when the attempt cannot be cleared', async () => {
+    const t = await created();
+    await t.call('wallet.lock', {});
+    vi.spyOn(t.local, 'remove').mockRejectedValue(new Error('write refused'));
+    expect(value(await t.call('wallet.unlock', { password: PASSWORD })).status).toBe('ok');
+    expect(value(await t.call('wallet.state', {})).state).toBe('unlocked');
+  });
+
+  it('refuses without checking when a damaged throttle record cannot be replaced', async () => {
+    const t = await created();
+    await t.call('wallet.lock', {});
+    t.local.data.set('throttle', { failures: 'x' });
+    t.local.failingKeys.add('throttle');
+    const unlock = vi.spyOn(t.vault, 'unlock');
+    expect(code(await t.call('wallet.unlock', { password: PASSWORD }))).toBe('storage_unavailable');
+    expect(unlock).not.toHaveBeenCalled();
+    // The state still shows the strictest lockout.
+    expect(value(await t.call('wallet.state', {})).retryAt).toBe(t.clock.t + 900_000);
+  });
+
   it('a damaged throttle record means the strictest lockout, not a fresh start', async () => {
     const t = await created();
     await t.call('wallet.lock', {});

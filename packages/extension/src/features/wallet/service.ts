@@ -73,6 +73,11 @@ interface Opened {
   vault: EncryptedRecord;
 }
 
+/** A password attempt the wallet could not record: the password is not checked. */
+function unsaved(): Result<never> {
+  return fail(Codes.storageUnavailable, 'The wallet could not save its data. Try again.');
+}
+
 function toBase64(bytes: Uint8Array): string {
   let s = '';
   for (const b of bytes) s += String.fromCharCode(b);
@@ -442,21 +447,25 @@ export class WalletService {
   // ---- internals ----
 
   private async retryAt(): Promise<number | null> {
-    const { lockedUntil } = await this.loadThrottle();
+    const { lockedUntil } = (await this.loadThrottle()).state;
     return lockedUntil > this.deps.clock.now() ? lockedUntil : null;
   }
 
-  private async loadThrottle(): Promise<ThrottleState> {
+  /** The throttle state; `saved` is false when a damaged record could not be replaced. */
+  private async loadThrottle(): Promise<{ state: ThrottleState; saved: boolean }> {
     const stored = await this.deps.storage.get(THROTTLE_KEY);
-    if (stored === undefined) return { ...INITIAL_THROTTLE_STATE };
-    if (validThrottle(stored)) return stored;
+    if (stored === undefined) return { state: { ...INITIAL_THROTTLE_STATE }, saved: true };
+    if (validThrottle(stored)) return { state: stored, saved: true };
     // A damaged record must not hand out free guesses: fall back to the strictest lockout.
     const strict = {
       failures: CORRUPT_FAILURES,
       lockedUntil: this.deps.clock.now() + MAX_LOCKOUT_MS,
     };
-    await this.deps.storage.set(THROTTLE_KEY, strict);
-    return strict;
+    const saved = await this.deps.storage.set(THROTTLE_KEY, strict).then(
+      () => true,
+      () => false,
+    );
+    return { state: strict, saved };
   }
 
   private async sessionKey(): Promise<Uint8Array | null> {
@@ -489,19 +498,19 @@ export class WalletService {
     const stored = await this.deps.storage.get(VAULT_KEY);
     if (stored === undefined) return fail(Codes.uninitialised, 'There is no wallet yet.');
     if (!isRecord(stored)) return fail(Codes.vaultInvalid, 'The stored wallet is damaged.');
-    const state = await this.loadThrottle();
+    const { state, saved } = await this.loadThrottle();
+    if (!saved) return unsaved();
     const now = this.deps.clock.now();
     if (state.lockedUntil > now) return ok({ status: 'throttled', retryAt: state.lockedUntil });
     const failed = this.throttle.next(state, now, false);
     try {
       await this.deps.storage.set(THROTTLE_KEY, failed.state);
     } catch {
-      return fail(Codes.storageUnavailable, 'The wallet could not save its data. Try again.');
+      return unsaved();
     }
+    let key: Uint8Array;
     try {
-      const key = await this.deps.vault.unlock(password, stored);
-      await this.deps.storage.remove(THROTTLE_KEY);
-      return ok({ key, vault: stored });
+      key = await this.deps.vault.unlock(password, stored);
     } catch (e) {
       if (e instanceof WrongPasswordError) {
         return ok({ status: 'wrong-password', retryAt: failed.lockedUntil });
@@ -513,6 +522,9 @@ export class WalletService {
       }
       throw e;
     }
+    // The right password unlocks even when the recorded attempt cannot be cleared.
+    await this.deps.storage.remove(THROTTLE_KEY).catch(() => undefined);
+    return ok({ key, vault: stored });
   }
 
   /** Puts the throttle back as it was before an attempt that was not a guess. Best effort. */

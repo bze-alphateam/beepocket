@@ -113,6 +113,40 @@ describe('StorageCache', () => {
     await area.set({ throttle: { failures: 1, lockedUntil: 0 } });
   });
 
+  it('clears older entries to get back above the reserve, then stores', async () => {
+    const area = new FakeArea({ quotaBytes: 6_000 });
+    area.data.set('profile', 'p'.repeat(1_000));
+    // Entries an earlier build left behind, filling the room the wallet needs.
+    for (let i = 0; i < 20; i++) {
+      area.data.set(`cache:old${String(i)}`, { value: 'x'.repeat(150), expires: 2_000 + i });
+    }
+    const { cache } = setup({ reserveBytes: 2_000 }, area);
+    await cache.set('k', 1, 60_000);
+    expect(6_000 - area.bytes()).toBeGreaterThanOrEqual(2_000);
+    expect(await cache.get('k')).toBe(1);
+    expect(area.data.get('profile')).toBe('p'.repeat(1_000));
+  });
+
+  it('clears its entries even when the reserve cannot be reached, and stores nothing', async () => {
+    const area = new FakeArea({ quotaBytes: 4_000 });
+    area.data.set('profile', 'p'.repeat(2_500));
+    for (let i = 0; i < 5; i++)
+      area.data.set(`cache:old${String(i)}`, { value: 1, expires: 5_000 });
+    const { cache } = setup({ reserveBytes: 2_000 }, area);
+    await cache.set('k', 1, 60_000);
+    expect(cacheKeys(area)).toEqual([]);
+  });
+
+  it('brings entries left over the limits back within them on the next write', async () => {
+    const { area, cache } = setup({ maxEntries: 3 });
+    for (let i = 0; i < 10; i++) {
+      area.data.set(`cache:old${String(i)}`, { value: i, expires: 50_000 + i });
+    }
+    await cache.set('k', 1, 60_000);
+    expect(cacheKeys(area)).toHaveLength(3);
+    expect(await cache.get('k')).toBe(1);
+  });
+
   it('reads an entry that claims to last longer than a day as missing', async () => {
     const { clock, area, cache } = setup();
     area.data.set('cache:k', { value: 1, expires: clock.t + DAY_MS + 1 });
