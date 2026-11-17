@@ -1,15 +1,17 @@
 import {
   Argon2idKdf,
   deriveAccount,
+  InvalidRecordError,
   LocalSigner,
   Vault,
   WebCryptoCipher,
+  WrongPasswordError,
   type ChainAccount,
   type ChainClient,
   type Clock,
   type Random,
 } from '@beepocket/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ChromeSessionStorage, ChromeStorage } from '../../platform';
 import { FakeArea } from '../../platform/test-support';
 import { HandlerRegistry } from '../../background/registry';
@@ -118,7 +120,7 @@ async function rig() {
       (await registry.dispatch({ method, payload })) as Result<ResponseOf<M>>;
     return { service, call };
   };
-  return { ...boot(), boot, local, sessionArea, clock, alarms, chain, pushed };
+  return { ...boot(), boot, local, sessionArea, clock, alarms, chain, pushed, vault };
 }
 
 const value = <T>(r: Result<T>): T => {
@@ -736,6 +738,48 @@ describe('storage safety', () => {
     const withVault = calls.filter((keys) => keys.includes('vault'));
     expect(withVault).toHaveLength(2);
     for (const keys of withVault) expect(keys).toContain('profile');
+  });
+
+  it('refuses a password without checking it when the attempt cannot be recorded', async () => {
+    const t = await created();
+    await t.call('wallet.lock', {});
+    const unlock = vi.spyOn(t.vault, 'unlock');
+    t.local.failingKeys.add('throttle');
+    for (const password of ['not the password', PASSWORD]) {
+      expect(code(await t.call('wallet.unlock', { password }))).toBe('storage_unavailable');
+      expect(code(await t.call('wallet.revealMnemonic', { password }))).toBe('storage_unavailable');
+    }
+    expect(unlock).not.toHaveBeenCalled();
+    expect(value(await t.call('wallet.state', {})).state).toBe('locked');
+
+    // Once storage works again, five wrong passwords still lock the wallet.
+    t.local.failingKeys.delete('throttle');
+    for (let i = 0; i < 5; i++) await t.call('wallet.unlock', { password: 'not the password' });
+    const blocked = value(await t.call('wallet.unlock', { password: PASSWORD }));
+    expect(blocked).toEqual({ status: 'throttled', retryAt: t.clock.t + 30_000 });
+  });
+
+  it('records the attempt before the password is checked', async () => {
+    const t = await created();
+    await t.call('wallet.lock', {});
+    let stored: unknown;
+    vi.spyOn(t.vault, 'unlock').mockImplementation(() => {
+      // A worker stopped during the check keeps what is stored at this point.
+      stored = t.local.data.get('throttle');
+      return Promise.reject(new WrongPasswordError());
+    });
+    await t.call('wallet.unlock', { password: 'not the password' });
+    expect(stored).toEqual({ failures: 1, lockedUntil: 0 });
+  });
+
+  it('does not count a damaged vault as a wrong password', async () => {
+    const t = await created();
+    await t.call('wallet.lock', {});
+    vi.spyOn(t.vault, 'unlock').mockRejectedValue(new InvalidRecordError());
+    for (let i = 0; i < 6; i++) {
+      expect(code(await t.call('wallet.unlock', { password: PASSWORD }))).toBe('vault_invalid');
+    }
+    expect(t.local.data.has('throttle')).toBe(false);
   });
 
   it('a damaged throttle record means the strictest lockout, not a fresh start', async () => {

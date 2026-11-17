@@ -1253,6 +1253,44 @@ describe('failing lookups', () => {
   });
 });
 
+describe('many tokens in one request', () => {
+  /** The most distinct tokens one summary looks up; BZE comes on top. */
+  const MAX_LOOKUPS = 32;
+
+  it('looks up a bounded number of tokens, shows the rest in base units, and always knows BZE', async () => {
+    const resolve = vi.fn((denom: string) =>
+      Promise.resolve({
+        denom,
+        symbol: 'TKN',
+        name: 'Token',
+        decimals: 6,
+        kind: 'factory' as const,
+        source: 'chain' as const,
+        branding: null,
+        logo: null,
+      }),
+    );
+    const spendLimit = Array.from({ length: 200 }, (_, i) => ({
+      denom: `factory/${ME}/u${String(i)}`,
+      amount: '1000000',
+    }));
+    spendLimit.push({ denom: 'ubze', amount: '1000000' });
+    const many = pack(MsgGrant, {
+      granter: ME,
+      grantee: STRANGER,
+      grant: { authorization: wrap(SendAuthorization, { spendLimit, allowList: [] }) },
+    });
+    const s = await run([many], { tokens: { resolve } });
+    const asked = new Set(resolve.mock.calls.map(([denom]) => denom));
+    expect(asked.size).toBeLessThanOrEqual(MAX_LOOKUPS + 1);
+    expect(asked.has('ubze')).toBe(true);
+    const permission = s.rows.find((r) => r[0] === 'Permission')?.[1] ?? '';
+    expect(permission).toContain('1.00 TKN');
+    expect(permission).toContain('(base units)');
+    expect(permission).toContain('1.00 BZE');
+  });
+});
+
 describe('rawJson', () => {
   it('pretty-prints decoded messages, expiry included', () => {
     const json = rawJson([send(), grant(new Date('2027-03-04T05:06:07Z'))]);
