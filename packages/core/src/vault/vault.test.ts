@@ -1,3 +1,4 @@
+import { base64, hex } from '@scure/base';
 import { describe, expect, it } from 'vitest';
 import {
   Argon2idKdf,
@@ -33,9 +34,9 @@ function makeVault(params: KdfParams = fast, kdf: Kdf = new Argon2idKdf()) {
 }
 
 function tamper(record: EncryptedRecord): EncryptedRecord {
-  const ct = Buffer.from(record.ct, 'base64');
+  const ct = base64.decode(record.ct);
   ct[0] = (ct[0] ?? 0) ^ 1;
-  return { ...record, ct: ct.toString('base64') };
+  return { ...record, ct: base64.encode(ct) };
 }
 
 describe('Argon2idKdf', () => {
@@ -52,7 +53,7 @@ describe('Argon2idKdf', () => {
         p: 1,
       },
     );
-    expect(Buffer.from(key).toString('hex')).toBe(
+    expect(hex.encode(key)).toBe(
       '42e698046d9cee51214f7eb6a61264706d24c6cfc67183d3c20a15db0bcd5fc2',
     );
   });
@@ -83,9 +84,9 @@ describe('Vault', () => {
     for (const c of [created, defaults]) {
       expect(c.vault.v).toBe(1);
       expect(c.vault.kdf).toMatchObject({ alg: 'argon2id', m: 65536, t: 3, p: 1 });
-      expect(Buffer.from(c.vault.kdf.salt, 'base64')).toHaveLength(16);
+      expect(base64.decode(c.vault.kdf.salt)).toHaveLength(16);
       expect(c.profile.kdf.salt).toBe(c.vault.kdf.salt);
-      expect(Buffer.from(c.vault.nonce, 'base64')).toHaveLength(12);
+      expect(base64.decode(c.vault.nonce)).toHaveLength(12);
       expect(c.profile.nonce).not.toBe(c.vault.nonce);
     }
   });

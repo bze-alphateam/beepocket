@@ -1,5 +1,6 @@
 pnpm-lock.yaml
 dist/
+bundle-meta.json
 coverage/
 node_modules/
 playwright-report/

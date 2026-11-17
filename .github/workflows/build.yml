@@ -24,6 +24,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Check the bundled packages
+        run: pnpm check-bundle
       - name: Check the manifest version
         run: |
           pkg="$(node -p "require('./packages/extension/package.json').version")"

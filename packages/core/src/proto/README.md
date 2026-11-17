@@ -17,7 +17,8 @@ prepended, except where noted. The copied files still import `GlobalDecoderRegis
 `registry.ts` and call it; that import resolves to the hand-written stand-in below.
 
 - `binary.ts`, `utf8.ts`, `varint.ts`
-- `helpers.ts` (the base64 re-export from `@interchainjs/encoding` is replaced with `@scure/base`)
+- `helpers.ts` (the base64 re-export from `@interchainjs/encoding` is replaced with `@scure/base`,
+  and the unused `setPaginationParams`, which needs Node's `Buffer`, is dropped)
 - `google/protobuf/any.ts`, `google/protobuf/duration.ts`, `google/protobuf/timestamp.ts`
 - `cosmos/base/v1beta1/coin.ts` (the `Decimal` import points at the local `decimal.ts`)
 - `cosmos/crypto/multisig/v1beta1/multisig.ts`, `cosmos/crypto/secp256k1/keys.ts`

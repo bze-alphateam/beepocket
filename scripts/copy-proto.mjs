@@ -85,6 +85,11 @@ for (const path of FILES) {
       "import { base64 } from '@scure/base';\n\nexport const bytesFromBase64 = (b64: string): Uint8Array => base64.decode(b64);\nexport const base64FromBytes = (arr: Uint8Array): string => base64.encode(arr);",
       path,
     );
+    // setPaginationParams is unused and relies on Node's Buffer, which the extension lacks.
+    const start = text.indexOf('export const setPaginationParams = (');
+    const end = text.indexOf('type Builtin =', start);
+    if (start < 0 || end < 0) throw new Error(`${path}: expected setPaginationParams`);
+    text = text.slice(0, start) + text.slice(end);
   }
   if (path === 'cosmos/base/v1beta1/coin.ts') {
     text = replaceOnce(

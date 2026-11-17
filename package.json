@@ -12,10 +12,11 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r run typecheck",
     "check-deps": "node scripts/check-deps.mjs",
+    "check-bundle": "node scripts/check-deps.mjs --metafile packages/extension/bundle-meta.json",
     "build": "pnpm -r run build",
     "unit": "pnpm -r --if-present run test && vitest run --dir scripts",
     "unit:coverage": "pnpm -r --if-present run test:coverage && vitest run --dir scripts --coverage",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check-deps && pnpm build && pnpm unit",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check-deps && pnpm build && pnpm check-bundle && pnpm unit",
     "e2e": "pnpm build && pnpm --filter @beepocket/extension run e2e"
   },
   "devDependencies": {

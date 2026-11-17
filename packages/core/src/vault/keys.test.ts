@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bech32 } from '@scure/base';
+import { base64, bech32 } from '@scure/base';
 import { deriveAccount, isBzeAddress, shortAddress } from '../index';
 
 const mnemonic = `${'abandon '.repeat(23)}art`;
@@ -19,7 +19,7 @@ describe('deriveAccount', () => {
     const acc = deriveAccount(mnemonic, i);
     expect(acc.index).toBe(i);
     expect(acc.address).toBe(golden[i]?.address);
-    expect(Buffer.from(acc.pubKey).toString('base64')).toBe(golden[i]?.pubKey);
+    expect(base64.encode(acc.pubKey)).toBe(golden[i]?.pubKey);
     expect(acc.pubKey).toHaveLength(33);
     expect(acc.privKey).toHaveLength(32);
   });
