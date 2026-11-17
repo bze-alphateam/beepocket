@@ -9,15 +9,19 @@ import {
   deriveAccount,
   encodeMsgSend,
   NETWORKS,
+  RestChainClient,
   SimulationError,
   signDocBytes,
   txRawBytes,
   Vault,
   WebCryptoCipher,
+  withSignal,
   type ChainClient,
   type EstimateParams,
   type FeeData,
   type FeeEstimate,
+  type HttpRequest,
+  type HttpTransport,
   type Random,
   type ScanClient,
 } from '@beepocket/core';
@@ -35,7 +39,7 @@ import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
 import { DappRegistry, type UserAnswer } from './registry';
 import { execMsg, grantMsg, nothingMsg, sendGrantMsg, vestingMsg } from './test-support';
-import { RequestStore } from './requests';
+import { MAX_PER_ORIGIN, RequestStore } from './requests';
 import { Cancellations } from './cancellations';
 import { DappService } from './service';
 import { SitesService } from './sites';
@@ -83,6 +87,8 @@ interface Node {
   balances: Map<string, bigint>;
   feeData: FeeData;
   broadcast: Mock<ChainClient['broadcast']>;
+  /** When set, requests reach the node through this transport instead of the canned answers. */
+  transport: HttpTransport | null;
 }
 
 /** The simulation with a BZE fee used 150,000 gas, the one with a fee in another token 200,000. */
@@ -149,12 +155,14 @@ async function rig(options: { local?: FakeArea } = {}) {
     balances: new Map([['ubze', 100_000_000n]]),
     feeData: FEE_DATA,
     broadcast: vi.fn<ChainClient['broadcast']>(() => Promise.resolve({ txHash: HASH })),
+    transport: null,
   };
   const env: ChainEnv = {
     network: NETWORKS.mainnet,
     chain: {
       account: () => Promise.resolve(node.account),
       balances: () => Promise.resolve(node.balances),
+      balance: (_address, denom) => Promise.resolve(node.balances.get(denom) ?? 0n),
       broadcast: (bytes) => node.broadcast(bytes),
       markets: () => Promise.resolve([]),
       liquidityPools: () => Promise.resolve([]),
@@ -194,7 +202,12 @@ async function rig(options: { local?: FakeArea } = {}) {
     wallet,
     services,
     clock,
-    env: () => Promise.resolve(env),
+    env: (signal) => {
+      const { transport } = node;
+      if (!transport) return Promise.resolve(env);
+      const wired = signal ? withSignal(transport, signal) : transport;
+      return Promise.resolve({ ...env, chain: new RestChainClient(wired, NETWORKS.mainnet) });
+    },
     cancelled: cancellations,
   });
   const deliverer = new Deliverer({
@@ -1519,5 +1532,156 @@ describe('token lookups of sign requests', () => {
       value: { status: 'wrong-password', retryAt: null },
     });
     expect(local.data.get('throttle')).toMatchObject({ failures: 1 });
+  });
+});
+
+/** A node that never answers: each request waits until its signal aborts. */
+function silentNode() {
+  const requests: HttpRequest[] = [];
+  const aborted: HttpRequest[] = [];
+  const transport: HttpTransport = {
+    request(req) {
+      requests.push(req);
+      return new Promise((_, reject) => {
+        req.signal?.addEventListener(
+          'abort',
+          () => {
+            aborted.push(req);
+            reject(new Error('aborted'));
+          },
+          { once: true },
+        );
+      });
+    },
+  };
+  const accountReads = () =>
+    requests.filter((r) => r.url.includes('/cosmos/auth/v1beta1/accounts/'));
+  return { transport, requests, aborted, accountReads };
+}
+
+describe('sign requests being prepared', () => {
+  const idOf = (i: number) => (0x1000 + i).toString(16).padStart(32, '0');
+  const TOO_MANY = 'Too many requests waiting';
+
+  it('reach the node at most a site share at a time; the rest are refused', async () => {
+    const t = await rig();
+    await t.connect();
+    const node = silentNode();
+    t.node.transport = node.transport;
+    const ids: string[] = [];
+    for (let i = 0; i < 50; i++) {
+      const id = idOf(i);
+      const received = await t.dapp.receive(t.from, {
+        id,
+        method: 'signDirect',
+        params: request().params,
+      });
+      expect(received.ack).toEqual({ accepted: true });
+      ids.push(id);
+      // Never awaited: the requests that reach the node wait on it for good.
+      void received.after();
+    }
+    await vi.waitFor(() => {
+      const refused = ids.filter((id) => t.answerOf(id)?.error?.message === TOO_MANY);
+      expect(refused).toHaveLength(50 - MAX_PER_ORIGIN);
+    });
+    expect(node.accountReads()).toHaveLength(MAX_PER_ORIGIN);
+  });
+
+  it('count together with the site requests already waiting in the queue', async () => {
+    const t = await rig();
+    await t.connect();
+    for (let i = 0; i < 3; i++) await t.ask('signDirect', request().params);
+    expect((await t.dapp.queue()).count).toBe(3);
+    const node = silentNode();
+    t.node.transport = node.transport;
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const id = idOf(i);
+      const received = await t.dapp.receive(t.from, {
+        id,
+        method: 'signDirect',
+        params: request().params,
+      });
+      ids.push(id);
+      void received.after();
+    }
+    await vi.waitFor(() => {
+      const refused = ids.filter((id) => t.answerOf(id)?.error?.message === TOO_MANY);
+      expect(refused).toHaveLength(5 - (MAX_PER_ORIGIN - 3));
+    });
+    expect(node.accountReads()).toHaveLength(MAX_PER_ORIGIN - 3);
+  });
+
+  it('stop at the node when the page gives up, and are never queued or answered', async () => {
+    const t = await rig();
+    await t.connect();
+    const windows = t.created.length;
+    const node = silentNode();
+    t.node.transport = node.transport;
+    const id = 'd'.repeat(32);
+    const received = await t.dapp.receive(t.from, {
+      id,
+      method: 'signDirect',
+      params: request().params,
+      sentAt: t.clock.now(),
+    });
+    const handling = received.after();
+    await vi.waitFor(() => {
+      expect(node.requests.length).toBeGreaterThan(0);
+    });
+    const cancel = await t.dapp.receive(t.from, { id, cancel: true });
+    await cancel.after();
+    await handling;
+    expect(node.aborted).toHaveLength(node.requests.length);
+    expect((await t.dapp.queue()).count).toBe(0);
+    expect(t.answerOf(id)).toBeUndefined();
+    expect(t.created).toHaveLength(windows);
+  });
+
+  it('free their place once given up on: the site is served again', async () => {
+    const t = await rig();
+    await t.connect();
+    const node = silentNode();
+    t.node.transport = node.transport;
+    for (let i = 0; i < MAX_PER_ORIGIN; i++) {
+      const id = idOf(i);
+      const received = await t.dapp.receive(t.from, {
+        id,
+        method: 'signDirect',
+        params: request().params,
+      });
+      const handling = received.after();
+      await vi.waitFor(() => {
+        expect(node.accountReads()).toHaveLength(i + 1);
+      });
+      const cancel = await t.dapp.receive(t.from, { id, cancel: true });
+      await cancel.after();
+      await handling;
+    }
+    t.node.transport = null;
+    const a = await t.ask('signDirect', request().params);
+    expect(t.answerOf(a.id)).toBeUndefined();
+    expect((await t.dapp.queue()).count).toBe(1);
+  });
+
+  it('do not hold back requests that never reach the node', async () => {
+    const t = await rig();
+    await t.connect();
+    const node = silentNode();
+    t.node.transport = node.transport;
+    for (let i = 0; i < MAX_PER_ORIGIN; i++) {
+      const received = await t.dapp.receive(t.from, {
+        id: idOf(i),
+        method: 'signDirect',
+        params: request().params,
+      });
+      void received.after();
+    }
+    await vi.waitFor(() => {
+      expect(node.accountReads()).toHaveLength(MAX_PER_ORIGIN);
+    });
+    const key = await t.ask('getKey', { chainId: CHAIN_ID });
+    expect(t.answerOf(key.id)).toMatchObject({ result: { bech32Address: MAIN.address } });
   });
 });

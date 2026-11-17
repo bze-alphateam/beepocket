@@ -8,10 +8,13 @@ import {
   decodeTxRaw,
   TransportError,
   txHash,
+  MAX_BALANCES,
   NETWORKS,
+  RestChainClient,
   SimulationError,
   TxTimeoutError,
   signDocBytes,
+  type HttpTransport,
   type TxResult,
 } from '@beepocket/core';
 import { describe, expect, it } from 'vitest';
@@ -69,10 +72,57 @@ interface Options {
   fallbackToken?: boolean;
   /** Pools pairing ubze with these tokens: [token, native reserve, token reserve]. */
   pools?: [string, bigint, bigint][];
+  /**
+   * Read balances from a node, a page of 100 at a time, where the address also holds this many
+   * other denoms of one unit each, listed ahead of its own.
+   */
+  dust?: number;
+}
+
+/** The node behind `Options.dust`: it lists `count` dust denoms, then the address's own. */
+function dustedNode(count: number, held: () => Record<string, bigint>) {
+  const requests: string[] = [];
+  const PER_PAGE = 100;
+  const transport: HttpTransport = {
+    request(req) {
+      requests.push(req.url);
+      const url = new URL(req.url);
+      const list = `/cosmos/bank/v1beta1/balances/${SIGNER}`;
+      const reply = (body: unknown) => Promise.resolve({ status: 200, body: JSON.stringify(body) });
+      if (url.pathname === `${list}/by_denom`) {
+        const denom = url.searchParams.get('denom') ?? '';
+        const amount = held()[denom] ?? (denom.startsWith('ibc/') ? 1n : 0n);
+        return reply({ balance: { denom, amount: amount.toString() } });
+      }
+      if (url.pathname !== list) return Promise.reject(new Error(`unexpected ${req.url}`));
+      const page = Number(url.searchParams.get('pagination.key') ?? '0');
+      const from = page * PER_PAGE;
+      const to = Math.min(from + PER_PAGE, count);
+      const balances: Coin[] = [];
+      for (let i = from; i < to; i++) {
+        balances.push({ denom: `ibc/${i.toString(16).padStart(64, '0')}`, amount: '1' });
+      }
+      if (to >= count) {
+        for (const [denom, amount] of Object.entries(held())) {
+          balances.push({ denom, amount: amount.toString() });
+        }
+      }
+      return reply({ balances, pagination: { next_key: to >= count ? null : String(page + 1) } });
+    },
+  };
+  return { transport, requests };
 }
 
 function setup(opts: Options = {}) {
-  const calls = { account: 0, balances: 0, simulate: 0, broadcast: 0, sign: 0, rearm: 0 };
+  const calls = {
+    account: 0,
+    balances: 0,
+    balance: 0,
+    simulate: 0,
+    broadcast: 0,
+    sign: 0,
+    rearm: 0,
+  };
   const signed: Uint8Array[] = [];
   const signedFor: string[] = [];
   const sent: Uint8Array[] = [];
@@ -92,6 +142,8 @@ function setup(opts: Options = {}) {
     signature: bytes(golden('send-ubze').signature),
   };
   const pools = opts.pools ?? [[FACTORY, 21_000_000_000n, 50_000_000_000n]];
+  const dusted = opts.dust === undefined ? null : dustedNode(opts.dust, () => control.balances);
+  const node = dusted && new RestChainClient(dusted.transport, NETWORK);
   const chain = {
     account: () => {
       calls.account++;
@@ -99,9 +151,15 @@ function setup(opts: Options = {}) {
         opts.account === undefined ? { accountNumber: 7n, sequence: 3n } : opts.account;
       return Promise.resolve(account && { ...account, pubKey: control.accountPubKey });
     },
-    balances: () => {
+    balances: (address: string) => {
       calls.balances++;
-      return Promise.resolve(new Map(Object.entries(control.balances)));
+      return node
+        ? node.balances(address)
+        : Promise.resolve(new Map(Object.entries(control.balances)));
+    },
+    balance: (address: string, denom: string) => {
+      calls.balance++;
+      return node ? node.balance(address, denom) : Promise.resolve(control.balances[denom] ?? 0n);
     },
     simulate: (tx: Uint8Array) => {
       calls.simulate++;
@@ -206,7 +264,17 @@ function setup(opts: Options = {}) {
     registry.dispatch({ method, payload }) as Promise<
       { ok: true; value: unknown } | { ok: false; error: { code: string; message: string } }
     >;
-  return { call, calls, signed, signedFor, sent, waits, control, simulatedFees };
+  return {
+    call,
+    calls,
+    signed,
+    signedFor,
+    sent,
+    waits,
+    control,
+    simulatedFees,
+    nodeRequests: dusted?.requests ?? [],
+  };
 }
 
 interface Coin {
@@ -856,5 +924,26 @@ describe('send.status', () => {
       ok: false,
       error: { code: 'bad_request' },
     });
+  });
+});
+
+describe('an address holding a great many tokens', () => {
+  it('still sends, past the old page limit, with a bounded number of reads', async () => {
+    const s = setup({ dust: 150_000, balances: { ubze: 100_000_000n } });
+    const quote = await quoteOf(s);
+    expect(quote.balance).toBe('100000000');
+    expect(quote.fee.denom).toBe('ubze');
+    const sent = await s.call('send.submit', submitFrom(quote));
+    expect(sent).toEqual({ ok: true, value: { txHash: HASH } });
+    // Each of the two steps reads the capped list and the few denoms it needs, nothing more.
+    const perStep = MAX_BALANCES / 100 + 5;
+    expect(s.nodeRequests.length).toBeLessThanOrEqual(2 * perStep);
+  });
+
+  it('reads one list and nothing else for an ordinary address', async () => {
+    const s = setup({ dust: 3, balances: { ubze: 100_000_000n } });
+    await quoteOf(s);
+    expect(s.nodeRequests).toHaveLength(1);
+    expect(s.calls.balance).toBe(0);
   });
 });

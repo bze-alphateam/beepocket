@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FetchTransport, TransportError } from '../index';
+import { FetchTransport, TransportError, withSignal } from '../index';
 
 type FetchFn = typeof fetch;
 
@@ -110,5 +110,42 @@ describe('FetchTransport', () => {
       url: 'https://x.test/',
     });
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('withSignal', () => {
+  const req = { method: 'GET' as const, url: 'https://node/x' };
+
+  it('hands every request the signal, so an abort reaches the request in flight', async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const inner = {
+      request: (r: { signal?: AbortSignal }) => {
+        seen.push(r.signal);
+        return new Promise<never>((_, reject) => {
+          r.signal?.addEventListener('abort', () => {
+            reject(new Error('aborted'));
+          });
+        });
+      },
+    };
+    const controller = new AbortController();
+    const pending = withSignal(inner, controller.signal).request(req);
+    expect(seen).toEqual([controller.signal]);
+    controller.abort();
+    await expect(pending).rejects.toThrow('aborted');
+  });
+
+  it('refuses a request once the signal aborted, without reaching the network', async () => {
+    let calls = 0;
+    const inner = {
+      request: () => {
+        calls++;
+        return Promise.resolve({ status: 200, body: '{}' });
+      },
+    };
+    const controller = new AbortController();
+    controller.abort();
+    await expect(withSignal(inner, controller.signal).request(req)).rejects.toBeDefined();
+    expect(calls).toBe(0);
   });
 });

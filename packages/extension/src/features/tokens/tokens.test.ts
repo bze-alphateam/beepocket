@@ -1,5 +1,6 @@
 import {
   HttpScanClient,
+  MAX_BALANCES,
   NETWORKS,
   RestChainClient,
   type DenomBranding,
@@ -9,7 +10,7 @@ import {
 } from '@beepocket/core';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { registerHandlers } from '../../background/handlers';
 import type { DappService } from '../../dapp';
 import type { AddTokenService } from '../addtoken';
@@ -17,6 +18,7 @@ import { HandlerRegistry } from '../../background/registry';
 import type { Services } from '../../background/services';
 import type { Platform } from '../../platform';
 import { registerTokenHandlers } from './handlers';
+import { MAX_SEARCH_LOOKUPS } from './service';
 import type { WalletService } from '../wallet';
 import type { PreferredTokensStore, WalletAddress, WalletAddresses } from './ports';
 import { ok, WalletErrorCodes, type TokenSearch } from '../../protocol';
@@ -37,7 +39,16 @@ interface Chain {
   metadata: Record<string, { symbol: string; name: string; exponent: number }>;
   branding: Record<string, DenomBranding>;
   balances: Record<string, Map<string, bigint>>;
+  /** What one-denom reads answer, per address; zero for anything else. */
+  exact: Record<string, Map<string, bigint>>;
   balanceCalls: string[];
+  /** One-denom reads, as `address denom`. */
+  denomCalls: string[];
+  /** While set, list reads wait for it. */
+  gate: Promise<void> | null;
+  /** Metadata reads in flight right now, and the most there ever were at once. */
+  metadataInFlight: number;
+  metadataPeak: number;
   supplyCalls: string[];
   /** Denoms whose metadata query fails like an unreachable node. */
   broken: Set<string>;
@@ -60,7 +71,12 @@ function setup(
     metadata: { [FACTORY]: { symbol: 'GOLD', name: 'Gold Coin', exponent: 6 } },
     branding: { [FACTORY]: BRANDING },
     balances: {},
+    exact: {},
     balanceCalls: [],
+    denomCalls: [],
+    gate: null,
+    metadataInFlight: 0,
+    metadataPeak: 0,
     supplyCalls: [],
     broken: new Set(),
     brokenAddresses: new Set(),
@@ -74,16 +90,28 @@ function setup(
         data.supplyCalls.push(d);
         return Promise.resolve(data.supplies[d] ?? 0n);
       },
-      denomMetadata: (d: string) =>
-        data.broken.has(d)
-          ? Promise.reject(new Error('node down'))
-          : Promise.resolve(data.metadata[d] ?? null),
+      denomMetadata: async (d: string) => {
+        data.metadataInFlight++;
+        data.metadataPeak = Math.max(data.metadataPeak, data.metadataInFlight);
+        try {
+          // A real read takes a while: the reads in flight at once show.
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          if (data.broken.has(d)) throw new Error('node down');
+          return data.metadata[d] ?? null;
+        } finally {
+          data.metadataInFlight--;
+        }
+      },
       denomBranding: (d: string) => Promise.resolve(data.branding[d] ?? null),
-      balances: (a: string) => {
+      balances: async (a: string) => {
         data.balanceCalls.push(`${id}:${a}`);
-        return data.brokenAddresses.has(a)
-          ? Promise.reject(new Error('node down'))
-          : Promise.resolve(data.balances[a] ?? new Map<string, bigint>());
+        if (data.gate) await data.gate;
+        if (data.brokenAddresses.has(a)) throw new Error('node down');
+        return data.balances[a] ?? new Map<string, bigint>();
+      },
+      balance: (a: string, d: string) => {
+        data.denomCalls.push(`${a} ${d}`);
+        return Promise.resolve(data.exact[a]?.get(d) ?? 0n);
       },
     };
   };
@@ -840,5 +868,68 @@ describe('tokens.lookup through the real REST and Scan clients', () => {
   it('a hash the chain does not hold is no such token, not an error', async () => {
     const r = await setupLive().lookup(SHERPA.toLowerCase());
     expect(r).toMatchObject({ ok: false, error: { code: 'no-such-token' } });
+  });
+});
+
+/** A list as long as the node will give: dust ahead of the address's own tokens. */
+function cutList(): Map<string, bigint> {
+  const list = new Map<string, bigint>();
+  for (let i = 0; i < MAX_BALANCES; i++) list.set(`ibc/${i.toString(16).padStart(64, '0')}`, 1n);
+  return list;
+}
+
+describe('tokens of an address holding a great many denoms', () => {
+  it('reads a denom the cut list misses on its own, so its balance is right', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.balances.bze1a = cutList();
+    t.chainData.exact.bze1a = new Map([[FACTORY, 7n]]);
+    t.chainData.balances.bze1b = new Map([[FACTORY, 2n]]);
+    const r = await t.call('tokens.balances', { denom: FACTORY });
+    expect(r).toMatchObject({ ok: true, value: { total: '9', partial: false } });
+    // Only the address whose list was cut short is asked again.
+    expect(t.chainData.denomCalls).toEqual([`bze1a ${FACTORY}`]);
+  });
+
+  it('says more tokens are held than the search can list', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.balances.bze1a = cutList();
+    const r = await t.call<TokenSearch>('tokens.search', { query: '' });
+    expect(r.ok && r.value.more).toBe(true);
+    const plain = setup({ addresses: ADDRS });
+    plain.chainData.balances.bze1a = new Map([[FACTORY, 7n]]);
+    const p = await plain.call<TokenSearch>('tokens.search', { query: '' });
+    expect(p.ok && p.value.more).toBeUndefined();
+  });
+
+  it('looks tokens up a few at a time for a search', async () => {
+    const t = setup({ addresses: ADDRS });
+    const many = new Map<string, bigint>();
+    for (let i = 0; i < 200; i++) many.set(`factory/bze1abc/t${String(i)}`, 1n);
+    t.chainData.balances.bze1a = many;
+    const r = await t.call<TokenSearch>('tokens.search', { query: 't199' });
+    expect(r.ok && r.value.tokens.map((x) => x.denom)).toEqual(['factory/bze1abc/t199']);
+    expect(t.chainData.metadataPeak).toBeGreaterThan(0);
+    expect(t.chainData.metadataPeak).toBeLessThanOrEqual(MAX_SEARCH_LOOKUPS);
+  });
+
+  it('shares one read of an address between requests that overlap', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.balances.bze1a = new Map([['ubze', 5n]]);
+    let release: () => void = () => undefined;
+    t.chainData.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = t.call('tokens.balances', { denom: 'ubze', refresh: true });
+    const second = t.call('tokens.balances', { denom: 'ubze', refresh: true });
+    await vi.waitFor(() => {
+      expect(t.chainData.balanceCalls.length).toBeGreaterThan(0);
+    });
+    // Let both requests reach the read before it answers.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(a).toMatchObject({ ok: true, value: { total: '5' } });
+    expect(b).toEqual(a);
+    expect(t.chainData.balanceCalls.filter((c) => c.endsWith(':bze1a'))).toHaveLength(1);
   });
 });
