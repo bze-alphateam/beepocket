@@ -242,17 +242,21 @@ export class TokenService {
             return raw;
           }
         }
-        // Requests that overlap share one read of the address.
-        return this.deps.reads.run(key, async () => {
-          const fetched = await this.deps.chain.balances(address);
-          const entry: StoredBalances = {
-            at: now,
-            balances: Object.fromEntries([...fetched].map(([d, a]) => [d, a.toString()])),
-            ...(balancesMayBeCut(fetched) ? { cut: true as const } : {}),
-          };
-          await this.deps.session.set(key, entry);
-          return entry;
-        });
+        // Requests that overlap share one read of the address; a refresh never joins an older one.
+        return this.deps.reads.run(
+          key,
+          async () => {
+            const fetched = await this.deps.chain.balances(address);
+            const entry: StoredBalances = {
+              at: now,
+              balances: Object.fromEntries([...fetched].map(([d, a]) => [d, a.toString()])),
+              ...(balancesMayBeCut(fetched) ? { cut: true as const } : {}),
+            };
+            await this.deps.session.set(key, entry);
+            return entry;
+          },
+          refresh,
+        );
       }),
     );
     return settled.map((r) => (r.status === 'fulfilled' ? r.value : null));

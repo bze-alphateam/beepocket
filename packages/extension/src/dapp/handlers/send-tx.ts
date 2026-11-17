@@ -1,7 +1,7 @@
 import { BroadcastError, decodeTxRaw } from '@beepocket/core';
 import { ErrorCodes, fail, ok, type Result } from '../../protocol';
 import type { DappRegistry, DappHandler } from '../registry';
-import { answer, refuse, type Outcome } from '../types';
+import { answer, refuse, type Outcome, type PendingRequest } from '../types';
 import { bytesFromWire, bytesToWire, DappErrorCodes } from '../wire';
 import { guarded, type TxDeps } from './env';
 import { connectedAddress, networkRefusal } from './key';
@@ -18,6 +18,7 @@ const MAX_TX_BYTES = 512 * 1024;
 const MAX_TX_TEXT = Math.ceil(MAX_TX_BYTES / 3) * 4;
 
 const invalid = (message: string): Outcome => refuse(DappErrorCodes.invalidRequest, message);
+const done = (outcome: Outcome) => ({ kind: 'answer', outcome }) as const;
 
 function validate(params: unknown): Result<SendTxParams> {
   if (typeof params !== 'object' || params === null) {
@@ -52,40 +53,18 @@ function hashBytes(hex: string): Uint8Array {
  */
 export function sendTxHandler(deps: TxDeps): DappHandler<SendTxParams> {
   return {
-    usesNode: true,
     validate,
+
+    async beforeNode(request) {
+      const checked = await checkLocally(deps, request);
+      return 'outcome' in checked ? done(checked.outcome) : null;
+    },
 
     // No signal: a broadcast cannot be called back once sent; the cancel check before it counts.
     async decide(request) {
-      const done = (outcome: Outcome) => ({ kind: 'answer', outcome }) as const;
-      const active = await deps.services.activeNetwork();
-      const wrong = networkRefusal(request, request.params, active.id);
-      if (wrong) return done(wrong);
-      const { state } = await deps.wallet.state();
-      if (state === 'uninitialised') {
-        return done(refuse(DappErrorCodes.notConnected, 'BeePocket has no wallet yet.'));
-      }
-      if (state === 'locked') {
-        return done(refuse(DappErrorCodes.lockedTimeout, 'Unlock BeePocket'));
-      }
-      const profile = await deps.wallet.getProfile();
-      if (!profile.ok) return done(refuse(DappErrorCodes.lockedTimeout, 'Unlock BeePocket'));
-      if (!connectedAddress(profile.value, request)) {
-        return done(refuse(DappErrorCodes.notConnected, 'This site is not connected.'));
-      }
-      const txBytes = bytesFromWire(request.params.txBytes);
-      try {
-        const raw = decodeTxRaw(txBytes);
-        if (
-          raw.bodyBytes.length === 0 ||
-          raw.authInfoBytes.length === 0 ||
-          raw.signatures.length === 0
-        ) {
-          return done(invalid('The transaction is not signed.'));
-        }
-      } catch {
-        return done(invalid('The transaction cannot be read.'));
-      }
+      const checked = await checkLocally(deps, request);
+      if ('outcome' in checked) return done(checked.outcome);
+      const { txBytes } = checked;
       const env = await deps.env();
       // Checked right before the broadcast: the page may have given up while the request waited.
       if (await deps.cancelled.has(request)) {
@@ -107,6 +86,45 @@ export function sendTxHandler(deps: TxDeps): DappHandler<SendTxParams> {
       return Promise.resolve(fail(ErrorCodes.internal, 'sendTx has nothing to confirm.'));
     },
   };
+}
+
+/**
+ * The checks that need no node: network, wallet state, the connected site and a signed
+ * transaction. A request that fails them is answered without reaching the node.
+ */
+async function checkLocally(
+  deps: TxDeps,
+  request: PendingRequest & { params: SendTxParams },
+): Promise<{ outcome: Outcome } | { txBytes: Uint8Array }> {
+  const active = await deps.services.activeNetwork();
+  const wrong = networkRefusal(request, request.params, active.id);
+  if (wrong) return { outcome: wrong };
+  const { state } = await deps.wallet.state();
+  if (state === 'uninitialised') {
+    return { outcome: refuse(DappErrorCodes.notConnected, 'BeePocket has no wallet yet.') };
+  }
+  if (state === 'locked') {
+    return { outcome: refuse(DappErrorCodes.lockedTimeout, 'Unlock BeePocket') };
+  }
+  const profile = await deps.wallet.getProfile();
+  if (!profile.ok) return { outcome: refuse(DappErrorCodes.lockedTimeout, 'Unlock BeePocket') };
+  if (!connectedAddress(profile.value, request)) {
+    return { outcome: refuse(DappErrorCodes.notConnected, 'This site is not connected.') };
+  }
+  const txBytes = bytesFromWire(request.params.txBytes);
+  try {
+    const raw = decodeTxRaw(txBytes);
+    if (
+      raw.bodyBytes.length === 0 ||
+      raw.authInfoBytes.length === 0 ||
+      raw.signatures.length === 0
+    ) {
+      return { outcome: invalid('The transaction is not signed.') };
+    }
+  } catch {
+    return { outcome: invalid('The transaction cannot be read.') };
+  }
+  return { txBytes };
 }
 
 export function registerSendTx(registry: DappRegistry, deps: TxDeps): void {

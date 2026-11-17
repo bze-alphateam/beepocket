@@ -225,14 +225,17 @@ export class DappService {
         origin: from.origin,
         network: network.id,
       });
-      if (handler.usesNode === true) {
+      // A request that can be settled without the node never takes a place: only those that
+      // will read it count toward the caps.
+      let decision = (await handler.beforeNode?.(request)) ?? null;
+      if (handler.beforeNode && !decision) {
         release = await this.takePlace(from.origin);
         if (!release) {
           await this.deliver(request, refuse(DappErrorCodes.invalidRequest, TOO_MANY));
           return;
         }
       }
-      const decision = await handler.decide(request, signal);
+      decision ??= await handler.decide(request, signal);
       // Given up on while it was being decided: nobody waits for a window or an answer.
       if (signal.aborted || (await this.deps.cancellations.has(request))) return;
       if (decision.kind === 'answer') {

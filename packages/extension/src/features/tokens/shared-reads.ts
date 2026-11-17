@@ -5,11 +5,16 @@
 export class SharedReads {
   private readonly inFlight = new Map<string, Promise<unknown>>();
 
-  run<T>(key: string, read: () => Promise<T>): Promise<T> {
+  /**
+   * Joins the read of `key` in flight, or starts one. With `fresh`, a new read starts whatever is
+   * in flight (it may have started before the change the caller wants to see), and later callers
+   * join that one.
+   */
+  run<T>(key: string, read: () => Promise<T>, fresh = false): Promise<T> {
     const running = this.inFlight.get(key);
-    if (running) return running as Promise<T>;
+    if (running && !fresh) return running as Promise<T>;
     const started = read().finally(() => {
-      this.inFlight.delete(key);
+      if (this.inFlight.get(key) === started) this.inFlight.delete(key);
     });
     this.inFlight.set(key, started);
     return started;

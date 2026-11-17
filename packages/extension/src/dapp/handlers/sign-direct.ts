@@ -9,14 +9,16 @@ import {
 import { ErrorCodes, fail, ok, WalletErrorCodes } from '../../protocol';
 import { SendErrorCodes, type ReviewedFee } from '../../protocol';
 import { multiplierOf } from '../../features/send/override';
-import type { DappRegistry, DappHandler } from '../registry';
+import type { Decision, DappRegistry, DappHandler } from '../registry';
 import { answer, refuse } from '../types';
 import { bigintToWire, bytesToWire, DappErrorCodes } from '../wire';
 import type { TxDeps } from './env';
 import {
+  checkSigner,
   detailsOf,
   prepareSign,
   validateSignParams,
+  type Preparation,
   type Prepared,
   type SignParams,
 } from './sign-prepare';
@@ -29,21 +31,15 @@ import {
  */
 export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
   return {
-    usesNode: true,
     validate: validateSignParams,
 
+    async beforeNode(request) {
+      const checked = await checkSigner(deps, request, request.params);
+      return checked.kind === 'signer' ? null : decisionOf(checked);
+    },
+
     async decide(request, signal) {
-      const prep = await prepareSign(deps, request, request.params, signal);
-      switch (prep.kind) {
-        case 'ready':
-          return { kind: 'sign', details: detailsOf(prep.prepared) };
-        case 'refuse':
-          return { kind: 'answer', outcome: prep.outcome };
-        case 'locked':
-          return { kind: 'locked' };
-        case 'unlock':
-          return { kind: 'unlock' };
-      }
+      return decisionOf(await prepareSign(deps, request, request.params, signal));
     },
 
     async confirm(request, user) {
@@ -111,6 +107,19 @@ export function signDirectHandler(deps: TxDeps): DappHandler<SignParams> {
       );
     },
   };
+}
+
+function decisionOf(prep: Preparation): Decision {
+  switch (prep.kind) {
+    case 'ready':
+      return { kind: 'sign', details: detailsOf(prep.prepared) };
+    case 'refuse':
+      return { kind: 'answer', outcome: prep.outcome };
+    case 'locked':
+      return { kind: 'locked' };
+    case 'unlock':
+      return { kind: 'unlock' };
+  }
 }
 
 /**
