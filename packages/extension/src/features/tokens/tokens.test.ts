@@ -105,9 +105,11 @@ function setup(
       denomBranding: (d: string) => Promise.resolve(data.branding[d] ?? null),
       balances: async (a: string) => {
         data.balanceCalls.push(`${id}:${a}`);
+        // What the node holds when the read starts.
+        const held = data.balances[a] ?? new Map<string, bigint>();
         if (data.gate) await data.gate;
         if (data.brokenAddresses.has(a)) throw new Error('node down');
-        return data.balances[a] ?? new Map<string, bigint>();
+        return held;
       },
       balance: (a: string, d: string) => {
         data.denomCalls.push(`${a} ${d}`);
@@ -936,8 +938,8 @@ describe('tokens of an address holding a great many denoms', () => {
     t.chainData.gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const first = t.call('tokens.balances', { denom: 'ubze', refresh: true });
-    const second = t.call('tokens.balances', { denom: 'ubze', refresh: true });
+    const first = t.call('tokens.balances', { denom: 'ubze' });
+    const second = t.call('tokens.balances', { denom: 'ubze' });
     await vi.waitFor(() => {
       expect(t.chainData.balanceCalls.length).toBeGreaterThan(0);
     });
@@ -948,5 +950,29 @@ describe('tokens of an address holding a great many denoms', () => {
     expect(a).toMatchObject({ ok: true, value: { total: '5' } });
     expect(b).toEqual(a);
     expect(t.chainData.balanceCalls.filter((c) => c.endsWith(':bze1a'))).toHaveLength(1);
+  });
+});
+
+describe('a balance refresh', () => {
+  it('reads again instead of joining a read that started before it', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.balances.bze1a = new Map([['ubze', 5n]]);
+    let release: () => void = () => undefined;
+    t.chainData.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const before = t.call('tokens.balances', { denom: 'ubze' });
+    await vi.waitFor(() => {
+      expect(t.chainData.balanceCalls).toContain('mainnet:bze1a');
+    });
+    // A send lands: the screen asks for a refresh while the older read is still out.
+    t.chainData.balances.bze1a = new Map([['ubze', 9n]]);
+    const after = t.call('tokens.balances', { denom: 'ubze', refresh: true });
+    await vi.waitFor(() => {
+      expect(t.chainData.balanceCalls.filter((c) => c === 'mainnet:bze1a')).toHaveLength(2);
+    });
+    release();
+    expect(await before).toMatchObject({ ok: true, value: { total: '5' } });
+    expect(await after).toMatchObject({ ok: true, value: { total: '9' } });
   });
 });

@@ -39,7 +39,7 @@ import { registerDappHandlers } from './handlers';
 import type { ChainEnv } from './handlers/env';
 import { DappRegistry, type UserAnswer } from './registry';
 import { execMsg, grantMsg, nothingMsg, sendGrantMsg, vestingMsg } from './test-support';
-import { MAX_PER_ORIGIN, RequestStore } from './requests';
+import { MAX_PER_ORIGIN, MAX_PREPARING, RequestStore } from './requests';
 import { Cancellations } from './cancellations';
 import { DappService } from './service';
 import { SitesService } from './sites';
@@ -254,9 +254,9 @@ async function rig(options: { local?: FakeArea } = {}) {
 
   let n = 0;
   const from: DappSender = { origin: ORIGIN, tabId: 1, documentId: 'doc-1' };
-  const ask = async (method: string, params: unknown) => {
+  const ask = async (method: string, params: unknown, sender: DappSender = from) => {
     const id = (++n).toString(16).padStart(32, '0');
-    const received = await dapp.receive(from, { id, method, params });
+    const received = await dapp.receive(sender, { id, method, params });
     await received.after();
     return { id, ack: received.ack };
   };
@@ -281,8 +281,8 @@ async function rig(options: { local?: FakeArea } = {}) {
 
   await wallet.createWallet(PASSWORD, PHRASE);
   await wallet.deriveNext();
-  const connect = async () => {
-    const a = await ask('connect', { chainId: CHAIN_ID });
+  const connect = async (sender: DappSender = from) => {
+    const a = await ask('connect', { chainId: CHAIN_ID }, sender);
     await dapp.current();
     await answer(a.id, { approve: true, index: 0 });
   };
@@ -1665,6 +1665,109 @@ describe('sign requests being prepared', () => {
     const a = await t.ask('signDirect', request().params);
     expect(t.answerOf(a.id)).toBeUndefined();
     expect((await t.dapp.queue()).count).toBe(1);
+  });
+
+  it('are counted only past the checks that need no node, so unconnected sites hold no place', async () => {
+    const t = await rig();
+    await t.connect();
+    // The wallet answers slowly: every request is in hand at once while it waits.
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const profile = await t.wallet.getProfile();
+    vi.spyOn(t.wallet, 'getProfile').mockImplementation(() => gate.then(() => profile));
+    const handling: Promise<void>[] = [];
+    for (let i = 0; i < MAX_PREPARING + 10; i++) {
+      const stranger: DappSender = {
+        origin: `https://site${String(i % 6)}.example`,
+        tabId: 100 + i,
+        documentId: `doc-s${String(i)}`,
+      };
+      const received = await t.dapp.receive(stranger, {
+        id: idOf(100 + i),
+        method: 'signDirect',
+        params: request().params,
+      });
+      handling.push(received.after());
+    }
+    const mine = await t.dapp.receive(t.from, {
+      id: idOf(999),
+      method: 'signDirect',
+      params: request().params,
+    });
+    handling.push(mine.after());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    release();
+    await Promise.all(handling);
+    expect(t.answerOf(idOf(100))).toMatchObject({ error: { code: 'not-connected' } });
+    expect(t.answerOf(idOf(999))).toBeUndefined();
+    expect((await t.dapp.queue()).count).toBe(1);
+  });
+
+  it('reach the node at most MAX_PREPARING at a time across all sites', async () => {
+    const t = await rig();
+    const sites: DappSender[] = [t.from];
+    for (let k = 1; k < 5; k++) {
+      sites.push({
+        origin: `https://dapp${String(k)}.example`,
+        tabId: 10 + k,
+        documentId: `d${String(k)}`,
+      });
+    }
+    for (const site of sites) await t.connect(site);
+    const node = silentNode();
+    t.node.transport = node.transport;
+    const ids: string[] = [];
+    for (const [k, site] of sites.entries()) {
+      for (let i = 0; i < MAX_PER_ORIGIN; i++) {
+        const id = idOf(k * 10 + i);
+        const received = await t.dapp.receive(site, {
+          id,
+          method: 'signDirect',
+          params: request().params,
+        });
+        ids.push(id);
+        void received.after();
+      }
+    }
+    expect(ids.length).toBeGreaterThan(MAX_PREPARING);
+    await vi.waitFor(() => {
+      const refused = ids.filter((id) => t.answerOf(id)?.error?.message === TOO_MANY);
+      expect(refused).toHaveLength(ids.length - MAX_PREPARING);
+    });
+    expect(node.accountReads()).toHaveLength(MAX_PREPARING);
+  });
+
+  it('include broadcasts: at most a site share of sendTx reach the node at once', async () => {
+    const t = await rig();
+    await t.connect();
+    const node = silentNode();
+    t.node.transport = node.transport;
+    const txBytes = bytesToWire(
+      txRawBytes({
+        bodyBytes: Uint8Array.from([1]),
+        authInfoBytes: Uint8Array.from([2]),
+        signatures: [new Uint8Array(64).fill(1)],
+      }),
+    );
+    const ids: string[] = [];
+    for (let i = 0; i < 50; i++) {
+      const id = idOf(i);
+      const received = await t.dapp.receive(t.from, {
+        id,
+        method: 'sendTx',
+        params: { chainId: CHAIN_ID, txBytes, mode: 'sync' },
+      });
+      ids.push(id);
+      void received.after();
+    }
+    await vi.waitFor(() => {
+      const refused = ids.filter((id) => t.answerOf(id)?.error?.message === TOO_MANY);
+      expect(refused).toHaveLength(50 - MAX_PER_ORIGIN);
+    });
+    const broadcasts = node.requests.filter((r) => r.url.endsWith('/cosmos/tx/v1beta1/txs'));
+    expect(broadcasts).toHaveLength(MAX_PER_ORIGIN);
   });
 
   it('do not hold back requests that never reach the node', async () => {
