@@ -26,16 +26,20 @@ import accountTest from '../../test/fixtures/rest/testnet/account.json';
 import brandingTest from '../../test/fixtures/rest/testnet/denom-branding.json';
 import { FakeClock, json, MockTransport, reply, type Fixture } from '../../test/support';
 import {
+  balancesMayBeCut,
   BroadcastError,
   HttpStatusError,
   MAINNET,
+  MAX_BALANCES,
   RestChainClient,
   SimulationError,
   TESTNET,
   TransportError,
   TxTimeoutError,
   UnexpectedResponseError,
+  withBalancesOf,
   type ChainClient,
+  type HttpTransport,
 } from '../index';
 
 const f = (x: unknown) => x as Fixture;
@@ -162,6 +166,105 @@ describe('RestChainClient.balances', () => {
     await expect(new RestChainClient(t, MAINNET).balances(address)).rejects.toThrow(
       expect.objectContaining({ path: 'balances[0].amount' }) as Error,
     );
+  });
+});
+
+/**
+ * A node listing `count` other denoms for one address, `perPage` at a time, then the address's
+ * `held` ones; `by_denom` answers any one of them.
+ */
+function manyDenomsNode(
+  address: string,
+  count: number,
+  perPage: number,
+  held: Map<string, bigint>,
+) {
+  const requests: string[] = [];
+  const other = (i: number) => `ibc/${i.toString(16).padStart(64, '0')}`;
+  const transport: HttpTransport = {
+    request(req) {
+      requests.push(req.url);
+      const url = new URL(req.url);
+      const list = `/cosmos/bank/v1beta1/balances/${address}`;
+      if (url.pathname === `${list}/by_denom`) {
+        const denom = url.searchParams.get('denom') ?? '';
+        const amount = held.get(denom) ?? (denom.startsWith('ibc/') ? 1n : 0n);
+        return Promise.resolve(json(200, { balance: { denom, amount: amount.toString() } }));
+      }
+      if (url.pathname !== list) return Promise.reject(new Error(`unexpected ${req.url}`));
+      const page = Number(url.searchParams.get('pagination.key') ?? '0');
+      const from = page * perPage;
+      const to = Math.min(from + perPage, count);
+      const balances: { denom: string; amount: string }[] = [];
+      for (let i = from; i < to; i++) balances.push({ denom: other(i), amount: '1' });
+      if (to >= count) {
+        for (const [denom, amount] of held) balances.push({ denom, amount: amount.toString() });
+      }
+      const next = to >= count ? null : String(page + 1);
+      return Promise.resolve(json(200, { balances, pagination: { next_key: next } }));
+    },
+  };
+  return { transport, requests };
+}
+
+describe('RestChainClient.balances of an address holding many denoms', () => {
+  const address = 'bze1many';
+
+  it('reads at most MAX_BALANCES, past the old page limit, without throwing', async () => {
+    const node = manyDenomsNode(address, 150_000, 100, new Map([['ubze', 5n]]));
+    const balances = await new RestChainClient(node.transport, MAINNET).balances(address);
+    expect(balances.size).toBe(MAX_BALANCES);
+    expect(balancesMayBeCut(balances)).toBe(true);
+    expect(node.requests.length).toBeLessThanOrEqual(Math.ceil(MAX_BALANCES / 100));
+  });
+
+  it('is complete, and says so, under the cap', async () => {
+    const node = manyDenomsNode(address, 3, 100, new Map([['ubze', 5n]]));
+    const balances = await new RestChainClient(node.transport, MAINNET).balances(address);
+    expect(balances.get('ubze')).toBe(5n);
+    expect(balancesMayBeCut(balances)).toBe(false);
+  });
+
+  it('completes a cut list with the denoms a flow needs, each read on its own', async () => {
+    const node = manyDenomsNode(address, 150_000, 100, new Map([['ubze', 5n]]));
+    const client = new RestChainClient(node.transport, MAINNET);
+    const balances = await client.balances(address);
+    expect(balances.has('ubze')).toBe(false);
+    const filled = await withBalancesOf(client, address, balances, ['ubze', 'uother']);
+    expect(filled.get('ubze')).toBe(5n);
+    expect(filled.has('uother')).toBe(false);
+    expect(node.requests.filter((u) => u.includes('/by_denom?'))).toHaveLength(2);
+  });
+
+  it('reads nothing more for a list that is complete', async () => {
+    const node = manyDenomsNode(address, 3, 100, new Map([['ubze', 5n]]));
+    const client = new RestChainClient(node.transport, MAINNET);
+    const balances = await client.balances(address);
+    const before = node.requests.length;
+    const filled = await withBalancesOf(client, address, balances, ['ubze', 'uother']);
+    expect(filled).toEqual(balances);
+    expect(node.requests).toHaveLength(before);
+  });
+});
+
+describe('RestChainClient.balance', () => {
+  it('reads one denom by query, so denoms with a slash work', async () => {
+    const denom = 'factory/bze1abc/gold';
+    const t = mainnet().on(
+      'GET',
+      `/cosmos/bank/v1beta1/balances/bze1x/by_denom?denom=${encodeURIComponent(denom)}`,
+      json(200, { balance: { denom, amount: '42' } }),
+    );
+    expect(await new RestChainClient(t, MAINNET).balance('bze1x', denom)).toBe(42n);
+  });
+
+  it('is zero for a denom the address does not hold', async () => {
+    const t = mainnet().on(
+      'GET',
+      '/cosmos/bank/v1beta1/balances/bze1x/by_denom?denom=ubze',
+      json(200, { balance: { denom: 'ubze', amount: '0' } }),
+    );
+    expect(await new RestChainClient(t, MAINNET).balance('bze1x', 'ubze')).toBe(0n);
   });
 });
 
@@ -664,6 +767,11 @@ describe('RestChainClient hardening', () => {
     const bad = { status: 200, body: 'not json' };
     const calls: [string, string, (c: RestChainClient) => Promise<unknown>][] = [
       ['GET', '/cosmos/bank/v1beta1/balances/bze1x', (c) => c.balances('bze1x')],
+      [
+        'GET',
+        '/cosmos/bank/v1beta1/balances/bze1x/by_denom?denom=ubze',
+        (c) => c.balance('bze1x', 'ubze'),
+      ],
       ['GET', '/cosmos/bank/v1beta1/supply/by_denom?denom=ubze', (c) => c.supply('ubze')],
       [
         'GET',

@@ -1,10 +1,12 @@
 import {
+  balancesMayBeCut,
   feePricing,
   minimumFee,
   rawJson,
   simulatedGasFor,
   summarise,
   verifySignRequest,
+  withBalancesOf,
   type AnyMsg,
   type FeeData,
   type FeeEstimate,
@@ -22,7 +24,7 @@ import {
 } from '../../protocol';
 import { validContact } from '../../features/address-book/contact';
 import { pricingToWire } from '../../features/send/override';
-import type { ProfileAddress } from '../../features/wallet/profile';
+import type { Profile, ProfileAddress } from '../../features/wallet/profile';
 import { refuse, type Outcome, type PendingRequest } from '../types';
 import { bigintFromWire, bytesFromWire, DappErrorCodes } from '../wire';
 import { guarded, simulationMessage, type ChainEnv, type TxDeps } from './env';
@@ -253,17 +255,24 @@ async function feeTokenInfo(env: ChainEnv, denom: string): Promise<FeeChoice | u
   };
 }
 
+/** Who signs a request, once the checks that need no node passed. */
+export interface Signer {
+  kind: 'signer';
+  profile: Profile;
+  entry: ProfileAddress;
+  pubKey: Uint8Array;
+  locked: boolean;
+}
+
 /**
- * Everything a `signDirect` request must pass before the user sees it or the wallet signs it:
- * network, wallet state, the connected site and its address, the account on chain, the
- * verifier, a fee the signer can pay and the summary. The review and the signature both run
- * this, so what is shown and what is signed cannot drift apart.
+ * The checks of `prepareSign` that need no node: network, wallet state, the connected site and
+ * its address. A request that fails them is settled without reaching the node.
  */
-export async function prepareSign(
+export async function checkSigner(
   deps: TxDeps,
   request: PendingRequest,
   params: SignParams,
-): Promise<Preparation> {
+): Promise<Preparation | Signer> {
   const active = await deps.services.activeNetwork();
   const wrong = networkRefusal(request, params, active.id);
   if (wrong) return { kind: 'refuse', outcome: wrong };
@@ -277,9 +286,32 @@ export async function prepareSign(
   if (!entry) return refused(DappErrorCodes.notConnected, 'This site is not connected.');
   const pubKeyText = await pubKeyOf(deps, entry, state === 'unlocked');
   if (pubKeyText === null) return { kind: 'unlock' };
-  const pubKey = bytesFromWire(pubKeyText);
+  return {
+    kind: 'signer',
+    profile: profile.value,
+    entry,
+    pubKey: bytesFromWire(pubKeyText),
+    locked: state !== 'unlocked',
+  };
+}
 
-  const env = await deps.env();
+/**
+ * Everything a `signDirect` request must pass before the user sees it or the wallet signs it:
+ * network, wallet state, the connected site and its address, the account on chain, the
+ * verifier, a fee the signer can pay and the summary. The review and the signature both run
+ * this, so what is shown and what is signed cannot drift apart.
+ */
+export async function prepareSign(
+  deps: TxDeps,
+  request: PendingRequest,
+  params: SignParams,
+  signal?: AbortSignal,
+): Promise<Preparation> {
+  const signer = await checkSigner(deps, request, params);
+  if (signer.kind !== 'signer') return signer;
+  const { profile, entry, pubKey } = signer;
+
+  const env = await deps.env(signal);
   const bodyBytes = bytesFromWire(params.signDoc.bodyBytes);
   const authInfoBytes = bytesFromWire(params.signDoc.authInfoBytes);
   const accountNumber = bigintFromWire(params.signDoc.accountNumber);
@@ -289,7 +321,7 @@ export async function prepareSign(
     () => null,
   );
   if (!read.ok) return { kind: 'refuse', outcome: read.outcome };
-  const [account, balances] = read.value;
+  const [account, listed] = read.value;
   if (account === null) {
     return refused(DappErrorCodes.invalidRequest, 'Fund this address first.');
   }
@@ -314,6 +346,19 @@ export async function prepareSign(
 
   const siteFee = siteFeeOf(verified.authInfo.fee);
   const siteDenom = siteFee?.coins.length === 1 ? siteFee.coins[0]?.denom : undefined;
+  // A list cut short may miss the fee tokens: those are read on their own.
+  const exact = balancesMayBeCut(listed)
+    ? await guarded(
+        async () =>
+          withBalancesOf(env.chain, entry.address, listed, [
+            ...(await env.fees.feeData()).rates.keys(),
+            ...(siteDenom === undefined ? [] : [siteDenom]),
+          ]),
+        () => null,
+      )
+    : { ok: true as const, value: listed };
+  if (!exact.ok) return { kind: 'refuse', outcome: exact.outcome };
+  const balances = exact.value;
   const estimated = await guarded(
     () =>
       Promise.all([
@@ -371,7 +416,7 @@ export async function prepareSign(
       tokens: env.tokens,
       markets: env.chain,
       orders: env.chain,
-      addressBook: (address) => contactName(profile.value.addressBook, address),
+      addressBook: (address) => contactName(profile.addressBook, address),
     },
     { memo: verified.body.memo },
   );
@@ -390,7 +435,7 @@ export async function prepareSign(
       options,
       defaultFee,
       siteFee: site?.check ?? null,
-      locked: state !== 'unlocked',
+      locked: signer.locked,
       simulated: estimate.simulated,
       feeData,
       balances,

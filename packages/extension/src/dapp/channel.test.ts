@@ -81,6 +81,8 @@ async function rig() {
     denomMetadata: () => Promise.resolve(null),
     denomBranding: () => Promise.resolve(null),
   } as unknown as ChainClient;
+  /** What each `services.clients` call was given. */
+  const clientCalls: unknown[][] = [];
   /** `broken`: the worker fails while handling a request after the ack. */
   const faults = { create: 'ok' as 'ok' | 'fail' | 'hang', broken: false };
   const services = {
@@ -88,7 +90,10 @@ async function rig() {
       faults.broken
         ? Promise.reject(new Error('storage gone'))
         : Promise.resolve(NETWORKS[network]),
-    clients: () => Promise.resolve({ network: NETWORKS[network], chain, scan: {} }),
+    clients: (...args: unknown[]) => {
+      clientCalls.push(args);
+      return Promise.resolve({ network: NETWORKS[network], chain, scan: {} });
+    },
   } as unknown as Services;
   const unreachable = new Set<string>();
   const delivered: { tabId: number; documentId: string | undefined; message: unknown }[] = [];
@@ -204,6 +209,7 @@ async function rig() {
     active,
     queried,
     faults,
+    clientCalls,
     setNetwork: (id: NetworkId) => {
       network = id;
     },
@@ -1095,6 +1101,9 @@ describe('signDirect through the composition root', () => {
     });
     if (view.status !== 'sign') throw new Error('unreachable');
     expect(view.options.find((o) => o.denom === 'ubze')?.logo).toBe('/tokens/bze.png');
+    // The clients of the request's first preparation are tied to the request: a page that gives
+    // up on it stops their node requests.
+    expect(t.clientCalls).toContainEqual([undefined, expect.any(AbortSignal)]);
   });
 });
 

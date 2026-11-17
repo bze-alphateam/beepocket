@@ -36,6 +36,8 @@ export interface TokenSearch {
   tokens: ListedToken[];
   /** True when some address could not be read: tokens held only there are missing. */
   partial: boolean;
+  /** Some address holds more tokens than the wallet reads: those past the cap are not listed. */
+  more?: true;
 }
 
 /** Token methods. Bigints cross the boundary as decimal strings. */

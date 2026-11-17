@@ -49,6 +49,7 @@ export function TokenPicker({ selected, onToggle, notice, field, extra = [] }: T
   const [query, setQuery] = useState('');
   const [list, setList] = useState<ListedToken[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [more, setMore] = useState(false);
   useEffect(() => {
     let live = true;
     void client.call('tokens.search', { query }).then((res) => {
@@ -56,6 +57,7 @@ export function TokenPicker({ selected, onToggle, notice, field, extra = [] }: T
       if (res.ok) {
         setList(res.value.tokens);
         setFailed(res.value.partial);
+        setMore(res.value.more === true);
       } else setFailed(true);
     });
     return () => {
@@ -111,6 +113,7 @@ export function TokenPicker({ selected, onToggle, notice, field, extra = [] }: T
         })}
       </div>
       {rows?.length === 0 && <p class="ob-wait">{t('onboarding.tokens.empty')}</p>}
+      {more && <p class="ob-wait">{t('onboarding.tokens.more')}</p>}
     </>
   );
 }

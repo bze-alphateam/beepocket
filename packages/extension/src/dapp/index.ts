@@ -37,8 +37,8 @@ export function createDappService(
 ): DappService {
   const registry = new DappRegistry();
   // Built per request over the active network's clients, like the send flow's service.
-  const env = async (): Promise<ChainEnv> => {
-    const { network, chain, scan } = await services.clients();
+  const env = async (signal?: AbortSignal): Promise<ChainEnv> => {
+    const { network, chain, scan } = await services.clients(undefined, signal);
     const tokens = createTokenResolver({ chain, scan, cache: platform.cache }, network.id);
     const fees = new FeeEstimator(chain, platform.clock, {
       cache: platform.cache,

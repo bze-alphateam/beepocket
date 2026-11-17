@@ -3,6 +3,7 @@ import type { HandlerDeps } from '../../background/handlers';
 import type { HandlerRegistry } from '../../background/registry';
 import type { PreferredTokensStore, WalletAddresses } from './ports';
 import { TokenService } from './service';
+import { SharedReads } from './shared-reads';
 
 export interface TokenSeams {
   preferred: PreferredTokensStore;
@@ -31,6 +32,8 @@ export function registerTokenHandlers(
   seams: TokenSeams,
 ): void {
   const { platform, services } = deps;
+  // Lives as long as the worker: the services built per request share their reads through it.
+  const reads = new SharedReads();
   const service = async (): Promise<TokenService> => {
     const { network, chain, scan } = await services.clients();
     return new TokenService({
@@ -40,6 +43,7 @@ export function registerTokenHandlers(
       cache: platform.cache,
       session: platform.session,
       clock: platform.clock,
+      reads,
       ...seams,
     });
   };

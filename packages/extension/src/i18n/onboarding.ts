@@ -81,6 +81,7 @@ export const onboarding = {
   'onboarding.tokens.kit': 'Brand kit',
   'onboarding.tokens.noKit': 'No brand kit · default look',
   'onboarding.tokens.unresolved': 'Details unavailable',
+  'onboarding.tokens.more': 'More tokens are held than can be listed here.',
   'onboarding.import.length': 'Phrase length',
   'onboarding.import.words12': '12 words',
   'onboarding.import.words24': '24 words',

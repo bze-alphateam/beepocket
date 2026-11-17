@@ -115,7 +115,13 @@ export interface ChainClientOptions {
 export interface ChainClient {
   /** `null` when the address has never been seen on chain. */
   account(address: string): Promise<ChainAccount | null>;
+  /**
+   * In denom order, at most `MAX_BALANCES` of them: a list that long may be cut short
+   * (`balancesMayBeCut`), and `withBalancesOf` reads the denoms a flow needs on their own.
+   */
   balances(address: string): Promise<Map<string, bigint>>;
+  /** One denom's balance; zero when the address holds none. */
+  balance(address: string, denom: string): Promise<bigint>;
   supply(denom: string): Promise<bigint>;
   /** `null` when the denom has no bank metadata (e.g. `ubze`). */
   denomMetadata(denom: string): Promise<DenomMetadata | null>;
@@ -139,6 +145,35 @@ export interface ChainClient {
 const BASE_ACCOUNT = '/cosmos.auth.v1beta1.BaseAccount';
 const SECP256K1_PUBKEY = '/cosmos.crypto.secp256k1.PubKey';
 const MAX_PAGES = 1000;
+/** The most balances read for one address: past it, the list is cut short instead of read on. */
+export const MAX_BALANCES = 500;
+
+/** Whether a list read by `balances` may be missing denoms: it is as long as the cap. */
+export function balancesMayBeCut(balances: ReadonlyMap<string, bigint>): boolean {
+  return balances.size >= MAX_BALANCES;
+}
+
+/**
+ * `balances` with exact amounts for `denoms`: when the list may be cut short, each of them is
+ * read on its own; a complete list is returned as it is, with no further request.
+ */
+export async function withBalancesOf(
+  chain: Pick<ChainClient, 'balance'>,
+  address: string,
+  balances: Map<string, bigint>,
+  denoms: Iterable<string>,
+): Promise<Map<string, bigint>> {
+  if (!balancesMayBeCut(balances)) return balances;
+  const wanted = [...new Set(denoms)];
+  const amounts = await Promise.all(wanted.map((denom) => chain.balance(address, denom)));
+  const filled = new Map(balances);
+  wanted.forEach((denom, i) => {
+    const amount = amounts[i] ?? 0n;
+    if (amount > 0n) filled.set(denom, amount);
+    else filled.delete(denom);
+  });
+  return filled;
+}
 const GRPC_NOT_FOUND = 5;
 
 export class RestChainClient implements ChainClient {
@@ -190,8 +225,18 @@ export class RestChainClient implements ChainClient {
           amount: v.uintString(v.field(coin, 'amount', path), `${path}.amount`),
         };
       },
+      MAX_BALANCES,
     );
     return new Map(coins.map((c) => [c.denom, c.amount]));
+  }
+
+  async balance(address: string, denom: string): Promise<bigint> {
+    // The query form: a denom with a slash cannot be a path parameter.
+    const body = await this.getJson(
+      `/cosmos/bank/v1beta1/balances/${encodeURIComponent(address)}/by_denom?denom=${encodeURIComponent(denom)}`,
+    );
+    const coin = v.object(v.field(v.object(body, '$'), 'balance', '$'), 'balance');
+    return v.uintString(v.field(coin, 'amount', 'balance'), 'balance.amount');
   }
 
   async supply(denom: string): Promise<bigint> {
@@ -441,11 +486,15 @@ export class RestChainClient implements ChainClient {
     return v.parseJson(res.body);
   }
 
-  /** Collects `listField` across pages by following `pagination.next_key`. */
+  /**
+   * Collects `listField` across pages by following `pagination.next_key`. With `maxItems`, the
+   * list stops there instead of reading on.
+   */
   private async paginate<T>(
     path: string,
     listField: string,
     read: (item: unknown, path: string) => T,
+    maxItems?: number,
   ): Promise<T[]> {
     const items: T[] = [];
     const seen = new Set<string>();
@@ -461,6 +510,7 @@ export class RestChainClient implements ChainClient {
         '$',
       );
       items.push(...v.arrayOf(v.field(body, listField, '$'), listField, read));
+      if (maxItems !== undefined && items.length >= maxItems) return items.slice(0, maxItems);
 
       const pagination = body.pagination;
       key = null;

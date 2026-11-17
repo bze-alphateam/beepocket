@@ -19,14 +19,17 @@ export interface ChainEnv {
   network: Network;
   chain: Pick<
     ChainClient,
-    'account' | 'balances' | 'broadcast' | 'markets' | 'liquidityPools' | 'marketOrder'
+    'account' | 'balances' | 'balance' | 'broadcast' | 'markets' | 'liquidityPools' | 'marketOrder'
   >;
   fees: Pick<FeeEstimator, 'estimate' | 'feeData'>;
   tokens: { resolve(denom: string): Promise<TokenInfo> };
 }
 
-/** Builds the clients when a request needs them; nothing is kept between calls. */
-export type ChainEnvProvider = () => Promise<ChainEnv>;
+/**
+ * Builds the clients when a request needs them; nothing is kept between calls. With `signal`,
+ * every node request they make stops once it aborts.
+ */
+export type ChainEnvProvider = (signal?: AbortSignal) => Promise<ChainEnv>;
 
 /** What the transaction handlers use on top of what `connect` and `getKey` use. */
 export interface TxDeps extends KeyDeps {

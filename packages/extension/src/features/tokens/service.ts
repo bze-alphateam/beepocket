@@ -1,4 +1,5 @@
 import {
+  balancesMayBeCut,
   InvalidDenomError,
   isLpDenom,
   LP_DECIMALS,
@@ -23,6 +24,7 @@ import {
 import { fail, ok, type Result } from '../../protocol';
 import type { PreferredTokensStore, WalletAddresses } from './ports';
 import { BZE_LOGO, createTokenResolver } from './resolver';
+import type { SharedReads } from './shared-reads';
 
 /**
  * How long a balance read is reused: under Home's 4 s poll, so every poll asks the node while a
@@ -31,6 +33,8 @@ import { BZE_LOGO, createTokenResolver } from './resolver';
 export const BALANCE_FRESH_MS = 3_000;
 const MAX_SEARCH_RESULTS = 100;
 const MAX_QUERY_LENGTH = 128;
+/** Token lookups a search runs at once. */
+export const MAX_SEARCH_LOOKUPS = 8;
 
 export interface TokenServiceDeps {
   network: NetworkId;
@@ -41,12 +45,16 @@ export interface TokenServiceDeps {
   clock: Pick<Clock, 'now'>;
   preferred: PreferredTokensStore;
   addresses: WalletAddresses;
+  /** Balance reads in flight, shared across the requests that overlap. */
+  reads: SharedReads;
 }
 
 interface StoredBalances {
   at: number;
   /** denom → base units, decimal string */
   balances: Record<string, string>;
+  /** The node's list was cut short: other denoms may be held. */
+  cut?: true;
 }
 
 function isStoredBalances(raw: unknown): raw is StoredBalances {
@@ -124,11 +132,13 @@ export class TokenService {
     const needle = query.trim().slice(0, MAX_QUERY_LENGTH).toLowerCase();
     const held = new Set<string>([NATIVE_DENOM]);
     let partial = false;
+    let more = false;
     for (const entry of await this.storedBalances(false)) {
       if (!entry) {
         partial = true;
         continue;
       }
+      if (entry.cut === true) more = true;
       for (const [denom, amount] of Object.entries(entry.balances)) {
         if (BigInt(amount) > 0n && !isLpDenom(denom)) held.add(denom);
       }
@@ -145,18 +155,39 @@ export class TokenService {
         )
         .slice(0, MAX_SEARCH_RESULTS),
       partial,
+      ...(more ? { more: true as const } : {}),
     });
   }
 
   /** An address that cannot be read is reported as `failed` and makes the total `partial`. */
   async balances(denom: string, refresh: boolean): Promise<Result<TokenBalances>> {
     const addresses = await this.deps.addresses.list(this.deps.network);
-    return ok(balancesOf(denom, addresses, await this.storedBalances(refresh, addresses)));
+    const stored = await this.storedBalances(refresh, addresses);
+    const exact = await Promise.all(
+      stored.map((entry, i) => this.withDenom(entry, addresses[i]?.address ?? '', denom)),
+    );
+    return ok(balancesOf(denom, addresses, exact));
+  }
+
+  /** A list cut short may miss `denom`: it is read on its own then (`null` when that fails). */
+  private async withDenom(
+    entry: StoredBalances | null,
+    address: string,
+    denom: string,
+  ): Promise<StoredBalances | null> {
+    if (entry?.cut !== true || Object.hasOwn(entry.balances, denom)) return entry;
+    try {
+      const amount = await this.deps.chain.balance(address, denom);
+      return { ...entry, balances: { ...entry.balances, [denom]: amount.toString() } };
+    } catch {
+      return null;
+    }
   }
 
   /**
    * The last read of every address, however old, without asking the node: what Home shows at
-   * once while it reads again. `null` when some address has never been read.
+   * once while it reads again. `null` when some address has never been read, or when its list
+   * was cut short without the denom (its amount is not known until it is read).
    */
   async lastBalances(denom: string): Promise<Result<TokenBalances | null>> {
     const addresses = await this.deps.addresses.list(this.deps.network);
@@ -166,7 +197,9 @@ export class TokenService {
         return isStoredBalances(raw) ? raw : null;
       }),
     );
-    if (stored.some((entry) => entry === null)) return ok(null);
+    const known = (entry: StoredBalances | null) =>
+      entry !== null && (entry.cut !== true || Object.hasOwn(entry.balances, denom));
+    if (!stored.every(known)) return ok(null);
     return ok(balancesOf(denom, addresses, stored));
   }
 
@@ -176,9 +209,14 @@ export class TokenService {
     return found.ok ? ok(found.value.branding) : found;
   }
 
-  /** A denom that cannot be resolved right now stays in the list as a flagged placeholder. */
+  /**
+   * A denom that cannot be resolved right now stays in the list as a flagged placeholder. At most
+   * `MAX_SEARCH_LOOKUPS` are looked up at once.
+   */
   private async resolveAll(denoms: string[]): Promise<ListedToken[]> {
-    const settled = await Promise.allSettled(denoms.map((d) => this.resolver.resolve(d)));
+    const settled = await settleLimited(denoms, MAX_SEARCH_LOOKUPS, (d) =>
+      this.resolver.resolve(d),
+    );
     return settled.map((s, i) =>
       s.status === 'fulfilled' ? s.value : unresolved(denoms[i] ?? ''),
     );
@@ -204,17 +242,47 @@ export class TokenService {
             return raw;
           }
         }
-        const fetched = await this.deps.chain.balances(address);
-        const entry: StoredBalances = {
-          at: now,
-          balances: Object.fromEntries([...fetched].map(([d, a]) => [d, a.toString()])),
-        };
-        await this.deps.session.set(key, entry);
-        return entry;
+        // Requests that overlap share one read of the address; a refresh never joins an older one.
+        return this.deps.reads.run(
+          key,
+          async () => {
+            const fetched = await this.deps.chain.balances(address);
+            const entry: StoredBalances = {
+              at: now,
+              balances: Object.fromEntries([...fetched].map(([d, a]) => [d, a.toString()])),
+              ...(balancesMayBeCut(fetched) ? { cut: true as const } : {}),
+            };
+            await this.deps.session.set(key, entry);
+            return entry;
+          },
+          refresh,
+        );
       }),
     );
     return settled.map((r) => (r.status === 'fulfilled' ? r.value : null));
   }
+}
+
+/** `Promise.allSettled` over `items`, running at most `limit` of them at once, in order. */
+async function settleLimited<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        results[i] = { status: 'fulfilled', value: await run(items[i] as T) };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 function balancesOf(
