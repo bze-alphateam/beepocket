@@ -486,12 +486,7 @@ async function swapParts(l: Lookups, msg: MsgMultiSwap): Promise<Parts> {
     title: 'Swap',
     hero: pay,
     sub: `for at least ${get}`,
-    rows: [
-      ['Route', route.path.join(' → ')],
-      ['You pay', pay],
-      ['You get at least', get],
-      fee,
-    ],
+    rows: [['Route', route.path.join(' → ')], ['You pay', pay], ['You get at least', get], fee],
   };
 }
 
@@ -1829,7 +1824,7 @@ function memoDestination(memo: string): Destination {
       return receiver === null ? { kind: 'none' } : { kind: 'forward', receiver };
     }
     if (forwardKey === null || hop === MAX_FORWARD_HOPS) return unreadable;
-    const forward = obj[forwardKey];
+    const forward: unknown = obj[forwardKey];
     if (!isPlainObject(forward)) return unreadable;
     const receiverKey = onlyKey(forward, 'receiver');
     const value = receiverKey ? forward[receiverKey] : undefined;
@@ -1845,9 +1840,9 @@ function memoDestination(memo: string): Destination {
     const nextKey = onlyKey(forward, 'next');
     if (nextKey === undefined) return { kind: 'forward', receiver };
     if (nextKey === null) return unreadable;
-    const next = forward[nextKey];
+    const next: unknown = forward[nextKey];
     if (next === null) return { kind: 'forward', receiver };
-    const nextObj = typeof next === 'string' ? parseObject(next) : next;
+    const nextObj: unknown = typeof next === 'string' ? parseObject(next) : next;
     if (!isPlainObject(nextObj)) return unreadable;
     obj = nextObj;
   }
