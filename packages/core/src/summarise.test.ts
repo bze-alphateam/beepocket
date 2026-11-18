@@ -2326,6 +2326,12 @@ describe('multi-send review', () => {
     expect(needsTrust(s)).toBe(false);
   });
 
+  it('is unknown with no outputs', async () => {
+    const s = await run([multiSend([])]);
+    expect(s.level).toBe('unknown');
+    expect(s.hero).toBe('No tokens');
+  });
+
   it('shows the full address of a single output, like a send', async () => {
     const s = await run([multiSend([out(STRANGER, 'ubze', '1000000')])]);
     expect(s.rows).toEqual([
@@ -2369,6 +2375,12 @@ describe('IBC transfer destination', () => {
   const forward = (receiver: string, extra: Record<string, unknown> = {}) => ({
     forward: { ...extra, receiver, port: 'transfer', channel: 'channel-0' },
   });
+  /** `count` forwards, each nested in the one before, ending at `FINAL`. */
+  const hops = (count: number): Record<string, unknown> => {
+    let memo = forward(FINAL);
+    for (let i = 1; i < count; i += 1) memo = forward(OSMO, { next: memo });
+    return memo;
+  };
 
   it('names the forward receiver as the final recipient', async () => {
     const s = await run([transfer(JSON.stringify(forward(OSMO)))]);
@@ -2405,6 +2417,20 @@ describe('IBC transfer destination', () => {
     expect(needsTrust(s)).toBe(true);
   });
 
+  it('reads eight forwards, a null next and padded keys', async () => {
+    const memos = [
+      JSON.stringify(hops(8)),
+      JSON.stringify(forward(FINAL, { next: null })),
+      `{ "forward" : { "receiver" : "${FINAL}" , "channel" : "channel-0" } }`,
+    ];
+    for (const memo of memos) {
+      const s = await run([transfer(memo)]);
+      expect(s.rows, memo).toContainEqual(['Final recipient', FINAL, 'mono']);
+      expect(s.sub, memo).toContain(FINAL);
+      expect(s.level, memo).toBe('dangerous');
+    }
+  });
+
   it('says the final recipient is unknown for a contract call after a forward', async () => {
     const memo = JSON.stringify(forward(OSMO, { next: { wasm: { contract: OSMO, msg: {} } } }));
     const s = await run([transfer(memo)]);
@@ -2431,6 +2457,13 @@ describe('IBC transfer destination', () => {
       `{"forward":{"receiver":"${OSMO}","Receiver":"${FINAL}"}}`,
     ],
     ['a receiver that is not an address', JSON.stringify({ forward: { receiver: 'pay to bob' } })],
+    ['a contract call in capitals', JSON.stringify({ WASM: { contract: OSMO, msg: {} } })],
+    ['a contract call in mixed case', JSON.stringify({ Wasm: { contract: OSMO, msg: {} } })],
+    ['a key with a long s', JSON.stringify({ 'wa\u017fm': { contract: OSMO, msg: {} } })],
+    ['a long-s contract key next to a forward', `{"forward":{"receiver":"${OSMO}"},"wa\u017fm":{}}`],
+    ['a forward and a contract call together', JSON.stringify({ ...forward(OSMO), wasm: {} })],
+    ['an array of instructions', JSON.stringify([forward(OSMO)])],
+    ['more than eight forwards', JSON.stringify(hops(9))],
   ])('says the final recipient is unknown for %s', async (_, memo) => {
     const s = await run([transfer(memo)]);
     expect(s.level).toBe('dangerous');
