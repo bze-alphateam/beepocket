@@ -1,4 +1,4 @@
-import { deriveAccount } from '@beepocket/core';
+import { deriveAccount, txHash } from '@beepocket/core';
 import type { BrowserContext, Page } from '@playwright/test';
 import {
   ADDRESSES,
@@ -17,7 +17,6 @@ import {
 
 // The send flow: form, From / fee / address book sheets, Review, pending and the results.
 
-const HASH = '7F3A9C'.padEnd(58, '0') + 'E21B4D';
 const ALEX = CONTACTS[0]?.address ?? '';
 /** A valid address that is in no address book. */
 const STRANGER = deriveAccount(PHRASE, 12).address;
@@ -26,6 +25,8 @@ const OUT_OF_GAS = 'out of gas in location: WriteFlat; gasWanted: 98000, gasUsed
 interface Node {
   /** The raw log the next broadcast is rejected with; null accepts it. */
   reject: string | null;
+  /** The hash of the last broadcast. */
+  hash: string;
   /** Leaves the transaction lookup unanswered, so the flow stays on Pending. */
   hold: boolean;
   /** The raw log the included transaction failed with on chain; null when it succeeded. */
@@ -37,7 +38,7 @@ interface Node {
  * broadcast, the transaction lookup, and a BZE / PAGE pool so PAGE can pay the fee.
  */
 async function mockSendNode(context: BrowserContext): Promise<Node> {
-  const node: Node = { reject: null, hold: false, failOnChain: null };
+  const node: Node = { reject: null, hold: false, failOnChain: null, hash: '' };
   await context.route('https://rest.getbze.com/**', (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -76,15 +77,22 @@ async function mockSendNode(context: BrowserContext): Promise<Node> {
             pagination: { next_key: null, total: '1' },
           },
         });
+      case '/cosmos/base/tendermint/v1beta1/blocks/latest':
+        return route.fulfill({
+          json: { block: { header: { chain_id: 'beezee-1', height: '1000' } } },
+        });
       case '/cosmos/tx/v1beta1/simulate':
         return route.fulfill({ json: { gas_info: { gas_wanted: '0', gas_used: '150000' } } });
       case '/cosmos/tx/v1beta1/txs': {
         const code = node.reject === null ? 0 : 11;
+        const txBytes = (request.postDataJSON() as { tx_bytes: string }).tx_bytes;
+        // Like a real node: the hash of the bytes it was sent.
+        node.hash = txHash(Uint8Array.from(Buffer.from(txBytes, 'base64')));
         return route.fulfill({
           json: {
             tx_response: {
               height: '0',
-              txhash: HASH,
+              txhash: node.hash,
               codespace: code === 0 ? '' : 'sdk',
               code,
               data: '',
@@ -100,14 +108,14 @@ async function mockSendNode(context: BrowserContext): Promise<Node> {
           },
         });
       }
-      case `/cosmos/tx/v1beta1/txs/${HASH}`:
+      case `/cosmos/tx/v1beta1/txs/${node.hash}`:
         // A route never answered keeps the request open: the screen waits on Pending.
         if (node.hold) return new Promise<void>(() => undefined);
         return route.fulfill({
           json: {
             tx_response: {
               height: '12',
-              txhash: HASH,
+              txhash: node.hash,
               code: node.failOnChain === null ? 0 : 11,
               raw_log: node.failOnChain ?? '[]',
               gas_used: '120000',

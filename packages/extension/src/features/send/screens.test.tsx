@@ -453,9 +453,35 @@ describe('result', () => {
     });
     await toReview(host);
     await press(host, 'Confirm and send');
-    expect(host.textContent).toContain('Still pending');
+    expect(host.textContent).toContain('Status unknown');
     expect(host.textContent).toContain('We could not confirm this send');
     expect(host.textContent).not.toContain('Send failed');
+  });
+
+  it('never says the funds did not move when the outcome is unknown, and offers no Try again', async () => {
+    const { host } = setup({
+      'send.submit': () => ok({ txHash: HASH, unconfirmed: true }),
+      'send.status': () => ok({ status: 'pending', explorerUrl: 'https://scan/txs/x' }),
+    });
+    await toReview(host);
+    await press(host, 'Confirm and send');
+    expect(host.textContent).toContain('Status unknown');
+    expect(host.textContent).toContain('check Activity before you send again');
+    expect(host.textContent).not.toContain('did not move');
+    expect(button(host, 'Try again')).toBeNull();
+  });
+
+  it('stays on Review and says a previous send is still pending', async () => {
+    const { host, call } = setup({
+      'send.submit': () => fail('send-pending', 'A previous send is still pending.'),
+    });
+    await toReview(host);
+    await press(host, 'Confirm and send');
+    expect(host.textContent).toContain('A previous send is still pending — check Activity');
+    expect(host.textContent).not.toContain('Send failed');
+    expect(host.textContent).not.toContain('did not move');
+    expect(button(host, 'Confirm and send')).not.toBeNull();
+    expect(submits(call)).toBe(1);
   });
 
   it('says still pending when the chain has not confirmed in time', async () => {

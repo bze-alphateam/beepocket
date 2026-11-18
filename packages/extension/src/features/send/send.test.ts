@@ -14,6 +14,7 @@ import {
   SimulationError,
   TxTimeoutError,
   signDocBytes,
+  txRawBytes,
   type HttpTransport,
   type TxResult,
 } from '@beepocket/core';
@@ -59,6 +60,28 @@ const SIGNER = golden('send-ubze').signer;
 const RECIPIENT = golden('send-ubze').messages[0]?.toAddress ?? '';
 const PUBKEY = bytes(golden('send-ubze').pubKey);
 const HASH = 'AB'.repeat(32);
+/** The latest block height the fake node reports; wallet sends expire this many blocks later. */
+const HEIGHT = 21_500_000n;
+const TIMEOUT_BLOCKS = 30n;
+
+/** Protobuf varint of an unsigned integer. */
+function varint(n: bigint): number[] {
+  const out: number[] = [];
+  let v = n;
+  while (v >= 0x80n) {
+    out.push(Number(v & 0x7fn) | 0x80);
+    v >>= 7n;
+  }
+  out.push(Number(v));
+  return out;
+}
+
+/**
+ * A body with no memo and no extensions, given a timeout height: field 3 (`timeout_height`)
+ * follows the messages, so it is appended to the bytes without one.
+ */
+const withTimeout = (body: Uint8Array, height: bigint): Uint8Array =>
+  Uint8Array.from([...body, 0x18, ...varint(height)]);
 
 interface Options {
   state?: 'unlocked' | 'weakLocked' | 'locked';
@@ -122,6 +145,7 @@ function setup(opts: Options = {}) {
     broadcast: 0,
     sign: 0,
     rearm: 0,
+    height: 0,
   };
   const signed: Uint8Array[] = [];
   const signedFor: string[] = [];
@@ -129,12 +153,26 @@ function setup(opts: Options = {}) {
   const waits: { txHash: string; options: unknown }[] = [];
   /** The fee coins of each simulation, as `denom:amount`. */
   const simulatedFees: string[][] = [];
+  /** The timeout height of each simulated body. */
+  const simulatedTimeouts: string[] = [];
   const control = {
     // x 1.2 gives the golden transactions' 200,000 (BZE fee) and 300,000 (fee in VDL).
     gasUsed: opts.gasUsed ?? 166_666n,
     foreignGasUsed: opts.foreignGasUsed ?? 250_000n,
     balances: opts.balances ?? { ubze: 100_000_000n },
     broadcastError: null as Error | null,
+    /** The hash the node answers a broadcast with; null answers the real hash of the bytes. */
+    broadcastHash: null as string | null,
+    /** null: the address is not on chain yet. */
+    account:
+      opts.account === undefined
+        ? ({ accountNumber: 7n, sequence: 3n } as {
+            accountNumber: bigint;
+            sequence: bigint;
+          } | null)
+        : opts.account,
+    height: HEIGHT as bigint | Error,
+    now: 1_000_000,
     simulateError: null as Error | null,
     tx: { height: 10n, code: 0, rawLog: '', gasUsed: 150_000n } as TxResult | Error,
     state: opts.state ?? 'unlocked',
@@ -150,9 +188,14 @@ function setup(opts: Options = {}) {
   const chain = {
     account: () => {
       calls.account++;
-      const account =
-        opts.account === undefined ? { accountNumber: 7n, sequence: 3n } : opts.account;
+      const account = control.account;
       return Promise.resolve(account && { ...account, pubKey: control.accountPubKey });
+    },
+    latestHeight: () => {
+      calls.height++;
+      return control.height instanceof Error
+        ? Promise.reject(control.height)
+        : Promise.resolve(control.height);
     },
     balances: (address: string) => {
       calls.balances++;
@@ -170,6 +213,9 @@ function setup(opts: Options = {}) {
       const fee = (decodeAuthInfo(raw.authInfoBytes) as unknown as { fee: { amount: Coin[] } }).fee
         .amount;
       simulatedFees.push(fee.map((c) => `${c.denom}:${c.amount}`));
+      simulatedTimeouts.push(
+        (decodeTxBody(raw.bodyBytes) as unknown as { timeoutHeight: string }).timeoutHeight,
+      );
       if (control.simulateError) return Promise.reject(control.simulateError);
       // Like the chain: the fee coin is deducted before the send runs, so both must be held.
       const messages = (
@@ -194,7 +240,7 @@ function setup(opts: Options = {}) {
       sent.push(tx);
       return control.broadcastError
         ? Promise.reject(control.broadcastError)
-        : Promise.resolve({ txHash: HASH });
+        : Promise.resolve({ txHash: control.broadcastHash ?? txHash(tx) });
     },
     waitForTx: (txHash: string, options: unknown) => {
       waits.push({ txHash, options });
@@ -235,8 +281,16 @@ function setup(opts: Options = {}) {
     clients: () => Promise.resolve({ network: NETWORK, chain, scan: {} }),
   } as unknown as Services;
   const cache = new Map<string, unknown>();
+  const session = new Map<string, unknown>();
   const platform = {
-    clock: { now: () => 1_000_000, sleep: () => Promise.resolve() },
+    clock: { now: () => control.now, sleep: () => Promise.resolve() },
+    session: {
+      get: (k: string) => Promise.resolve(session.get(k)),
+      set: (k: string, v: unknown) => Promise.resolve(void session.set(k, v)),
+      setMany: (items: Record<string, unknown>) =>
+        Promise.resolve(void Object.entries(items).forEach(([k, v]) => session.set(k, v))),
+      remove: (k: string) => Promise.resolve(void session.delete(k)),
+    },
     cache: {
       get: (k: string) => Promise.resolve(cache.get(k)),
       set: (k: string, v: unknown) => Promise.resolve(void cache.set(k, v)),
@@ -276,6 +330,7 @@ function setup(opts: Options = {}) {
     waits,
     control,
     simulatedFees,
+    simulatedTimeouts,
     nodeRequests: listing?.requests ?? [],
   };
 }
@@ -333,18 +388,25 @@ describe('golden transactions', () => {
       expect(quote.gasLimit).toBe(g.gasLimit);
       expect(quote.amount).toBe(g.messages[0]?.amount[0]?.amount);
 
+      // The golden body, which expires a fixed number of blocks after the latest one.
+      const bodyBytes = withTimeout(bytes(g.bodyBytes), HEIGHT + TIMEOUT_BLOCKS);
+      const txRaw = txRawBytes({
+        bodyBytes,
+        authInfoBytes: bytes(g.authInfoBytes),
+        signatures: [bytes(g.signature)],
+      });
       const sent = await s.call('send.submit', submitFrom(quote));
-      expect(sent).toEqual({ ok: true, value: { txHash: HASH } });
+      expect(sent).toEqual({ ok: true, value: { txHash: txHash(txRaw) } });
 
       expect(s.signed).toEqual([
         signDocBytes({
-          bodyBytes: bytes(g.bodyBytes),
+          bodyBytes,
           authInfoBytes: bytes(g.authInfoBytes),
           chainId: g.chainId,
           accountNumber: BigInt(g.accountNumber),
         }),
       ]);
-      expect(s.sent).toEqual([bytes(g.txRaw)]);
+      expect(s.sent).toEqual([txRaw]);
     });
   }
 });
@@ -649,9 +711,14 @@ describe('send.submit', () => {
       s.control.signature = bytes(g.signature);
       const quote = await quoteOf(s);
       s.control.broadcastError = error;
+      const txRaw = txRawBytes({
+        bodyBytes: withTimeout(bytes(g.bodyBytes), HEIGHT + TIMEOUT_BLOCKS),
+        authInfoBytes: bytes(g.authInfoBytes),
+        signatures: [bytes(g.signature)],
+      });
       expect(await s.call('send.submit', submitFrom(quote))).toEqual({
         ok: true,
-        value: { txHash: txHash(bytes(g.txRaw)), unconfirmed: true },
+        value: { txHash: txHash(txRaw), unconfirmed: true },
       });
       expect(s.calls.broadcast).toBe(1);
     }
@@ -937,7 +1004,7 @@ describe('an address holding a great many tokens', () => {
     expect(quote.balance).toBe('100000000');
     expect(quote.fee.denom).toBe('ubze');
     const sent = await s.call('send.submit', submitFrom(quote));
-    expect(sent).toEqual({ ok: true, value: { txHash: HASH } });
+    expect(sent).toEqual({ ok: true, value: { txHash: txHash(s.sent[0] ?? new Uint8Array()) } });
     // Each of the two steps reads the capped list and the few denoms it needs, nothing more.
     const perStep = MAX_BALANCES / 100 + 5;
     expect(s.nodeRequests.length).toBeLessThanOrEqual(2 * perStep);
@@ -948,5 +1015,147 @@ describe('an address holding a great many tokens', () => {
     await quoteOf(s);
     expect(s.nodeRequests).toHaveLength(1);
     expect(s.calls.balance).toBe(0);
+  });
+});
+
+/** The sequence and timeout height each broadcast transaction was signed with. */
+const signedWith = (txRaw: Uint8Array) => {
+  const raw = decodeTxRaw(txRaw);
+  const auth = decodeAuthInfo(raw.authInfoBytes) as unknown as {
+    signerInfos: { sequence: string }[];
+  };
+  const body = decodeTxBody(raw.bodyBytes) as unknown as { timeoutHeight: string };
+  return { sequence: auth.signerInfos[0]?.sequence, timeoutHeight: body.timeoutHeight };
+};
+
+describe('pending sends', () => {
+  const PENDING = 'send-pending';
+  const WINDOW_MS = 30_000;
+
+  it('signs nothing new while the previous send may still land, even at a newer sequence', async () => {
+    const s = setup({ account: { accountNumber: 7n, sequence: 5n } });
+    const quote = await quoteOf(s);
+    s.control.broadcastError = new BroadcastError(
+      4,
+      'grpc-gateway',
+      'signature verification failed',
+    );
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
+      ok: false,
+      error: { code: 'tx-rejected' },
+    });
+
+    // The node now reports the next sequence: the first send may have landed after all.
+    s.control.account = { accountNumber: 7n, sequence: 6n };
+    s.control.broadcastError = null;
+    s.control.now += 5_000;
+    const again = await s.call('send.submit', submitFrom(await quoteOf(s)));
+    expect(again).toMatchObject({ ok: false, error: { code: PENDING } });
+    expect(s.calls.sign).toBe(1);
+    expect(s.sent.map((tx) => signedWith(tx).sequence)).toEqual(['5']);
+  });
+
+  it('allows a new send once the window has passed', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.broadcastError = new TransportError('offline');
+    expect((await s.call('send.submit', submitFrom(quote))).ok).toBe(true);
+    s.control.broadcastError = null;
+
+    s.control.now += WINDOW_MS - 1;
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
+      ok: false,
+      error: { code: PENDING },
+    });
+    s.control.now += 1;
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+    expect(s.calls.sign).toBe(2);
+  });
+
+  it('allows the next send right away once the previous one is found on chain', async () => {
+    const s = setup();
+    const first = await s.call('send.submit', submitFrom(await quoteOf(s)));
+    if (!first.ok) throw new Error(first.error.code);
+    const { txHash: hash } = first.value as { txHash: string };
+    expect((await s.call('send.status', { txHash: hash })).ok).toBe(true);
+    expect((await s.call('send.submit', submitFrom(await quoteOf(s)))).ok).toBe(true);
+    expect(s.calls.sign).toBe(2);
+  });
+
+  it('treats "already in the mempool" as sent, with the hash of the signed bytes', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.broadcastError = new BroadcastError(19, 'sdk', '');
+    const res = await s.call('send.submit', submitFrom(quote));
+    expect(res).toEqual({
+      ok: true,
+      value: { txHash: txHash(s.sent[0] ?? new Uint8Array()), unconfirmed: true },
+    });
+  });
+
+  it('keeps the hash of the signed bytes when the node answers another one', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.broadcastHash = HASH;
+    const res = await s.call('send.submit', submitFrom(quote));
+    expect(res).toEqual({
+      ok: true,
+      value: { txHash: txHash(s.sent[0] ?? new Uint8Array()), unconfirmed: true },
+    });
+    expect(txHash(s.sent[0] ?? new Uint8Array())).not.toBe(HASH);
+  });
+
+  it('accepts the same hash in lower case', async () => {
+    // The bytes are deterministic: a first run tells what the second one will sign.
+    const probe = setup();
+    await probe.call('send.submit', submitFrom(await quoteOf(probe)));
+    const local = txHash(probe.sent[0] ?? new Uint8Array());
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.broadcastHash = local.toLowerCase();
+    expect(await s.call('send.submit', submitFrom(quote))).toEqual({
+      ok: true,
+      value: { txHash: local },
+    });
+  });
+
+  it('says the outcome is unknown when a node refuses a send while an earlier one may land', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.broadcastError = new TransportError('offline');
+    await s.call('send.submit', submitFrom(quote));
+    s.control.now += WINDOW_MS;
+    s.control.broadcastError = new BroadcastError(32, 'sdk', 'account sequence mismatch');
+    const res = await s.call('send.submit', submitFrom(quote));
+    expect(res).toMatchObject({ ok: true, value: { unconfirmed: true } });
+  });
+});
+
+describe('transaction expiry', () => {
+  it('signs every send with a timeout height a fixed number of blocks ahead', async () => {
+    const s = setup();
+    await s.call('send.submit', submitFrom(await quoteOf(s)));
+    expect(s.sent.map((tx) => signedWith(tx).timeoutHeight)).toEqual([
+      (HEIGHT + TIMEOUT_BLOCKS).toString(),
+    ]);
+  });
+
+  it('simulates the body it will sign, timeout height included', async () => {
+    const s = setup();
+    await s.call('send.submit', submitFrom(await quoteOf(s)));
+    expect(s.simulatedTimeouts.length).toBeGreaterThan(1);
+    expect(new Set(s.simulatedTimeouts)).toEqual(new Set([(HEIGHT + TIMEOUT_BLOCKS).toString()]));
+  });
+
+  it('signs nothing when the latest block height cannot be read', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.height = new TransportError('offline');
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
+      ok: false,
+      error: { code: 'network-error' },
+    });
+    expect(s.calls.sign).toBe(0);
+    expect(s.calls.broadcast).toBe(0);
   });
 });

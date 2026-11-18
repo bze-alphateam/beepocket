@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { decodeAuthInfo, decodeTxRaw, deriveAccount } from '@beepocket/core';
+import { decodeAuthInfo, decodeTxRaw, deriveAccount, txHash } from '@beepocket/core';
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
@@ -8,7 +8,6 @@ const PASSWORD = 'correct horse';
 const PHRASE = `${'abandon '.repeat(23)}art`;
 const MAIN = deriveAccount(PHRASE, 0).address;
 const CONTACT = deriveAccount(PHRASE, 7).address;
-const HASH = 'AB'.repeat(32);
 
 const fixture = (name: string): unknown =>
   (
@@ -26,11 +25,13 @@ interface Node {
   txs: string[];
   /** The raw log the next broadcast is rejected with; null accepts it. */
   reject: string | null;
+  /** The hashes of the broadcasts it accepted: they are found on chain. */
+  accepted: string[];
 }
 
 /** Plays a BZE node: the main address holds 100 BZE, simulation costs 150,000 gas. */
 async function mockNode(context: BrowserContext): Promise<Node> {
-  const node: Node = { broadcasts: 0, txs: [], reject: null };
+  const node: Node = { broadcasts: 0, txs: [], reject: null, accepted: [] };
   await context.route('https://rest.getbze.com/**', (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -64,17 +65,25 @@ async function mockNode(context: BrowserContext): Promise<Node> {
         return route.fulfill({ json: { list: [], pagination: { next_key: null, total: '0' } } });
       case '/bze/tradebin/halted_denoms':
         return route.fulfill({ json: { denoms: [], pagination: { next_key: null, total: '0' } } });
+      case '/cosmos/base/tendermint/v1beta1/blocks/latest':
+        return route.fulfill({
+          json: { block: { header: { chain_id: 'beezee-1', height: '1000' } } },
+        });
       case '/cosmos/tx/v1beta1/simulate':
         return route.fulfill({ json: { gas_info: { gas_wanted: '0', gas_used: '150000' } } });
       case '/cosmos/tx/v1beta1/txs': {
         node.broadcasts++;
-        node.txs.push((request.postDataJSON() as { tx_bytes: string }).tx_bytes);
+        const txBytes = (request.postDataJSON() as { tx_bytes: string }).tx_bytes;
+        node.txs.push(txBytes);
         const code = node.reject === null ? 0 : 13;
+        // Like a real node: the hash of the bytes it was sent.
+        const hash = txHash(Uint8Array.from(Buffer.from(txBytes, 'base64')));
+        if (code === 0) node.accepted.push(hash);
         return route.fulfill({
           json: {
             tx_response: {
               height: '0',
-              txhash: HASH,
+              txhash: hash,
               codespace: code === 0 ? '' : 'sdk',
               code,
               data: '',
@@ -90,12 +99,14 @@ async function mockNode(context: BrowserContext): Promise<Node> {
           },
         });
       }
-      case `/cosmos/tx/v1beta1/txs/${HASH}`:
+      default: {
+        const hash = url.pathname.replace('/cosmos/tx/v1beta1/txs/', '');
+        if (!node.accepted.includes(hash)) return route.fulfill(notFound);
         return route.fulfill({
           json: {
             tx_response: {
               height: '12',
-              txhash: HASH,
+              txhash: hash,
               code: 0,
               raw_log: '[]',
               gas_used: '120000',
@@ -103,8 +114,7 @@ async function mockNode(context: BrowserContext): Promise<Node> {
             },
           },
         });
-      default:
-        return route.fulfill(notFound);
+      }
     }
   });
   return node;
@@ -151,7 +161,7 @@ test('sends BZE to a contact and shows success', async ({ context, extensionId }
   await expect(page.getByRole('button', { name: 'Send BZE', exact: true })).toBeVisible();
 });
 
-test("shows the node's message when the fee is too low and Try again works", async ({
+test("shows the node's message when the fee is too low and holds a retry for a moment", async ({
   context,
   extensionId,
 }) => {
@@ -164,11 +174,12 @@ test("shows the node's message when the fee is too low and Try again works", asy
   await expect(page.getByRole('heading', { name: 'Send failed' })).toBeVisible();
   await expect(page.getByText('insufficient fee; got: 1ubze required: 1950ubze')).toBeVisible();
 
+  // Right after a signed send, a second one waits: the first may still be on its way.
   node.reject = null;
   await page.getByRole('button', { name: 'Try again' }).click();
   await page.getByRole('button', { name: 'Confirm and send' }).click();
-  await expect(page.getByRole('heading', { name: 'Sent' })).toBeVisible();
-  expect(node.broadcasts).toBe(2);
+  await expect(page.getByText('A previous send is still pending — check Activity')).toBeVisible();
+  expect(node.broadcasts).toBe(1);
 });
 
 test('sends with an Advanced gas limit and price, signed exactly as reviewed', async ({
