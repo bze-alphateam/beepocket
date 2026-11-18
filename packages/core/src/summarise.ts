@@ -2,7 +2,15 @@ import { GOVERNANCE_ONLY } from './governance';
 import { base64 } from '@scure/base';
 import { formatAmount, displayPrice } from './amounts';
 import { decodeAny } from './decode';
-import type { ChainClient, Market, MarketOrder, Pool } from './net';
+import type {
+  ChainClient,
+  CoinAmount,
+  Market,
+  MarketOrder,
+  Pool,
+  TokenFactoryParams,
+  TradebinParams,
+} from './net';
 import { MsgMultiSend, MsgSend } from './proto/cosmos/bank/v1beta1/tx';
 import {
   MsgBeginRedelegate,
@@ -148,6 +156,10 @@ export interface SummaryContext {
   orders: Pick<ChainClient, 'marketOrder'>;
   /** A saved contact's name for an address, or null. */
   addressBook: (address: string) => string | null;
+  /** Chain params for the fees some messages pay on top of the network fee. */
+  fees: Pick<ChainClient, 'tradebinParams' | 'tokenFactoryParams'>;
+  /** Every address of the wallet, for messages that point at an address of its own. */
+  ownAddresses: readonly string[];
 }
 
 export interface SummaryOptions {
@@ -177,6 +189,8 @@ const MAX_TEXT = 128;
 const MAX_UINT_DIGITS = 78;
 const MAX_ROUTE_HOPS = 32;
 const MAX_MEMO = 200;
+const CREATION_FEE = "The chain's creation fee";
+const TRADING_FEE = "The chain's trading fee";
 const RISK_ORDER: Record<RiskLevel, number> = { normal: 0, unknown: 1, dangerous: 2 };
 
 /** Untrusted text for display: no unsafe characters, bounded. */
@@ -233,6 +247,8 @@ class Lookups {
   private lookups = 0;
   private marketsCache: Promise<Map<string, Market>> | undefined;
   private poolsCache: Promise<Map<string, Pool>> | undefined;
+  private tradebinCache: Promise<TradebinParams | null> | undefined;
+  private tokenFactoryCache: Promise<TokenFactoryParams | null> | undefined;
 
   private offlineLookups: Lookups | undefined;
 
@@ -246,6 +262,11 @@ class Lookups {
         markets: { markets: () => Promise.resolve([]), liquidityPools: () => Promise.resolve([]) },
         orders: { marketOrder: () => Promise.resolve(null) },
         addressBook: this.ctx.addressBook,
+        fees: {
+          tradebinParams: () => Promise.reject(new Error('offline')),
+          tokenFactoryParams: () => Promise.reject(new Error('offline')),
+        },
+        ownAddresses: this.ctx.ownAddresses,
       });
       offline.offlineLookups = offline;
       this.offlineLookups = offline;
@@ -291,6 +312,63 @@ class Lookups {
 
   order(marketId: string, type: 'buy' | 'sell', id: string): Promise<MarketOrder | null> {
     return this.ctx.orders.marketOrder(marketId, type, id).catch(() => null);
+  }
+
+  /** Tradebin params, or null when they cannot be read. */
+  tradebinParams(): Promise<TradebinParams | null> {
+    this.tradebinCache ??= Promise.resolve()
+      .then(() => this.ctx.fees.tradebinParams())
+      .catch(() => null);
+    return this.tradebinCache;
+  }
+
+  /** Token factory params, or null when they cannot be read. */
+  tokenFactoryParams(): Promise<TokenFactoryParams | null> {
+    this.tokenFactoryCache ??= Promise.resolve()
+      .then(() => this.ctx.fees.tokenFactoryParams())
+      .catch(() => null);
+    return this.tokenFactoryCache;
+  }
+
+  /** A fee from chain params as text; `fallback` when it could not be read. */
+  async fee(coin: CoinAmount | undefined, fallback: string): Promise<string> {
+    if (!coin) return fallback;
+    return coin.amount === 0n ? 'None' : this.money(coin.denom, coin.amount);
+  }
+
+  async creationFee(source: 'market' | 'token'): Promise<SummaryRow> {
+    const coin =
+      source === 'market'
+        ? (await this.tradebinParams())?.createMarketFee
+        : (await this.tokenFactoryParams())?.createDenomFee;
+    return ['Creation fee', await this.fee(coin, CREATION_FEE)];
+  }
+
+  /** The fee of a fill or a swap, which always takes from the book or a pool. */
+  async takerFee(): Promise<SummaryRow> {
+    const params = await this.tradebinParams();
+    return ['Trading fee', await this.fee(params?.marketTakerFee, TRADING_FEE)];
+  }
+
+  /** An order pays the maker fee when it waits on the book and the taker fee when it fills. */
+  async orderFee(): Promise<SummaryRow> {
+    const params = await this.tradebinParams();
+    const maker = params?.marketMakerFee;
+    const taker = params?.marketTakerFee;
+    if (!maker || !taker) return ['Trading fee', TRADING_FEE];
+    const [makerText, takerText] = await Promise.all([
+      this.fee(maker, TRADING_FEE),
+      this.fee(taker, TRADING_FEE),
+    ]);
+    return [
+      'Trading fee',
+      `${makerText} if it waits on the book, ${takerText} if it fills at once`,
+    ];
+  }
+
+  /** Whether `address` is one of the wallet's own addresses, compared as bytes. */
+  isOwn(address: string): boolean {
+    return this.ctx.ownAddresses.some((own) => sameAddress(own, address));
   }
 
   /**
@@ -395,10 +473,11 @@ async function routePath(
 }
 
 async function swapParts(l: Lookups, msg: MsgMultiSwap): Promise<Parts> {
-  const [pay, get, route] = await Promise.all([
+  const [pay, get, route, fee] = await Promise.all([
     l.money(msg.input.denom, msg.input.amount),
     l.money(msg.minOutput.denom, msg.minOutput.amount),
     routePath(l, msg),
+    l.takerFee(),
   ]);
   return {
     // A route that does not end in the denom the swap promises is not what it says it is.
@@ -411,6 +490,7 @@ async function swapParts(l: Lookups, msg: MsgMultiSwap): Promise<Parts> {
       ['Route', route.path.join(' → ')],
       ['You pay', pay],
       ['You get at least', get],
+      fee,
     ],
   };
 }
@@ -436,6 +516,7 @@ async function createOrderParts(l: Lookups, msg: MsgCreateOrder): Promise<Parts>
         ['Market', safeText(msg.marketId), 'mono'],
         ['Amount', `${safeText(msg.amount, 40)} (base units)`],
         ['Price', `${safeText(msg.price, 40)} (base units)`],
+        await l.orderFee(),
       ],
       marketId: msg.marketId,
     };
@@ -458,6 +539,7 @@ async function createOrderParts(l: Lookups, msg: MsgCreateOrder): Promise<Parts>
       ['Amount', amountText],
       ['Price', price],
       ['Total', await l.money(market.quote, total)],
+      await l.orderFee(),
     ],
     marketId: market.id,
     marketPair: pair,
@@ -534,6 +616,7 @@ async function fillOrdersParts(l: Lookups, msg: MsgFillOrders): Promise<Parts> {
           `Order ${String(i + 1)}`,
           `${safeText(item.amount, 40)} @ ${safeText(item.price, 40)} (base units)`,
         ]),
+        await l.takerFee(),
       ],
       marketId: msg.marketId,
       ...(market ? { marketPair: pair } : {}),
@@ -560,7 +643,7 @@ async function fillOrdersParts(l: Lookups, msg: MsgFillOrders): Promise<Parts> {
   const [hero, sub, baseLabel, quoteLabel] = buying
     ? [`You pay up to ${quoteText}`, `You get ${baseText}`, 'You get', 'You pay up to']
     : [`You get ${quoteText}`, `You pay ${baseText}`, 'You pay', 'You get'];
-  rows.push([baseLabel, baseText], [quoteLabel, quoteText]);
+  rows.push([baseLabel, baseText], [quoteLabel, quoteText], await l.takerFee());
   return {
     level: 'normal',
     icon: 'order',
@@ -847,6 +930,13 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, i) => byte === b[i]);
 }
 
+/** Two `bze1…` addresses of the same account; anything else is never the same. */
+function sameAddress(a: string, b: string): boolean {
+  const x = bzeAddressHash(a);
+  const y = bzeAddressHash(b);
+  return x !== null && y !== null && sameBytes(x, y);
+}
+
 /**
  * A wrapped message signed by `me` (the address signing the transaction) acts on that
  * address's own account: the chain needs no grant for it. Another signer is a granter whose
@@ -1077,15 +1167,17 @@ async function createMarketParts(l: Lookups, msg: MsgCreateMarket): Promise<Part
       ['Market', pair],
       ['Base', safeText(msg.base, 80), 'mono'],
       ['Quote', safeText(msg.quote, 80), 'mono'],
+      await l.creationFee('market'),
     ],
   };
 }
 
 async function createPoolParts(l: Lookups, msg: MsgCreateLiquidityPool): Promise<Parts> {
-  const [pair, base, quote] = await Promise.all([
+  const [pair, base, quote, fee] = await Promise.all([
     l.pair(msg.base, msg.quote),
     l.money(msg.base, msg.initialBase),
     l.money(msg.quote, msg.initialQuote),
+    l.creationFee('market'),
   ]);
   const valid = toUint(msg.initialBase) !== null && toUint(msg.initialQuote) !== null;
   return {
@@ -1099,6 +1191,7 @@ async function createPoolParts(l: Lookups, msg: MsgCreateLiquidityPool): Promise
       ['You add', `${base} + ${quote}`],
       ['Swap fee', safeText(msg.fee, 40)],
       ['Kind', msg.stable ? 'Stable' : 'Standard'],
+      fee,
     ],
   };
 }
@@ -1468,7 +1561,11 @@ async function payRespectParts(l: Lookups, msg: MsgPayPublisherRespect): Promise
 
 // ---- cosmos and ibc ----
 
-const MAX_OUTPUT_ROWS = 10;
+/**
+ * Most recipients a multi-send review lists. Every one is listed up to here, so an airdrop reads
+ * in full; past it the list is cut short, says so and needs the user's tick.
+ */
+const MAX_MULTISEND_RECIPIENTS = 1000;
 
 async function multiSendParts(l: Lookups, msg: MsgMultiSend): Promise<Parts> {
   const totals = new Map<string, bigint>();
@@ -1487,21 +1584,51 @@ async function multiSendParts(l: Lookups, msg: MsgMultiSend): Promise<Parts> {
       : totals.size === 0
         ? 'No tokens'
         : `${String(totals.size)} tokens`;
+  const [single] = msg.outputs;
+  if (msg.outputs.length === 1 && single) {
+    // One output reads like a send.
+    const rows: SummaryRow[] = [['To', safeText(single.address, 80), 'mono']];
+    for (const coin of single.coins) rows.push(['Amount', await l.money(coin.denom, coin.amount)]);
+    return {
+      level: valid ? 'normal' : 'unknown',
+      icon: 'send',
+      title: 'Send',
+      hero,
+      sub: `to ${l.who(single.address)}`,
+      rows,
+    };
+  }
   const rows: SummaryRow[] = [];
-  for (const out of msg.outputs.slice(0, MAX_OUTPUT_ROWS)) {
-    rows.push([l.who(out.address), await l.coins(out.coins)]);
+  for (const [denom, amount] of totals) rows.push(['Total', await l.money(denom, amount)]);
+  for (const out of msg.outputs.slice(0, MAX_MULTISEND_RECIPIENTS)) {
+    const name = l.ctx.addressBook(out.address);
+    rows.push([name ? safeText(name, 40) : 'To', safeText(out.address, 80), 'mono']);
+    rows.push(['Amount', (await coinsText(l, out.coins)) ?? 'Unreadable amount']);
   }
-  if (msg.outputs.length > MAX_OUTPUT_ROWS) {
-    rows.push(['…', `${String(msg.outputs.length - MAX_OUTPUT_ROWS)} more`]);
+  const count = msg.outputs.length;
+  const cut = count > MAX_MULTISEND_RECIPIENTS;
+  if (cut) {
+    rows.push([
+      '…',
+      `Showing ${group(String(MAX_MULTISEND_RECIPIENTS))} of ${group(String(count))} recipients`,
+    ]);
   }
-  const count = BigInt(msg.outputs.length);
+  const level: RiskLevel = cut ? 'dangerous' : valid ? 'normal' : 'unknown';
   return {
-    level: valid ? 'normal' : 'unknown',
+    level,
     icon: 'send',
     title: 'Send',
     hero,
-    sub: `to ${plural(count, 'address', 'addresses')}`,
+    sub: `to ${plural(BigInt(count), 'address', 'addresses')}`,
     rows,
+    ...(cut
+      ? {
+          danger: {
+            title: 'Not every recipient is shown here',
+            text: `This sends to ${group(String(count))} addresses and only the first ${group(String(MAX_MULTISEND_RECIPIENTS))} are listed. The totals count all of them. Read the rest in the message details before you continue.`,
+          },
+        }
+      : {}),
   };
 }
 
@@ -1530,13 +1657,24 @@ async function stakingParts(
 }
 
 function setWithdrawAddressParts(l: Lookups, msg: MsgSetWithdrawAddress): Parts {
+  const address = safeText(msg.withdrawAddress, 80);
+  const own =
+    sameAddress(msg.withdrawAddress, msg.delegatorAddress) || l.isOwn(msg.withdrawAddress);
   return {
-    level: 'normal',
+    level: own ? 'normal' : 'dangerous',
     icon: 'rewards',
     title: 'Change rewards address',
-    hero: safeText(msg.withdrawAddress, 80),
+    hero: address,
     sub: 'Your future staking rewards go there',
-    rows: [['Rewards address', safeText(msg.withdrawAddress, 80), 'mono']],
+    rows: [['Rewards address', address, 'mono']],
+    ...(own
+      ? {}
+      : {
+          danger: {
+            title: `Your future staking rewards go to ${l.who(msg.withdrawAddress)}`,
+            text: 'This is not an address of this wallet. From now on, the staking rewards of this address are paid there, also when you later stake, unstake or move stake, until you change it back. Continue only if you expect that.',
+          },
+        }),
   };
 }
 
@@ -1639,25 +1777,146 @@ async function givingParts(
   };
 }
 
+/** Where an IBC transfer's memo sends the coins after the receiving chain. */
+type Destination =
+  | { kind: 'none' }
+  | { kind: 'forward'; receiver: string }
+  | { kind: 'unknown'; why: 'contract' | 'unreadable' };
+
+/** Forward hops read before the rest counts as unreadable. */
+const MAX_FORWARD_HOPS = 8;
+const MAX_RECEIVER = 128;
+
+/**
+ * The one key of `obj` that is `name` in any letter case: `undefined` when there is none,
+ * `null` when it is not exactly `name` or there are several. Some readers on the other chain
+ * match keys without regard to case, so another spelling is not ignored.
+ */
+function onlyKey(obj: Record<string, unknown>, name: string): string | null | undefined {
+  const keys = Object.keys(obj).filter((k) => k.toLowerCase() === name);
+  if (keys.length === 0) return undefined;
+  return keys.length === 1 && keys[0] === name ? name : null;
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function parseObject(raw: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the forwarding and contract-call instructions of a memo. Anything it cannot read for
+ * sure gives `unknown`: the final recipient is never guessed.
+ */
+function memoDestination(memo: string): Destination {
+  const unreadable: Destination = { kind: 'unknown', why: 'unreadable' };
+  let obj: Record<string, unknown> | null = parseObject(memo);
+  if (obj === null) {
+    // Not a JSON object, so not instructions: unless it looks like broken ones.
+    return /"\s*(forward|wasm)\s*"/i.test(memo) ? unreadable : { kind: 'none' };
+  }
+  let receiver: string | null = null;
+  for (let hop = 0; hop <= MAX_FORWARD_HOPS; hop += 1) {
+    if (onlyKey(obj, 'wasm') !== undefined) return { kind: 'unknown', why: 'contract' };
+    const forwardKey = onlyKey(obj, 'forward');
+    if (forwardKey === undefined) {
+      return receiver === null ? { kind: 'none' } : { kind: 'forward', receiver };
+    }
+    if (forwardKey === null || hop === MAX_FORWARD_HOPS) return unreadable;
+    const forward = obj[forwardKey];
+    if (!isPlainObject(forward)) return unreadable;
+    const receiverKey = onlyKey(forward, 'receiver');
+    const value = receiverKey ? forward[receiverKey] : undefined;
+    if (
+      typeof value !== 'string' ||
+      value === '' ||
+      value.length > MAX_RECEIVER ||
+      sanitiseText(value, MAX_RECEIVER) !== value
+    ) {
+      return unreadable;
+    }
+    receiver = value;
+    const nextKey = onlyKey(forward, 'next');
+    if (nextKey === undefined) return { kind: 'forward', receiver };
+    if (nextKey === null) return unreadable;
+    const next = forward[nextKey];
+    if (next === null) return { kind: 'forward', receiver };
+    const nextObj = typeof next === 'string' ? parseObject(next) : next;
+    if (!isPlainObject(nextObj)) return unreadable;
+    obj = nextObj;
+  }
+  return unreadable;
+}
+
 async function transferParts(l: Lookups, msg: MsgTransfer): Promise<Parts> {
   const amount = await coinText(l, msg.token);
   const channel = safeText(msg.sourceChannel, 40);
-  const rows: SummaryRow[] = [
-    ['To', safeText(msg.receiver, 120), 'mono'],
+  const destination = memoDestination(msg.memo);
+  const rows: SummaryRow[] = [];
+  if (destination.kind === 'forward') {
+    rows.push(['Final recipient', destination.receiver, 'mono']);
+  } else if (destination.kind === 'unknown') {
+    rows.push([
+      'Final recipient',
+      destination.why === 'contract'
+        ? 'Unknown (contract call)'
+        : 'Unknown (instructions the wallet cannot read)',
+    ]);
+  }
+  rows.push(
+    [destination.kind === 'none' ? 'To' : 'First receiver', safeText(msg.receiver, 120), 'mono'],
     ['Amount', amount ?? 'Unreadable amount'],
     ['Channel', channel, 'mono'],
-  ];
+  );
   // A memo can tell the other chain to forward the coins on: show it.
   const memo = memoText(msg.memo);
   if (memo !== null) rows.push(['Memo', memo]);
-  return {
-    level: amount === null ? 'unknown' : 'normal',
-    icon: 'send',
+  const base = {
+    icon: 'send' as const,
     title: 'Send',
     hero: amount ?? 'Unreadable amount',
-    sub: `to ${l.who(msg.receiver)} on another chain · ${channel}`,
     rows,
   };
+  switch (destination.kind) {
+    case 'none':
+      return {
+        ...base,
+        level: amount === null ? 'unknown' : 'normal',
+        sub: `to ${l.who(msg.receiver)} on another chain · ${channel}`,
+      };
+    case 'forward':
+      return {
+        ...base,
+        level: 'dangerous',
+        sub: `to ${destination.receiver} · forwarded on from another chain`,
+        danger: {
+          title: 'The tokens are sent on from the other chain',
+          text: `The memo asks the receiving chain to forward them to ${destination.receiver}. Continue only if you expect that.`,
+        },
+      };
+    case 'unknown':
+      return {
+        ...base,
+        level: 'dangerous',
+        sub:
+          destination.why === 'contract'
+            ? 'final recipient unknown · contract call on another chain'
+            : 'final recipient unknown · instructions the wallet cannot read',
+        danger: {
+          title: 'The wallet cannot tell where the tokens end up',
+          text:
+            destination.why === 'contract'
+              ? 'The memo asks the receiving chain to run a contract with them. Continue only if you expect that.'
+              : 'The memo holds forwarding instructions the wallet cannot read. Continue only if you expect that.',
+        },
+      };
+  }
 }
 
 /** `depth` and `me` are set for messages wrapped in an exec; see `execParts`. */
@@ -1792,7 +2051,7 @@ async function partsOf(l: Lookups, msg: AnyMsg, depth = 0, me?: string): Promise
           title: 'Create token',
           hero: subdenom,
           sub: 'you become its admin',
-          rows: [['Subdenom', subdenom, 'mono']],
+          rows: [['Subdenom', subdenom, 'mono'], await l.creationFee('token')],
         };
       }
       case factory.MsgMint.typeUrl:

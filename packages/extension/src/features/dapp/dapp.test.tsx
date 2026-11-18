@@ -733,6 +733,11 @@ async function signView(
     },
     markets: { markets: () => Promise.resolve([]), liquidityPools: () => Promise.resolve([]) },
     orders: { marketOrder: () => Promise.resolve(null) },
+    fees: {
+      tradebinParams: () => Promise.reject(new Error('not read')),
+      tokenFactoryParams: () => Promise.reject(new Error('not read')),
+    },
+    ownAddresses: [ME],
     addressBook: () => null,
   });
   return {

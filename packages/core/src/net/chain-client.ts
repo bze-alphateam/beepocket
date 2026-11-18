@@ -47,9 +47,26 @@ export interface FeeParams {
   minGasPrice: { denom: string; amount: string };
 }
 
+/** A coin amount read from chain params. */
+export interface CoinAmount {
+  denom: string;
+  amount: bigint;
+}
+
 export interface TradebinParams {
   nativeDenom: string;
   minNativeLiquidityForModuleSwap: bigint;
+  /** Paid for a new market or pool; absent when the node does not report a readable one. */
+  createMarketFee?: CoinAmount;
+  /** Paid by an order that waits on the book. */
+  marketMakerFee?: CoinAmount;
+  /** Paid by an order that fills at once, a fill and a swap. */
+  marketTakerFee?: CoinAmount;
+}
+
+export interface TokenFactoryParams {
+  /** Paid for a new token; absent when the node does not report a readable one. */
+  createDenomFee?: CoinAmount;
 }
 
 export interface Pool {
@@ -129,6 +146,7 @@ export interface ChainClient {
   denomBranding(denom: string): Promise<DenomBranding | null>;
   feeParams(): Promise<FeeParams>;
   tradebinParams(): Promise<TradebinParams>;
+  tokenFactoryParams(): Promise<TokenFactoryParams>;
   liquidityPools(): Promise<Pool[]>;
   haltedDenoms(): Promise<string[]>;
   markets(): Promise<Market[]>;
@@ -177,6 +195,23 @@ export async function withBalancesOf(
   return filled;
 }
 const GRPC_NOT_FOUND = 5;
+
+/** `{ [key]: coin }` for a readable `{ denom, amount }` param, `{}` for anything else. */
+function paramCoin<K extends string>(
+  params: Record<string, unknown>,
+  key: K,
+): Partial<Record<K, CoinAmount>> {
+  const path = `params.${key}`;
+  try {
+    const coin = v.object(v.field(params, key, 'params'), path);
+    const denom = v.string(v.field(coin, 'denom', path), `${path}.denom`);
+    const amount = v.uintString(v.field(coin, 'amount', path), `${path}.amount`);
+    if (denom === '') return {};
+    return { [key]: { denom, amount } } as Partial<Record<K, CoinAmount>>;
+  } catch {
+    return {};
+  }
+}
 
 export class RestChainClient implements ChainClient {
   constructor(
@@ -346,7 +381,18 @@ export class RestChainClient implements ChainClient {
         v.field(params, 'minNativeLiquidityForModuleSwap', 'params'),
         'params.minNativeLiquidityForModuleSwap',
       ),
+      // The fees only inform a review: one that cannot be read is left out, not an error.
+      ...paramCoin(params, 'createMarketFee'),
+      ...paramCoin(params, 'marketMakerFee'),
+      ...paramCoin(params, 'marketTakerFee'),
     };
+  }
+
+  async tokenFactoryParams(): Promise<TokenFactoryParams> {
+    const body = await this.getJson('/bze/tokenfactory/params');
+    const params = v.object(v.field(v.object(body, '$'), 'params', '$'), 'params');
+    const fee = paramCoin(params, 'create_denom_fee').create_denom_fee;
+    return fee ? { createDenomFee: fee } : {};
   }
 
   liquidityPools(): Promise<Pool[]> {

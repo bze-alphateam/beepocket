@@ -416,6 +416,8 @@ export async function prepareSign(
       tokens: env.tokens,
       markets: env.chain,
       orders: env.chain,
+      fees: env.chain,
+      ownAddresses: profile.addresses.map((a) => a.address),
       addressBook: (address) => contactName(profile.addressBook, address),
     },
     { memo: verified.body.memo },

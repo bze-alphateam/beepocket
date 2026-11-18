@@ -19,7 +19,15 @@ export interface ChainEnv {
   network: Network;
   chain: Pick<
     ChainClient,
-    'account' | 'balances' | 'balance' | 'broadcast' | 'markets' | 'liquidityPools' | 'marketOrder'
+    | 'account'
+    | 'balances'
+    | 'balance'
+    | 'broadcast'
+    | 'markets'
+    | 'liquidityPools'
+    | 'marketOrder'
+    | 'tradebinParams'
+    | 'tokenFactoryParams'
   >;
   fees: Pick<FeeEstimator, 'estimate' | 'feeData'>;
   tokens: { resolve(denom: string): Promise<TokenInfo> };
