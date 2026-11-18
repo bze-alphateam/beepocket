@@ -2460,7 +2460,10 @@ describe('IBC transfer destination', () => {
     ['a contract call in capitals', JSON.stringify({ WASM: { contract: OSMO, msg: {} } })],
     ['a contract call in mixed case', JSON.stringify({ Wasm: { contract: OSMO, msg: {} } })],
     ['a key with a long s', JSON.stringify({ 'wa\u017fm': { contract: OSMO, msg: {} } })],
-    ['a long-s contract key next to a forward', `{"forward":{"receiver":"${OSMO}"},"wa\u017fm":{}}`],
+    [
+      'a long-s contract key next to a forward',
+      `{"forward":{"receiver":"${OSMO}"},"wa\u017fm":{}}`,
+    ],
     ['a forward and a contract call together', JSON.stringify({ ...forward(OSMO), wasm: {} })],
     ['an array of instructions', JSON.stringify([forward(OSMO)])],
     ['more than eight forwards', JSON.stringify(hops(9))],
