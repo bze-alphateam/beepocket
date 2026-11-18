@@ -859,7 +859,7 @@ describe('a sign request waiting in the queue', () => {
     expect(await t.dapp.current()).toMatchObject({ status: 'sign', id: first.id, count: 2 });
 
     await t.answer(first.id, { approve: false });
-    expect(await t.dapp.sites.disconnect(ORIGIN)).toEqual({ ok: true, value: {} });
+    expect(await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).toEqual({ ok: true, value: {} });
     expect(await t.dapp.current()).toEqual({ status: 'none' });
     expect(t.answerOf(second.id)).toMatchObject({ error: { code: 'not-connected' } });
   });

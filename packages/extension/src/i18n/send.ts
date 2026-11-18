@@ -30,6 +30,8 @@ export const send = {
   'send.review.warning': "Check the address. A sent transaction can't be undone.",
   'send.review.confirm': 'Confirm and send',
   'send.review.changed': 'The network fee changed. Check the new numbers before you send.',
+  'send.review.changedDetails':
+    'The network or the sending address changed. Check the details before you send.',
   'send.review.unlock': 'Enter your password to sign',
   'send.review.password': 'Password',
   'send.fee.title': 'Pay network fee with',

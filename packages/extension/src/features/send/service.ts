@@ -52,7 +52,8 @@ export interface SendWallet {
 }
 
 export interface SendDeps {
-  network: Pick<Network, 'chainId' | 'scan'>;
+  /** The network this service signs for: the active one when the request came in. */
+  network: Pick<Network, 'id' | 'chainId' | 'scan'>;
   chain: Pick<
     ChainClient,
     'account' | 'balances' | 'balance' | 'broadcast' | 'waitForTx' | 'latestHeight'
@@ -182,6 +183,7 @@ export class SendService {
         continue;
       }
       return ok({
+        network: this.deps.network.id,
         from: { index: ctx.from.index, address: ctx.from.address },
         to: req.to,
         token: {
@@ -211,6 +213,10 @@ export class SendService {
     const amount = BigInt(req.amount);
     const reviewedFee = BigInt(req.feeAmount);
     if (amount === 0n) return fail(SendErrorCodes.invalidAmount, 'Enter an amount above zero.');
+    // Only on the network it was reviewed on, which is the one the signature names.
+    if (req.network !== this.deps.network.id) {
+      return fail(SendErrorCodes.reviewChanged, 'The network changed. Review the send again.');
+    }
 
     // Before any network call: a weak lock asks for the password and the UI retries.
     const { state } = await this.deps.wallet.state();
@@ -222,6 +228,10 @@ export class SendService {
     const context = await this.context(req.fromIndex, [req.denom, req.feeDenom]);
     if (!context.ok) return context;
     const ctx = context.value;
+    // Only from the address that was reviewed: the wallet behind the index may have changed.
+    if (ctx.from.address !== req.fromAddress) {
+      return fail(SendErrorCodes.reviewChanged, 'The sending address changed. Review it again.');
+    }
     // Right after a signed send, or while one is being signed, another one waits: the first
     // may still be on its way. The claim is taken before anything is signed.
     const address = ctx.from.address;

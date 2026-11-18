@@ -28,8 +28,10 @@ export function ReviewScreen(props: {
   /** The weak lock: the password field signs, in place of the plain button. */
   locked: boolean;
   busy: boolean;
-  /** The fee moved since the last look. */
-  changed: boolean;
+  /**
+   * What moved since the last look: the fee, or the network or the sending address (`details`).
+   */
+  changed: 'fee' | 'details' | null;
   error: string | null;
   onConfirm: () => void;
   onUnlocked: () => void;
@@ -88,7 +90,11 @@ export function ReviewScreen(props: {
         </Banner>
       )}
       {props.reset && <Banner tone="amber">{t('send.fee.reset')}</Banner>}
-      {props.changed && <Banner tone="amber">{t('send.review.changed')}</Banner>}
+      {props.changed !== null && (
+        <Banner tone="amber">
+          {t(props.changed === 'fee' ? 'send.review.changed' : 'send.review.changedDetails')}
+        </Banner>
+      )}
       {props.error !== null && <Banner tone="red">{props.error}</Banner>}
       <div class="bp-send-grow" />
       {props.locked ? (

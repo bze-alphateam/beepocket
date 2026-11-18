@@ -593,7 +593,7 @@ describe('connected sites', () => {
     await connectSite(t, t.site(OTHER, 2, 'doc-2'), 0);
     await t.ask('getKey', chainId(), t.site(ORIGIN, 3, 'doc-3'));
 
-    expect(await t.dapp.sites.change(ORIGIN, 1)).toEqual({ ok: true, value: {} });
+    expect(await t.dapp.sites.change(ORIGIN, 1, 'mainnet')).toEqual({ ok: true, value: {} });
     expect(pushes(t)).toEqual(['1:doc-1', '3:doc-3']);
     expect(t.delivered.at(-1)?.message).toEqual({ dapp: { event: 'accountChanged' } });
 
@@ -606,11 +606,11 @@ describe('connected sites', () => {
   it('Change refuses an unknown site or address and pushes nothing', async () => {
     const t = await rig();
     await connectSite(t, t.site());
-    expect(await t.dapp.sites.change(OTHER, 1)).toMatchObject({
+    expect(await t.dapp.sites.change(OTHER, 1, 'mainnet')).toMatchObject({
       ok: false,
       error: { code: 'unknown-site' },
     });
-    expect(await t.dapp.sites.change(ORIGIN, 9)).toMatchObject({
+    expect(await t.dapp.sites.change(ORIGIN, 9, 'mainnet')).toMatchObject({
       ok: false,
       error: { code: 'unknown_address' },
     });
@@ -622,13 +622,13 @@ describe('connected sites', () => {
     await connectSite(t, t.site(ORIGIN, 1, 'doc-1'));
     await connectSite(t, t.site(OTHER, 2, 'doc-2'));
 
-    expect(await t.dapp.sites.disconnect(ORIGIN)).toEqual({ ok: true, value: {} });
+    expect(await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).toEqual({ ok: true, value: {} });
     expect(pushes(t)).toEqual(['1:doc-1']);
     const key = await t.ask('getKey', chainId());
     expect(one(t.answersFor(key.id))).toMatchObject({ error: { code: 'not-connected' } });
     const listed = await t.dapp.sites.list();
     expect(listed.ok && listed.value.sites.map((s) => s.origin)).toEqual([OTHER]);
-    expect(await t.dapp.sites.disconnect(ORIGIN)).toMatchObject({
+    expect(await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).toMatchObject({
       ok: false,
       error: { code: 'unknown-site' },
     });
@@ -638,7 +638,7 @@ describe('connected sites', () => {
     const t = await rig();
     await connectSite(t, t.site());
     await t.wallet.weakLock();
-    expect(await t.dapp.sites.disconnect(ORIGIN)).toMatchObject({
+    expect(await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).toMatchObject({
       ok: false,
       error: { code: 'needs-password' },
     });
@@ -710,11 +710,11 @@ describe('connected sites', () => {
     const t = await rig();
     await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 0);
     t.active.tabs = [{ url: ORIGIN }];
-    expect((await t.dapp.sites.change(ORIGIN, 1)).ok).toBe(true);
+    expect((await t.dapp.sites.change(ORIGIN, 1, 'mainnet')).ok).toBe(true);
     const changed = await t.dapp.sites.current();
     expect(changed.ok && changed.value.site?.label).toBe('Address 2');
     expect(pushes(t)).toEqual(['1:doc-1']);
-    expect((await t.dapp.sites.disconnect(ORIGIN)).ok).toBe(true);
+    expect((await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).ok).toBe(true);
     const gone = await t.dapp.sites.current();
     expect(gone.ok && gone.value.site).toBeNull();
   });

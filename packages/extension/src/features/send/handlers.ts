@@ -1,4 +1,4 @@
-import { FeeEstimator } from '@beepocket/core';
+import { FeeEstimator, NETWORKS, type NetworkId } from '@beepocket/core';
 import { ErrorCodes, fail, ok, type Result } from '../../protocol';
 import type { SendPrepareRequest, SendSubmitRequest } from '../../protocol/send';
 import type { HandlerDeps } from '../../background/handlers';
@@ -17,6 +17,8 @@ function asObject(payload: unknown): Payload | null {
 }
 
 const isIndex = (x: unknown): x is number => typeof x === 'number' && Number.isInteger(x) && x >= 0;
+const isNetwork = (x: unknown): x is NetworkId =>
+  typeof x === 'string' && Object.hasOwn(NETWORKS, x);
 
 function validatePrepare(payload: unknown): Result<SendPrepareRequest> {
   const p = asObject(payload);
@@ -52,6 +54,8 @@ function validateSubmit(payload: unknown): Result<SendSubmitRequest> {
   if (
     !p ||
     !isIndex(p.fromIndex) ||
+    typeof p.fromAddress !== 'string' ||
+    !isNetwork(p.network) ||
     typeof p.to !== 'string' ||
     typeof p.denom !== 'string' ||
     typeof p.amount !== 'string' ||
@@ -67,6 +71,8 @@ function validateSubmit(payload: unknown): Result<SendSubmitRequest> {
   }
   return ok({
     fromIndex: p.fromIndex,
+    fromAddress: p.fromAddress,
+    network: p.network,
     to: p.to,
     denom: p.denom,
     amount: p.amount,

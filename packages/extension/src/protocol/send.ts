@@ -1,3 +1,5 @@
+import type { NetworkId } from '@beepocket/core';
+
 /** Error codes of the `send.*` methods (`Result.error.code`). */
 export const SendErrorCodes = {
   /** The recipient is not a BeeZee address. */
@@ -17,7 +19,10 @@ export const SendErrorCodes = {
   unknownAddress: 'unknown_address',
   /** The node would reject the transaction; the message is the node's own. */
   simulationFailed: 'simulation-failed',
-  /** The fee or the amount is no longer what was reviewed; review again. */
+  /**
+   * The fee, the amount, the network or the sending address is no longer what was reviewed;
+   * review again.
+   */
   reviewChanged: 'review-changed',
   /** The node rejected the broadcast; the message is the node's own, verbatim. */
   rejected: 'tx-rejected',
@@ -81,6 +86,8 @@ export interface FeeChoice {
 
 /** What the review screen shows. Everything here is exactly what `send.submit` signs. */
 export interface SendQuote {
+  /** The network the quote was made on: the only one `send.submit` signs it for. */
+  network: NetworkId;
   from: { index: number; address: string };
   to: string;
   token: { denom: string; symbol: string; decimals: number };
@@ -115,6 +122,10 @@ export interface SendPrepareRequest extends SendDraft {
 
 /** The reviewed quote, handed back to sign. The amounts are base units. */
 export interface SendSubmitRequest extends SendDraft {
+  /** The quote's `network`: refused unless it is still the active one. */
+  network: NetworkId;
+  /** The quote's `from.address`: refused unless `fromIndex` still holds it. */
+  fromAddress: string;
   amount: string;
   feeDenom: string;
   feeAmount: string;

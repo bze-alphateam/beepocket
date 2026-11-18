@@ -104,10 +104,20 @@ export interface SitesProtocol {
    */
   'sites.current': {
     req: Record<string, never>;
-    res: { site: ConnectedSiteView | null; addresses: WalletAddress[] };
+    res: { network: NetworkId; site: ConnectedSiteView | null; addresses: WalletAddress[] };
   };
-  /** Gives the site another address and tells its open pages. Needs the wallet unlocked. */
-  'sites.change': { req: { origin: string; index: number }; res: Record<string, never> };
-  /** Forgets the site and tells its open pages. Needs the wallet unlocked. */
-  'sites.disconnect': { req: { origin: string }; res: Record<string, never> };
+  /**
+   * Gives the site another address and tells its open pages. Needs the wallet unlocked.
+   * `network` is the one the site was listed for: any other active network answers
+   * `unknown-site`, and nothing changes.
+   */
+  'sites.change': {
+    req: { origin: string; index: number; network: NetworkId };
+    res: Record<string, never>;
+  };
+  /**
+   * Forgets the site and tells its open pages. Needs the wallet unlocked. `network` as for
+   * `sites.change`.
+   */
+  'sites.disconnect': { req: { origin: string; network: NetworkId }; res: Record<string, never> };
 }
