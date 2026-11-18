@@ -2663,7 +2663,7 @@ describe('amounts that are not plain whole numbers', () => {
     expect((await run([send(ALEX, [{ denom: 'ubze', amount }])])).level).toBe('unknown');
   });
 
-  it('never reads a leading zero as a smaller-looking decimal', async () => {
+  it('shows a non-plain amount as written, not as a number', async () => {
     const s = await run([
       pack(MsgMultiSwap, {
         creator: ME,

@@ -21,7 +21,9 @@ import { AuthInfo, Fee, TxBody } from './proto/cosmos/tx/v1beta1/tx';
 import { Any } from './proto/google/protobuf/any';
 import {
   MsgAddLiquidity,
+  MsgCreateLiquidityPool,
   MsgCreateOrder,
+  MsgFillOrders,
   MsgMultiSwap,
   MsgRemoveLiquidity,
 } from './proto/bze/tradebin/tx';
@@ -715,6 +717,250 @@ describe('verifySignRequest refuses amounts not written as plain whole numbers',
       expect([amount, code(request({}, [make(amount)]))]).toEqual([amount, 'ok']);
   });
 
+  const fieldMakers: [string, (v: string) => AnyMsg][] = [
+    [
+      'order amount',
+      (v) =>
+        pack(MsgCreateOrder, {
+          creator: ME,
+          orderType: 'buy',
+          amount: v,
+          price: '1',
+          marketId: 'm',
+        }),
+    ],
+    [
+      'fill item amount',
+      (v) =>
+        pack(MsgFillOrders, {
+          creator: ME,
+          marketId: 'm',
+          orderType: 'buy',
+          orders: [
+            { price: '1', amount: '5' },
+            { price: '1', amount: v },
+          ],
+        }),
+    ],
+    [
+      'pool initial base',
+      (v) =>
+        pack(MsgCreateLiquidityPool, {
+          creator: ME,
+          base: 'ubze',
+          quote: 'uusdc',
+          initialBase: v,
+          initialQuote: '1',
+        }),
+    ],
+    [
+      'pool initial quote',
+      (v) =>
+        pack(MsgCreateLiquidityPool, {
+          creator: ME,
+          base: 'ubze',
+          quote: 'uusdc',
+          initialBase: '1',
+          initialQuote: v,
+        }),
+    ],
+    [
+      'add base amount',
+      (v) =>
+        pack(MsgAddLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          baseAmount: v,
+          quoteAmount: '1',
+          minLpTokens: '1',
+        }),
+    ],
+    [
+      'add quote amount',
+      (v) =>
+        pack(MsgAddLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          baseAmount: '1',
+          quoteAmount: v,
+          minLpTokens: '1',
+        }),
+    ],
+    [
+      'add min LP tokens',
+      (v) =>
+        pack(MsgAddLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          baseAmount: '1',
+          quoteAmount: '1',
+          minLpTokens: v,
+        }),
+    ],
+    [
+      'remove LP tokens',
+      (v) =>
+        pack(MsgRemoveLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          lpTokens: v,
+          minBase: '1',
+          minQuote: '1',
+        }),
+    ],
+    [
+      'remove min base',
+      (v) =>
+        pack(MsgRemoveLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          lpTokens: '1',
+          minBase: v,
+          minQuote: '1',
+        }),
+    ],
+    [
+      'remove min quote',
+      (v) =>
+        pack(MsgRemoveLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          lpTokens: '1',
+          minBase: '1',
+          minQuote: v,
+        }),
+    ],
+    [
+      'staking reward prize',
+      (v) =>
+        pack(rewardsMsgs.MsgCreateStakingReward, {
+          creator: ME,
+          prizeAmount: v,
+          prizeDenom: 'ubze',
+          stakingDenom: 'ubze',
+          duration: '1',
+          minStake: '1',
+          lock: '1',
+        }),
+    ],
+    [
+      'staking reward min stake',
+      (v) =>
+        pack(rewardsMsgs.MsgCreateStakingReward, {
+          creator: ME,
+          prizeAmount: '1',
+          prizeDenom: 'ubze',
+          stakingDenom: 'ubze',
+          duration: '1',
+          minStake: v,
+          lock: '1',
+        }),
+    ],
+    [
+      'trading reward prize',
+      (v) =>
+        pack(rewardsMsgs.MsgCreateTradingReward, {
+          creator: ME,
+          prizeAmount: v,
+          prizeDenom: 'ubze',
+          duration: '1',
+          marketId: 'm',
+          slots: '1',
+        }),
+    ],
+    [
+      'join staking',
+      (v) => pack(rewardsMsgs.MsgJoinStaking, { creator: ME, rewardId: '1', amount: v }),
+    ],
+    [
+      'distribute staking rewards',
+      (v) =>
+        pack(rewardsMsgs.MsgDistributeStakingRewards, { creator: ME, rewardId: '1', amount: v }),
+    ],
+    [
+      'join denom reward',
+      (v) => pack(rewardsMsgs.MsgJoinDenomReward, { creator: ME, denom: 'ubze', amount: v }),
+    ],
+    [
+      'denom reward schedule',
+      (v) =>
+        pack(rewardsMsgs.MsgCreateDenomRewardSchedule, {
+          creator: ME,
+          denom: 'ubze',
+          prizeDenom: 'ubze',
+          dailyAmount: v,
+          duration: '1',
+        }),
+    ],
+    [
+      'distribute denom rewards',
+      (v) =>
+        pack(rewardsMsgs.MsgDistributeDenomRewards, {
+          creator: ME,
+          denom: 'ubze',
+          prizeDenom: 'ubze',
+          amount: v,
+        }),
+    ],
+    [
+      'raffle pot',
+      (v) =>
+        pack(burnerMsgs.MsgStartRaffle, {
+          creator: ME,
+          pot: v,
+          duration: '1',
+          chances: '1',
+          ratio: '0.1',
+          ticketPrice: '1',
+          denom: 'ubze',
+        }),
+    ],
+    [
+      'raffle duration',
+      (v) =>
+        pack(burnerMsgs.MsgStartRaffle, {
+          creator: ME,
+          pot: '1',
+          duration: v,
+          chances: '1',
+          ratio: '0.1',
+          ticketPrice: '1',
+          denom: 'ubze',
+        }),
+    ],
+    [
+      'raffle chances',
+      (v) =>
+        pack(burnerMsgs.MsgStartRaffle, {
+          creator: ME,
+          pot: '1',
+          duration: '1',
+          chances: v,
+          ratio: '0.1',
+          ticketPrice: '1',
+          denom: 'ubze',
+        }),
+    ],
+    [
+      'raffle ticket price',
+      (v) =>
+        pack(burnerMsgs.MsgStartRaffle, {
+          creator: ME,
+          pot: '1',
+          duration: '1',
+          chances: '1',
+          ratio: '0.1',
+          ticketPrice: v,
+          denom: 'ubze',
+        }),
+    ],
+  ];
+
+  it.each(fieldMakers)('every listed integer field: %s', (_name, make) => {
+    expect(code(request({}, [make('010')]))).toBe('bad-body');
+    expect(code(request({}, [make('10')]))).not.toBe('bad-body');
+  });
+
   it('leaves decimal prices alone', () => {
     const order = (price: string) =>
       pack(MsgCreateOrder, { creator: ME, orderType: 'buy', amount: '1', price, marketId: 'm' });
@@ -749,6 +995,12 @@ describe('verifySignRequest bounds nested messages', () => {
 
   it('accepts a shallow nesting', () => {
     expect(code(request({}, [nestedExec(3)]))).toBe('ok');
+  });
+
+  it('accepts 8 nested levels below the exec and refuses 9', () => {
+    // nestedExec(n) holds n wrappers around a send: n + 1 levels below the exec.
+    expect(code(request({}, [nestedExec(7)]))).toBe('ok');
+    expect(code(request({}, [nestedExec(8)]))).toBe('bad-body');
   });
 
   it.each([20, 500, 2000, 8000])('bad-body, quickly, at depth %i', (depth) => {
