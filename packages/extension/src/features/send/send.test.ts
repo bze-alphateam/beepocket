@@ -1101,6 +1101,53 @@ describe('pending sends', () => {
     });
   });
 
+  it('signs once when two submits arrive together', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    const results = await Promise.all([
+      s.call('send.submit', submitFrom(quote)),
+      s.call('send.submit', submitFrom(quote)),
+    ]);
+    expect(s.calls.sign).toBe(1);
+    expect(s.calls.broadcast).toBe(1);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toMatchObject([{ error: { code: PENDING } }]);
+  });
+
+  it('lets the next send through when a submit stops before signing', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.gasUsed = 200_000n;
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
+      ok: false,
+      error: { code: 'review-changed' },
+    });
+    s.control.gasUsed = 166_666n;
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+  });
+
+  it('remembers an unresolved send after a later one is found committed', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    // A: no answer from the node.
+    s.control.broadcastError = new TransportError('offline');
+    await s.call('send.submit', submitFrom(quote));
+    // B, after the window: accepted and found committed.
+    s.control.broadcastError = null;
+    s.control.now += WINDOW_MS;
+    s.control.account = { accountNumber: 7n, sequence: 4n };
+    const b = await s.call('send.submit', submitFrom(await quoteOf(s)));
+    if (!b.ok) throw new Error(b.error.code);
+    await s.call('send.status', { txHash: (b.value as { txHash: string }).txHash });
+    // C, refused: A can still be included, so the outcome is unknown, not a failure.
+    s.control.account = { accountNumber: 7n, sequence: 5n };
+    s.control.broadcastError = new BroadcastError(32, 'sdk', 'account sequence mismatch');
+    expect(await s.call('send.submit', submitFrom(await quoteOf(s)))).toMatchObject({
+      ok: true,
+      value: { unconfirmed: true },
+    });
+  });
+
   it('treats "already in the mempool" as sent, with the hash of the signed bytes', async () => {
     const s = setup();
     const quote = await quoteOf(s);

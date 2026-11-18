@@ -38,7 +38,7 @@ import type {
 } from '../../protocol/send';
 import { WalletErrorCodes, type WalletAddress, type WalletState } from '../../protocol/wallet';
 import { multiplierOf, pricingToWire } from './override';
-import { PENDING_WINDOW_MS, TIMEOUT_BLOCKS, type PendingSend, type PendingSends } from './pending';
+import { TIMEOUT_BLOCKS, type PendingSend, type PendingSends } from './pending';
 
 /** The slice of the wallet service the send flow signs through. */
 export interface SendWallet {
@@ -201,7 +201,7 @@ export class SendService {
     return fail(SendErrorCodes.reviewChanged, 'The fee keeps changing. Try again.');
   }
 
-  async submit(req: SendSubmitRequest): Promise<Result<{ txHash: string }>> {
+  async submit(req: SendSubmitRequest): Promise<Result<{ txHash: string; unconfirmed?: true }>> {
     if (!isBzeAddress(req.to)) {
       return fail(SendErrorCodes.invalidAddress, 'This is not a BeeZee address.');
     }
@@ -222,14 +222,31 @@ export class SendService {
     const context = await this.context(req.fromIndex, [req.denom, req.feeDenom]);
     if (!context.ok) return context;
     const ctx = context.value;
-    // Right after a signed send, another one waits: the first may still be on its way.
-    const previous = await this.deps.pending.get(ctx.from.address);
-    if (previous && Math.abs(this.deps.clock.now() - previous.signedAt) < PENDING_WINDOW_MS) {
+    // Right after a signed send, or while one is being signed, another one waits: the first
+    // may still be on its way. The claim is taken before anything is signed.
+    const address = ctx.from.address;
+    const earlier = await this.deps.pending.claim(address, this.deps.clock.now());
+    if (earlier === null) {
       return fail(
         SendErrorCodes.pendingSend,
         'A previous send is still pending. Check Activity before you send again.',
       );
     }
+    try {
+      return await this.signAndSend(req, ctx, amount, reviewedFee, earlier);
+    } finally {
+      await this.deps.pending.release(address);
+    }
+  }
+
+  /** Checks, signs and broadcasts the reviewed quote; runs under the address's claim. */
+  private async signAndSend(
+    req: SendSubmitRequest,
+    ctx: Context,
+    amount: bigint,
+    reviewedFee: bigint,
+    earlier: PendingSend[],
+  ): Promise<Result<{ txHash: string; unconfirmed?: true }>> {
     const held = ctx.balances.get(req.denom) ?? 0n;
     const feeHeld = ctx.balances.get(req.feeDenom) ?? 0n;
     const spent = req.feeDenom === req.denom ? amount + reviewedFee : amount;
@@ -320,13 +337,17 @@ export class SendService {
     // The hash is known before the node answers, so a lost answer can still be followed up.
     const hash = txHash(txRaw);
     // Recorded before it leaves: whatever the node answers, this send may land.
-    await this.deps.pending.record(ctx.from.address, {
-      txHash: hash,
-      sequence: ctx.sequence.toString(),
-      timeoutHeight: this.timeoutHeight(ctx).toString(),
-      signedAt: this.deps.clock.now(),
-    });
-    const sent = await this.broadcast(txRaw, hash, previous, ctx.height);
+    await this.deps.pending.record(
+      ctx.from.address,
+      {
+        txHash: hash,
+        sequence: ctx.sequence.toString(),
+        timeoutHeight: this.timeoutHeight(ctx).toString(),
+        signedAt: this.deps.clock.now(),
+      },
+      ctx.height,
+    );
+    const sent = await this.broadcast(txRaw, hash, earlier, ctx.height);
     if (!sent.ok) return sent;
     await this.deps.wallet.rearm();
     return sent;
@@ -339,7 +360,7 @@ export class SendService {
   private async broadcast(
     txRaw: Uint8Array,
     hash: string,
-    previous: PendingSend | null,
+    earlier: PendingSend[],
     height: bigint,
   ): Promise<Result<{ txHash: string; unconfirmed?: true }>> {
     const unknown = ok({ txHash: hash, unconfirmed: true as const });
@@ -357,7 +378,7 @@ export class SendService {
       if (e instanceof BroadcastError) {
         if (e.codespace === ALREADY_SENT.codespace && e.code === ALREADY_SENT.code) return unknown;
         // An earlier send of this address can still be included: this refusal says nothing of it.
-        if (previous !== null && BigInt(previous.timeoutHeight) >= height) return unknown;
+        if (earlier.some((p) => BigInt(p.timeoutHeight) >= height)) return unknown;
       }
       const problem = nodeProblem(e);
       if (problem) return problem;

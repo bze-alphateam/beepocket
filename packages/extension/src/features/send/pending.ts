@@ -4,8 +4,10 @@ import type { SessionStorage } from '../../platform';
 export const PENDING_WINDOW_MS = 30_000;
 /** A wallet send can only be included up to this many blocks after the latest one. */
 export const TIMEOUT_BLOCKS = 30n;
+/** The most unsettled sends kept per address; older ones are dropped first. */
+const MAX_KEPT = 10;
 
-/** The last send an address signed. Amounts and heights are decimal strings. */
+/** A send an address signed. Heights and the sequence are decimal strings. */
 export interface PendingSend {
   /** The hash of the signed bytes, uppercase hex. */
   txHash: string;
@@ -16,11 +18,19 @@ export interface PendingSend {
   signedAt: number;
 }
 
-/** The last signed send of each address on one network. */
+/** The sends each address signed on one network that are not yet known to be committed. */
 export interface PendingSends {
-  get(address: string): Promise<PendingSend | null>;
-  record(address: string, send: PendingSend): Promise<void>;
-  /** Forgets the send with this hash: it was found on chain. */
+  /**
+   * In one step: refuses (null) while a send of this address is being signed or one was signed
+   * less than `PENDING_WINDOW_MS` before `now`; otherwise marks the address as signing and
+   * returns its unsettled sends. Every claim ends with `release`.
+   */
+  claim(address: string, now: number): Promise<PendingSend[] | null>;
+  /** Adds a signed send; sends that can no longer be included at `height` are dropped. */
+  record(address: string, send: PendingSend, height: bigint): Promise<void>;
+  /** Ends a claim; recorded sends stay. */
+  release(address: string): Promise<void>;
+  /** Forgets the send with this hash: it was found committed. */
   settle(txHash: string): Promise<void>;
 }
 
@@ -42,44 +52,99 @@ function isPendingSend(x: unknown): x is PendingSend {
   );
 }
 
-/** Kept in session storage: it survives a worker restart, not a browser restart. */
+/** What every store over the same session storage shares: one queue and the claimed addresses. */
+interface Shared {
+  queue: Promise<unknown>;
+  signing: Set<string>;
+}
+
+const shared = new WeakMap<SessionStorage, Shared>();
+
+/**
+ * Kept in session storage: it survives a worker restart, not a browser restart. Stores are built
+ * per request, so the queue and the claims belong to the session storage they all write to:
+ * every read-and-write runs alone.
+ */
 export class SessionPendingSends implements PendingSends {
   private readonly key: string;
+  private readonly shared: Shared;
 
   constructor(
     private readonly session: SessionStorage,
-    networkId: string,
+    private readonly networkId: string,
   ) {
     this.key = `send.pending:${networkId}`;
-  }
-
-  async get(address: string): Promise<PendingSend | null> {
-    const entry = (await this.all())[address];
-    return entry ?? null;
-  }
-
-  async record(address: string, send: PendingSend): Promise<void> {
-    const all = await this.all();
-    all[address] = send;
-    await this.session.set(this.key, all);
-  }
-
-  async settle(txHash: string): Promise<void> {
-    const all = await this.all();
-    const hash = txHash.toUpperCase();
-    const kept = Object.fromEntries(Object.entries(all).filter(([, s]) => s.txHash !== hash));
-    if (Object.keys(kept).length !== Object.keys(all).length) {
-      await this.session.set(this.key, kept);
+    let s = shared.get(session);
+    if (!s) {
+      s = { queue: Promise.resolve(), signing: new Set() };
+      shared.set(session, s);
     }
+    this.shared = s;
+  }
+
+  claim(address: string, now: number): Promise<PendingSend[] | null> {
+    return this.serial(async () => {
+      const id = this.signingId(address);
+      if (this.shared.signing.has(id)) return null;
+      const sends = (await this.all())[address] ?? [];
+      if (sends.some((s) => Math.abs(now - s.signedAt) < PENDING_WINDOW_MS)) return null;
+      this.shared.signing.add(id);
+      return sends;
+    });
+  }
+
+  record(address: string, send: PendingSend, height: bigint): Promise<void> {
+    return this.serial(async () => {
+      const all = await this.all();
+      const live = (all[address] ?? []).filter((s) => BigInt(s.timeoutHeight) >= height);
+      all[address] = [...live, send].slice(-MAX_KEPT);
+      await this.session.set(this.key, all);
+    });
+  }
+
+  release(address: string): Promise<void> {
+    return this.serial(() => {
+      this.shared.signing.delete(this.signingId(address));
+      return Promise.resolve();
+    });
+  }
+
+  settle(txHash: string): Promise<void> {
+    return this.serial(async () => {
+      const hash = txHash.toUpperCase();
+      const all = await this.all();
+      let changed = false;
+      for (const [address, sends] of Object.entries(all)) {
+        const kept = sends.filter((s) => s.txHash !== hash);
+        if (kept.length === sends.length) continue;
+        changed = true;
+        if (kept.length === 0) delete all[address];
+        else all[address] = kept;
+      }
+      if (changed) await this.session.set(this.key, all);
+    });
+  }
+
+  private signingId(address: string): string {
+    return `${this.networkId}:${address}`;
+  }
+
+  /** Runs `task` after every earlier one has finished, failed or not. */
+  private serial<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.shared.queue.then(task);
+    this.shared.queue = run.catch(() => undefined);
+    return run;
   }
 
   /** Entries in any other shape are dropped. */
-  private async all(): Promise<Record<string, PendingSend>> {
+  private async all(): Promise<Record<string, PendingSend[]>> {
     const stored = await this.session.get(this.key);
     if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return {};
-    const all: Record<string, PendingSend> = {};
-    for (const [address, send] of Object.entries(stored as Record<string, unknown>)) {
-      if (isPendingSend(send)) all[address] = send;
+    const all: Record<string, PendingSend[]> = {};
+    for (const [address, sends] of Object.entries(stored as Record<string, unknown>)) {
+      if (!Array.isArray(sends)) continue;
+      const valid = sends.filter(isPendingSend);
+      if (valid.length > 0) all[address] = valid;
     }
     return all;
   }
