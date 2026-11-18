@@ -16,7 +16,10 @@ Each file below is copied byte-for-byte from `src/<same path>` in bzejs with one
 prepended, except where noted. The copied files still import `GlobalDecoderRegistry` from
 `registry.ts` and call it; that import resolves to the hand-written stand-in below.
 
-- `binary.ts`, `utf8.ts`, `varint.ts`
+- `binary.ts`, `utf8.ts`, `varint.ts`, with two local changes kept on every re-copy:
+  `BinaryReader` reads a `Uint8Array` in place instead of copying it, and `utf8Read` decodes
+  strictly (`TextDecoder` with `fatal: true` and `ignoreBOM: true`), so bytes that are not
+  valid UTF-8 fail to decode instead of turning into different text
 - `helpers.ts` (the base64 re-export from `@interchainjs/encoding` is replaced with `@scure/base`,
   and the unused `setPaginationParams`, which needs Node's `Buffer`, is dropped)
 - `google/protobuf/any.ts`, `google/protobuf/duration.ts`, `google/protobuf/timestamp.ts`

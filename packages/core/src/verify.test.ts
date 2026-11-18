@@ -14,12 +14,61 @@ import {
 import { MsgExec } from './proto/cosmos/authz/v1beta1/tx';
 import { VoteOption } from './proto/cosmos/gov/v1/gov';
 import { MsgVote } from './proto/cosmos/gov/v1/tx';
-import { MsgMultiSend } from './proto/cosmos/bank/v1beta1/tx';
+import { MsgMultiSend, MsgSend } from './proto/cosmos/bank/v1beta1/tx';
 import { PubKey } from './proto/cosmos/crypto/secp256k1/keys';
 import { SignMode } from './proto/cosmos/tx/signing/v1beta1/signing';
 import { AuthInfo, Fee, TxBody } from './proto/cosmos/tx/v1beta1/tx';
 import { Any } from './proto/google/protobuf/any';
-import { MsgCreateOrder } from './proto/bze/tradebin/tx';
+import {
+  MsgAddLiquidity,
+  MsgCreateLiquidityPool,
+  MsgCreateOrder,
+  MsgFillOrders,
+  MsgMultiSwap,
+  MsgRemoveLiquidity,
+} from './proto/bze/tradebin/tx';
+import { Coin } from './proto/cosmos/base/v1beta1/coin';
+import { BasicAllowance, PeriodicAllowance } from './proto/cosmos/feegrant/v1beta1/feegrant';
+import { MsgGrantAllowance } from './proto/cosmos/feegrant/v1beta1/tx';
+import { MsgTransfer } from './proto/ibc/applications/transfer/v1/tx';
+import * as bankMsgs from './proto/cosmos/bank/v1beta1/tx';
+import * as authzMsgs from './proto/cosmos/authz/v1beta1/tx';
+import * as feegrantMsgs from './proto/cosmos/feegrant/v1beta1/tx';
+import * as govMsgs from './proto/cosmos/gov/v1/tx';
+import * as tradebinMsgs from './proto/bze/tradebin/tx';
+import * as burnerMsgs from './proto/bze/burner/tx';
+import * as rewardsMsgs from './proto/bze/rewards/tx';
+import * as tokenfactoryMsgs from './proto/bze/tokenfactory/tx';
+import * as cointrunkMsgs from './proto/bze/cointrunk/tx';
+import * as stakingMsgs from './proto/cosmos/staking/v1beta1/tx';
+import * as distributionMsgs from './proto/cosmos/distribution/v1beta1/tx';
+import * as transferMsgs from './proto/ibc/applications/transfer/v1/tx';
+import * as vestingMsgs from './proto/cosmos/vesting/v1beta1/tx';
+import { fromB64, goldenCases } from '../test/golden';
+
+interface MsgCodec {
+  typeUrl: string;
+  encode(m: unknown): { finish(): Uint8Array };
+  fromPartial(o: object): unknown;
+}
+const isMsg = (name: string, v: unknown): v is MsgCodec =>
+  /^Msg(?!.*Response$)/.test(name) && typeof v === 'object' && v !== null && 'typeUrl' in v;
+/** Every message type the wallet has an encoder for. */
+const allMsgs = [
+  bankMsgs,
+  authzMsgs,
+  feegrantMsgs,
+  govMsgs,
+  tradebinMsgs,
+  burnerMsgs,
+  rewardsMsgs,
+  tokenfactoryMsgs,
+  cointrunkMsgs,
+  stakingMsgs,
+  distributionMsgs,
+  transferMsgs,
+  vestingMsgs,
+].flatMap((mod) => Object.entries(mod).filter((e): e is [string, MsgCodec] => isMsg(e[0], e[1])));
 
 const ME = 'bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g';
 const OTHER = 'bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p';
@@ -439,5 +488,525 @@ describe('withWalletFee', () => {
       }),
     ).finish();
     expect(() => withWalletFee(two, walletFee)).toThrow(RangeError);
+  });
+});
+
+// Hand-built protobuf bytes, for requests the wallet's own encoders never produce.
+function varint(n: number): number[] {
+  const out: number[] = [];
+  let v = n;
+  while (v > 0x7f) {
+    out.push((v & 0x7f) | 0x80);
+    v = Math.floor(v / 128);
+  }
+  out.push(v);
+  return out;
+}
+/** The same number as `varint`, written one byte longer than needed. */
+function paddedVarint(n: number): number[] {
+  const out = varint(n);
+  out[out.length - 1] = (out[out.length - 1] ?? 0) | 0x80;
+  return [...out, 0];
+}
+const utf8 = (s: string): number[] => [...new TextEncoder().encode(s)];
+const field = (no: number, payload: ArrayLike<number>): number[] => [
+  ...varint((no << 3) | 2),
+  ...varint(payload.length),
+  ...Array.from(payload),
+];
+const text = (no: number, s: string): number[] => field(no, utf8(s));
+const bytes = (...parts: ArrayLike<number>[]): Uint8Array =>
+  Uint8Array.from(parts.flatMap((p) => Array.from(p)));
+const anyBytes = (msg: AnyMsg): number[] => [...text(1, msg.typeUrl), ...field(2, msg.value)];
+const coinBytes = (denom: string, amount: string): Uint8Array =>
+  Coin.encode(Coin.fromPartial({ denom, amount })).finish();
+const withBody = (bodyBytes: Uint8Array) =>
+  request({ signDoc: { ...request().signDoc, bodyBytes } });
+
+describe('verifySignRequest refuses requests that do not re-encode exactly', () => {
+  const periodic = PeriodicAllowance.encode(
+    PeriodicAllowance.fromPartial({
+      basic: { spendLimit: [{ denom: 'uzz', amount: '1' }] },
+      period: { seconds: 86_400n, nanos: 0 },
+      periodSpendLimit: [{ denom: 'ubze', amount: '1000000' }],
+    }),
+  ).finish();
+  const grantAllowance = (allowance: Uint8Array): AnyMsg => ({
+    typeUrl: MsgGrantAllowance.typeUrl,
+    value: bytes(
+      text(1, ME),
+      text(2, OTHER),
+      field(3, [...text(1, PeriodicAllowance.typeUrl), ...field(2, allowance)]),
+    ),
+  });
+
+  it('bad-body: a fee allowance whose limits are sent twice', () => {
+    const first = BasicAllowance.encode(
+      BasicAllowance.fromPartial({ spendLimit: [{ denom: 'ubze', amount: '100000000000000' }] }),
+    ).finish();
+    expect(code(request({}, [grantAllowance(bytes(field(1, first), periodic))]))).toBe('bad-body');
+    // The same allowance, sent once, is fine (it carries no reset time, as dapps send it).
+    expect(code(request({}, [grantAllowance(periodic)]))).toBe('ok');
+  });
+
+  it('bad-body: a swap whose amounts are sent twice', () => {
+    const swap = (input: number[][], minOutput: number[][]): AnyMsg => ({
+      typeUrl: MsgMultiSwap.typeUrl,
+      value: bytes(text(1, ME), text(2, 'pool-1'), ...input, ...minOutput),
+    });
+    const input = field(3, coinBytes('ubze', '1000000000'));
+    const output = field(4, coinBytes('uusdc', '1000'));
+    const dup = swap(
+      [input, field(3, coinBytes('ubze', ''))],
+      [output, field(4, coinBytes('uusdc', ''))],
+    );
+    expect(code(request({}, [dup]))).toBe('bad-body');
+    expect(code(request({}, [swap([input], [output])]))).toBe('ok');
+  });
+
+  it('bad-body: a memo that is not valid UTF-8', () => {
+    const msg = field(1, anyBytes(send()));
+    expect(code(withBody(bytes(msg, field(2, [0xc0, 0xb1, 0xc0, 0xb0, 0xc0, 0xb4]))))).toBe(
+      'bad-body',
+    );
+    expect(code(withBody(bytes(msg, text(2, '104'))))).toBe('ok');
+  });
+
+  it('bad-body: transaction body fields the wallet does not show', () => {
+    const plain = buildBody({ messages: [send()] });
+    expect(code(withBody(plain))).toBe('ok');
+    expect(code(withBody(bytes(plain, [0x20, 0x01])))).toBe('bad-body');
+    expect(code(withBody(bytes(plain, field(5, [0x08, 0x01]))))).toBe('bad-body');
+  });
+
+  it('bad-body: a body field sent twice, or a number or length written too long', () => {
+    const msg = field(1, anyBytes(send()));
+    expect(code(withBody(bytes(msg, text(2, 'a'), text(2, 'b'))))).toBe('bad-body');
+    expect(code(withBody(bytes(msg, [0x18, 0x81, 0x00])))).toBe('bad-body');
+    expect(code(withBody(bytes(msg, [0x18, 0x01])))).toBe('ok');
+    const any = anyBytes(send());
+    expect(code(withBody(bytes([0x0a, ...paddedVarint(any.length)], any)))).toBe('bad-body');
+  });
+
+  it('bad-body: unknown fields inside a message', () => {
+    const value = bytes(send().value, text(15, 'extra'));
+    expect(code(request({}, [{ typeUrl: MsgSend.typeUrl, value }]))).toBe('bad-body');
+  });
+
+  it('accepts sub-messages a dapp leaves out, or sends empty', () => {
+    const transfer = (timeoutHeight?: { revisionNumber: bigint; revisionHeight: bigint }) => ({
+      typeUrl: MsgTransfer.typeUrl,
+      value: MsgTransfer.encode(
+        MsgTransfer.fromPartial({
+          sourcePort: 'transfer',
+          sourceChannel: 'channel-0',
+          token: { denom: 'ubze', amount: '1000' },
+          sender: ME,
+          receiver: 'osmo1abc',
+          timeoutTimestamp: 1_900_000_000_000_000_000n,
+          ...(timeoutHeight ? { timeoutHeight } : {}),
+        }),
+      ).finish(),
+    });
+    expect(code(request({}, [transfer()]))).toBe('ok');
+    expect(code(request({}, [transfer({ revisionNumber: 0n, revisionHeight: 0n })]))).toBe('ok');
+    expect(code(request({}, [transfer({ revisionNumber: 1n, revisionHeight: 99n })]))).toBe('ok');
+  });
+
+  it('never refuses a message built by the wallet encoders as bad-body', () => {
+    for (const [name, codec] of allMsgs) {
+      const msg: AnyMsg = {
+        typeUrl: codec.typeUrl,
+        value: codec.encode(codec.fromPartial({})).finish(),
+      };
+      expect([name, code(request({}, [msg]))]).not.toEqual([name, 'bad-body']);
+    }
+  });
+
+  it.each(goldenCases)('$name: a body built by bzed is not refused as bad-body', (c) => {
+    const from = c.messages[0]?.fromAddress ?? '';
+    const base = request({ signer: from, connectedAddress: from });
+    expect(
+      code({ ...base, signDoc: { ...base.signDoc, bodyBytes: fromB64(c.bodyBytes) } }),
+    ).not.toBe('bad-body');
+  });
+});
+
+describe('verifySignRequest refuses amounts not written as plain whole numbers', () => {
+  const BAD = ['0777777777', '010', '00', '0x10', '0b1', '0o17', '1_000', '+5', '-5', ' 5'];
+  const GOOD = ['777777777', '10', '0'];
+  const pack = <P, M>(
+    codec: { typeUrl: string; fromPartial(p: P): M; encode(m: M): { finish(): Uint8Array } },
+    partial: P,
+  ): AnyMsg => ({
+    typeUrl: codec.typeUrl,
+    value: codec.encode(codec.fromPartial(partial)).finish(),
+  });
+  const makers: [string, (amount: string) => AnyMsg][] = [
+    [
+      'swap minimum',
+      (amount) =>
+        pack(MsgMultiSwap, {
+          creator: ME,
+          routes: ['pool-1'],
+          input: { denom: 'ubze', amount: '1000' },
+          minOutput: { denom: 'uusdc', amount },
+        }),
+    ],
+    [
+      'add-liquidity minimum',
+      (amount) =>
+        pack(MsgAddLiquidity, {
+          creator: ME,
+          poolId: 'pool-1',
+          baseAmount: '1000',
+          quoteAmount: '1000',
+          minLpTokens: amount,
+        }),
+    ],
+    [
+      'remove-liquidity minimum',
+      (amount) =>
+        pack(MsgRemoveLiquidity, {
+          creator: ME,
+          poolId: 'pool-1',
+          lpTokens: '1000',
+          minBase: amount,
+          minQuote: '1',
+        }),
+    ],
+    [
+      'order amount',
+      (amount) =>
+        pack(MsgCreateOrder, {
+          creator: ME,
+          orderType: 'buy',
+          amount,
+          price: '0.5',
+          marketId: 'm',
+        }),
+    ],
+    [
+      'send amount',
+      (amount) =>
+        pack(MsgSend, { fromAddress: ME, toAddress: OTHER, amount: [{ denom: 'ubze', amount }] }),
+    ],
+    [
+      'swap inside an authz exec',
+      (amount) =>
+        pack(MsgExec, {
+          grantee: ME,
+          msgs: [
+            Any.fromPartial(
+              pack(MsgMultiSwap, {
+                creator: OTHER,
+                routes: ['pool-1'],
+                input: { denom: 'ubze', amount: '1000' },
+                minOutput: { denom: 'uusdc', amount },
+              }),
+            ),
+          ],
+        }),
+    ],
+  ];
+
+  it.each(makers)('%s', (_name, make) => {
+    for (const amount of BAD)
+      expect([amount, code(request({}, [make(amount)]))]).toEqual([amount, 'bad-body']);
+    for (const amount of GOOD)
+      expect([amount, code(request({}, [make(amount)]))]).toEqual([amount, 'ok']);
+  });
+
+  const fieldMakers: [string, (v: string) => AnyMsg][] = [
+    [
+      'order amount',
+      (v) =>
+        pack(MsgCreateOrder, {
+          creator: ME,
+          orderType: 'buy',
+          amount: v,
+          price: '1',
+          marketId: 'm',
+        }),
+    ],
+    [
+      'fill item amount',
+      (v) =>
+        pack(MsgFillOrders, {
+          creator: ME,
+          marketId: 'm',
+          orderType: 'buy',
+          orders: [
+            { price: '1', amount: '5' },
+            { price: '1', amount: v },
+          ],
+        }),
+    ],
+    [
+      'pool initial base',
+      (v) =>
+        pack(MsgCreateLiquidityPool, {
+          creator: ME,
+          base: 'ubze',
+          quote: 'uusdc',
+          initialBase: v,
+          initialQuote: '1',
+        }),
+    ],
+    [
+      'pool initial quote',
+      (v) =>
+        pack(MsgCreateLiquidityPool, {
+          creator: ME,
+          base: 'ubze',
+          quote: 'uusdc',
+          initialBase: '1',
+          initialQuote: v,
+        }),
+    ],
+    [
+      'add base amount',
+      (v) =>
+        pack(MsgAddLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          baseAmount: v,
+          quoteAmount: '1',
+          minLpTokens: '1',
+        }),
+    ],
+    [
+      'add quote amount',
+      (v) =>
+        pack(MsgAddLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          baseAmount: '1',
+          quoteAmount: v,
+          minLpTokens: '1',
+        }),
+    ],
+    [
+      'add min LP tokens',
+      (v) =>
+        pack(MsgAddLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          baseAmount: '1',
+          quoteAmount: '1',
+          minLpTokens: v,
+        }),
+    ],
+    [
+      'remove LP tokens',
+      (v) =>
+        pack(MsgRemoveLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          lpTokens: v,
+          minBase: '1',
+          minQuote: '1',
+        }),
+    ],
+    [
+      'remove min base',
+      (v) =>
+        pack(MsgRemoveLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          lpTokens: '1',
+          minBase: v,
+          minQuote: '1',
+        }),
+    ],
+    [
+      'remove min quote',
+      (v) =>
+        pack(MsgRemoveLiquidity, {
+          creator: ME,
+          poolId: 'p',
+          lpTokens: '1',
+          minBase: '1',
+          minQuote: v,
+        }),
+    ],
+    [
+      'staking reward prize',
+      (v) =>
+        pack(rewardsMsgs.MsgCreateStakingReward, {
+          creator: ME,
+          prizeAmount: v,
+          prizeDenom: 'ubze',
+          stakingDenom: 'ubze',
+          duration: '1',
+          minStake: '1',
+          lock: '1',
+        }),
+    ],
+    [
+      'staking reward min stake',
+      (v) =>
+        pack(rewardsMsgs.MsgCreateStakingReward, {
+          creator: ME,
+          prizeAmount: '1',
+          prizeDenom: 'ubze',
+          stakingDenom: 'ubze',
+          duration: '1',
+          minStake: v,
+          lock: '1',
+        }),
+    ],
+    [
+      'trading reward prize',
+      (v) =>
+        pack(rewardsMsgs.MsgCreateTradingReward, {
+          creator: ME,
+          prizeAmount: v,
+          prizeDenom: 'ubze',
+          duration: '1',
+          marketId: 'm',
+          slots: '1',
+        }),
+    ],
+    [
+      'join staking',
+      (v) => pack(rewardsMsgs.MsgJoinStaking, { creator: ME, rewardId: '1', amount: v }),
+    ],
+    [
+      'distribute staking rewards',
+      (v) =>
+        pack(rewardsMsgs.MsgDistributeStakingRewards, { creator: ME, rewardId: '1', amount: v }),
+    ],
+    [
+      'join denom reward',
+      (v) => pack(rewardsMsgs.MsgJoinDenomReward, { creator: ME, denom: 'ubze', amount: v }),
+    ],
+    [
+      'denom reward schedule',
+      (v) =>
+        pack(rewardsMsgs.MsgCreateDenomRewardSchedule, {
+          creator: ME,
+          denom: 'ubze',
+          prizeDenom: 'ubze',
+          dailyAmount: v,
+          duration: '1',
+        }),
+    ],
+    [
+      'distribute denom rewards',
+      (v) =>
+        pack(rewardsMsgs.MsgDistributeDenomRewards, {
+          creator: ME,
+          denom: 'ubze',
+          prizeDenom: 'ubze',
+          amount: v,
+        }),
+    ],
+    [
+      'raffle pot',
+      (v) =>
+        pack(burnerMsgs.MsgStartRaffle, {
+          creator: ME,
+          pot: v,
+          duration: '1',
+          chances: '1',
+          ratio: '0.1',
+          ticketPrice: '1',
+          denom: 'ubze',
+        }),
+    ],
+    [
+      'raffle duration',
+      (v) =>
+        pack(burnerMsgs.MsgStartRaffle, {
+          creator: ME,
+          pot: '1',
+          duration: v,
+          chances: '1',
+          ratio: '0.1',
+          ticketPrice: '1',
+          denom: 'ubze',
+        }),
+    ],
+    [
+      'raffle chances',
+      (v) =>
+        pack(burnerMsgs.MsgStartRaffle, {
+          creator: ME,
+          pot: '1',
+          duration: '1',
+          chances: v,
+          ratio: '0.1',
+          ticketPrice: '1',
+          denom: 'ubze',
+        }),
+    ],
+    [
+      'raffle ticket price',
+      (v) =>
+        pack(burnerMsgs.MsgStartRaffle, {
+          creator: ME,
+          pot: '1',
+          duration: '1',
+          chances: '1',
+          ratio: '0.1',
+          ticketPrice: v,
+          denom: 'ubze',
+        }),
+    ],
+  ];
+
+  it.each(fieldMakers)('every listed integer field: %s', (_name, make) => {
+    expect(code(request({}, [make('010')]))).toBe('bad-body');
+    expect(code(request({}, [make('10')]))).not.toBe('bad-body');
+  });
+
+  it('leaves decimal prices alone', () => {
+    const order = (price: string) =>
+      pack(MsgCreateOrder, { creator: ME, orderType: 'buy', amount: '1', price, marketId: 'm' });
+    expect(code(request({}, [order('0.335')]))).toBe('ok');
+  });
+});
+
+describe('verifySignRequest bounds nested messages', () => {
+  const NESTED = '/google.protobuf.Any';
+  /** An authz exec whose message is wrapped `depth` times, built without quadratic copying. */
+  function nestedExec(depth: number): AnyMsg {
+    const inner = Uint8Array.from(anyBytes(send()));
+    const header = text(1, NESTED);
+    const lengths = [inner.length];
+    for (let k = 1; k <= depth; k += 1) {
+      const prev = lengths[k - 1] ?? 0;
+      lengths.push(header.length + 1 + varint(prev).length + prev);
+    }
+    const out = new Uint8Array(lengths[depth] ?? 0);
+    let pos = 0;
+    for (let k = depth; k >= 1; k -= 1) {
+      const prev = lengths[k - 1] ?? 0;
+      out.set(header, pos);
+      pos += header.length;
+      const len = [0x12, ...varint(prev)];
+      out.set(len, pos);
+      pos += len.length;
+    }
+    out.set(inner, pos);
+    return { typeUrl: MsgExec.typeUrl, value: bytes(text(1, ME), field(2, out)) };
+  }
+
+  it('accepts a shallow nesting', () => {
+    expect(code(request({}, [nestedExec(3)]))).toBe('ok');
+  });
+
+  it('accepts 8 nested levels below the exec and refuses 9', () => {
+    // nestedExec(n) holds n wrappers around a send: n + 1 levels below the exec.
+    expect(code(request({}, [nestedExec(7)]))).toBe('ok');
+    expect(code(request({}, [nestedExec(8)]))).toBe('bad-body');
+  });
+
+  it.each([20, 500, 2000, 8000])('bad-body, quickly, at depth %i', (depth) => {
+    const msg = nestedExec(depth);
+    const started = performance.now();
+    expect(code(request({}, [msg]))).toBe('bad-body');
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 });

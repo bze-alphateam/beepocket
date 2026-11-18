@@ -53,6 +53,32 @@ const GOV = 'cosmos/gov/v1/gov.ts';
 const STAKING_TX = 'cosmos/staking/v1beta1/tx.ts';
 const DISTRIBUTION_TX = 'cosmos/distribution/v1beta1/tx.ts';
 
+// Replaces the lenient `utf8Read` of the generated code.
+const STRICT_UTF8_READ = `// Strict: invalid UTF-8 is an error, never replaced or reinterpreted. A leading byte order
+// mark is kept, so the text round-trips to the same bytes.
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/**
+ * Reads UTF8 bytes as a string. Throws a TypeError on bytes that are not valid UTF-8.
+ * @param {Uint8Array} buffer Source buffer
+ * @param {number} start Source start
+ * @param {number} end Source end
+ * @returns {string} String read
+ */
+export function utf8Read(
+  buffer: ArrayLike<number>,
+  start: number,
+  end: number
+) {
+  if (end - start < 1) return "";
+  const bytes =
+    buffer instanceof Uint8Array
+      ? buffer.subarray(start, end)
+      : Uint8Array.from(Array.prototype.slice.call(buffer, start, end) as number[]);
+  return strictUtf8.decode(bytes);
+}
+`;
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const out = join(root, 'packages/core/src/proto');
 const src = resolve(process.argv[2] ?? '');
@@ -106,6 +132,23 @@ for (const path of FILES) {
       'import { Decimal } from "../../decimal";',
       path,
     );
+  }
+  // Local changes, kept on every copy (see the README): read nested bytes in place, and
+  // refuse text that is not valid UTF-8 instead of decoding it to something else.
+  if (path === 'binary.ts') {
+    text = replaceOnce(
+      text,
+      '    this.buf = buf ? new Uint8Array(buf) : new Uint8Array(0);',
+      "    // A view, not a copy: nested messages read their parent's bytes in place.\n    this.buf = buf instanceof Uint8Array ? buf : buf ? new Uint8Array(buf) : new Uint8Array(0);",
+      path,
+    );
+  }
+  if (path === 'utf8.ts') {
+    const start = text.indexOf('/**\n * Reads UTF8 bytes as a string.');
+    const endMarker = 'return String.fromCharCode(...chunk.slice(0, i));\n}\n';
+    const end = text.indexOf(endMarker, start);
+    if (start < 0 || end < 0) throw new Error(`${path}: expected utf8Read`);
+    text = text.slice(0, start) + STRICT_UTF8_READ + text.slice(end + endMarker.length);
   }
   write(path, text);
 }

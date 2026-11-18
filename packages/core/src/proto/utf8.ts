@@ -59,8 +59,12 @@ export function utf8Length(str: string) {
   return len;
 }
 
+// Strict: invalid UTF-8 is an error, never replaced or reinterpreted. A leading byte order
+// mark is kept, so the text round-trips to the same bytes.
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
 /**
- * Reads UTF8 bytes as a string.
+ * Reads UTF8 bytes as a string. Throws a TypeError on bytes that are not valid UTF-8.
  * @param {Uint8Array} buffer Source buffer
  * @param {number} start Source start
  * @param {number} end Source end
@@ -71,41 +75,12 @@ export function utf8Read(
   start: number,
   end: number
 ) {
-  const len = end - start;
-  if (len < 1) return "";
-  const chunk = [];
-  let parts: string[] = [],
-    i = 0, // char offset
-    t; // temporary
-  while (start < end) {
-    t = buffer[start++];
-    if (t < 128) chunk[i++] = t;
-    else if (t > 191 && t < 224)
-      chunk[i++] = ((t & 31) << 6) | (buffer[start++] & 63);
-    else if (t > 239 && t < 365) {
-      t =
-        (((t & 7) << 18) |
-          ((buffer[start++] & 63) << 12) |
-          ((buffer[start++] & 63) << 6) |
-          (buffer[start++] & 63)) -
-        0x10000;
-      chunk[i++] = 0xd800 + (t >> 10);
-      chunk[i++] = 0xdc00 + (t & 1023);
-    } else
-      chunk[i++] =
-        ((t & 15) << 12) |
-        ((buffer[start++] & 63) << 6) |
-        (buffer[start++] & 63);
-    if (i > 8191) {
-      (parts || (parts = [])).push(String.fromCharCode(...chunk));
-      i = 0;
-    }
-  }
-  if (parts) {
-    if (i) parts.push(String.fromCharCode(...chunk.slice(0, i)));
-    return parts.join("");
-  }
-  return String.fromCharCode(...chunk.slice(0, i));
+  if (end - start < 1) return "";
+  const bytes =
+    buffer instanceof Uint8Array
+      ? buffer.subarray(start, end)
+      : Uint8Array.from(Array.prototype.slice.call(buffer, start, end) as number[]);
+  return strictUtf8.decode(bytes);
 }
 
 /**
