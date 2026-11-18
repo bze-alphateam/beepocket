@@ -1,4 +1,4 @@
-import { shortAddress } from '@beepocket/core';
+import { shortAddress, type NetworkId } from '@beepocket/core';
 import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
@@ -195,7 +195,9 @@ export function ConnectedSitesScreen() {
     }
     await load();
   };
-  const disconnect = (origin: string) => () => client.call('sites.disconnect', { origin });
+  /** Each call names the network the list on screen was read for. */
+  const disconnect = (origin: string, network: NetworkId) => () =>
+    client.call('sites.disconnect', { origin, network });
 
   if (failed) {
     return (
@@ -224,7 +226,7 @@ export function ConnectedSitesScreen() {
               class="bp-sites-all"
               disabled={busy}
               onClick={() => {
-                void run(sites.map((s) => disconnect(s.origin)));
+                void run(sites.map((s) => disconnect(s.origin, listing.network)));
               }}
             >
               {t('sites.disconnectAll')}
@@ -258,7 +260,7 @@ export function ConnectedSitesScreen() {
                       setChanging(site);
                     }}
                     onDisconnect={() => {
-                      void run([disconnect(site.origin)]);
+                      void run([disconnect(site.origin, listing.network)]);
                     }}
                   />
                 </li>
@@ -274,7 +276,14 @@ export function ConnectedSitesScreen() {
           busy={busy}
           error={error}
           onSave={(index) => {
-            void run([() => client.call('sites.change', { origin: changing.origin, index })]);
+            void run([
+              () =>
+                client.call('sites.change', {
+                  origin: changing.origin,
+                  index,
+                  network: listing.network,
+                }),
+            ]);
           }}
           onClose={() => {
             setChanging(null);

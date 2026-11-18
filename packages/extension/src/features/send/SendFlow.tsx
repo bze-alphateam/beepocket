@@ -29,6 +29,7 @@ import {
   Spinner,
 } from '../../ui';
 import { AddressBookSheet } from '../address-book';
+import { NetworkPill } from '../settings/NetworkPill';
 import { quoteAdvanced } from './Advanced';
 import { useSendEnv } from './env';
 import { errorText, exact, feeText, plainAmount } from './format';
@@ -192,7 +193,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
   const [quote, setQuote] = useState<SendQuote | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [changed, setChanged] = useState(false);
+  const [changed, setChanged] = useState<'fee' | 'details' | 'stale' | null>(null);
   const [locked, setLocked] = useState(loaded.weakLocked);
   const [sheet, setSheet] = useState<'none' | 'from' | 'fee' | 'book' | 'save'>('none');
   const latestMatch = useRef(0);
@@ -292,7 +293,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
       setOverride(null);
       setOverrideReset(true);
     }
-    setChanged(false);
+    setChanged(null);
     setStep({ kind: 'review' });
   };
 
@@ -307,7 +308,9 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
     setBusy(true);
     setError(null);
     const sent = await client.call('send.submit', {
+      network: quote.network,
       fromIndex: quote.from.index,
+      fromAddress: quote.from.address,
       to: quote.to,
       denom: quote.token.denom,
       amount: quote.amount,
@@ -329,12 +332,20 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
         });
         if (again.ok) {
           setQuote(again.value);
-          setChanged(true);
+          setChanged(
+            again.value.network !== quote.network || again.value.from.address !== quote.from.address
+              ? 'details'
+              : 'fee',
+          );
           if (again.value.overrideReset === true) {
             setOverride(null);
             setOverrideReset(true);
           }
-        } else setError(again.error);
+        } else {
+          // The old numbers stay on screen: say they are out of date, next to the reason.
+          setChanged('stale');
+          setError(again.error);
+        }
       } else if (sent.error.code === SendErrorCodes.pendingSend) {
         // Nothing was signed: stay on Review and say why.
         setError(sent.error);
@@ -403,7 +414,13 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
   if (step.kind === 'review' && quote) {
     return (
       <Layout
-        header={<ScreenHeader title={t('send.review.title')} onBack={edit} />}
+        header={
+          <ScreenHeader
+            title={t('send.review.title')}
+            onBack={edit}
+            right={<NetworkPill network={quote.network} />}
+          />
+        }
         footer={
           <BottomActions>
             {/* Keyed apart from the form's Review: the DOM button is never reused as a submit

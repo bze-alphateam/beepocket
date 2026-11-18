@@ -115,7 +115,7 @@ describe('App', () => {
       'tokens.balances': { denom: 'ubze', addresses: [], total: '0', partial: false },
       'tokens.lastBalances': null,
       'tokens.theme': null,
-      'sites.current': { site: null, addresses: [] },
+      'sites.current': { network: 'mainnet', site: null, addresses: [] },
     };
     const client: Client = {
       call: vi.fn((method: string) =>

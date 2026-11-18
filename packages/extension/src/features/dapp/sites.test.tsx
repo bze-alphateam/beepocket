@@ -122,6 +122,20 @@ describe('Connected sites', () => {
     expect(button(t.host, 'Disconnect all')).toBeUndefined();
   });
 
+  it('acts on the network the list was read for', async () => {
+    const t = rig({
+      'sites.list': () => listing([SITE], 'testnet'),
+      'sites.disconnect': () => ok({}),
+    });
+    await settle();
+    fireEvent(button(t.host, 'Disconnect'), 'click');
+    await settle();
+    expect(t.call).toHaveBeenCalledWith('sites.disconnect', {
+      origin: SITE.origin,
+      network: 'testnet',
+    });
+  });
+
   it('labels the testnet list', async () => {
     const t = rig({ 'sites.list': () => listing([SITE], 'testnet') });
     await settle();
@@ -142,8 +156,14 @@ describe('Connected sites', () => {
     expect(t.host.querySelector('.bp-sites-net')?.textContent).toBe('Mainnet · 2');
     fireEvent(button(t.host, 'Disconnect all'), 'click');
     await settle();
-    expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: SITE.origin });
-    expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: other.origin });
+    expect(t.call).toHaveBeenCalledWith('sites.disconnect', {
+      origin: SITE.origin,
+      network: 'mainnet',
+    });
+    expect(t.call).toHaveBeenCalledWith('sites.disconnect', {
+      origin: other.origin,
+      network: 'mainnet',
+    });
     expect(t.host.textContent).toContain('No sites on Mainnet');
   });
 
@@ -159,7 +179,10 @@ describe('Connected sites', () => {
     await settle();
     fireEvent(button(t.host, 'Disconnect'), 'click');
     await settle();
-    expect(t.call).toHaveBeenCalledWith('sites.disconnect', { origin: SITE.origin });
+    expect(t.call).toHaveBeenCalledWith('sites.disconnect', {
+      origin: SITE.origin,
+      network: 'mainnet',
+    });
     expect(t.host.textContent).toContain('No sites on Mainnet');
   });
 
@@ -173,7 +196,11 @@ describe('Connected sites', () => {
     fireEvent(radios[0], 'click');
     fireEvent(button(t.host, 'Save'), 'click');
     await settle();
-    expect(t.call).toHaveBeenCalledWith('sites.change', { origin: SITE.origin, index: 0 });
+    expect(t.call).toHaveBeenCalledWith('sites.change', {
+      origin: SITE.origin,
+      index: 0,
+      network: 'mainnet',
+    });
     expect(t.host.querySelector('[role=dialog]')).toBeNull();
   });
 

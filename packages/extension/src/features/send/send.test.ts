@@ -178,6 +178,10 @@ function setup(opts: Options = {}) {
     state: opts.state ?? 'unlocked',
     accountPubKey: null as Uint8Array | null,
     signature: bytes(golden('send-ubze').signature),
+    /** The active network: what the worker reads on every call. */
+    network: NETWORK,
+    /** The wallet's addresses as the profile holds them right now. */
+    addresses: [{ index: 0, label: 'Main', address: SIGNER }],
   };
   const pools = opts.pools ?? [[FACTORY, 21_000_000_000n, 50_000_000_000n]];
   const listing =
@@ -277,8 +281,8 @@ function setup(opts: Options = {}) {
     denomBranding: () => Promise.resolve(null),
   };
   const services = {
-    activeNetwork: () => Promise.resolve(NETWORK),
-    clients: () => Promise.resolve({ network: NETWORK, chain, scan: {} }),
+    activeNetwork: () => Promise.resolve(control.network),
+    clients: () => Promise.resolve({ network: control.network, chain, scan: {} }),
   } as unknown as Services;
   const cache = new Map<string, unknown>();
   const session = new Map<string, unknown>();
@@ -300,12 +304,13 @@ function setup(opts: Options = {}) {
   } as unknown as Platform;
   const wallet = {
     state: () => Promise.resolve({ state: control.state, retryAt: null }),
-    addresses: () =>
-      Promise.resolve(ok({ addresses: [{ index: 0, label: 'Main', address: SIGNER }] })),
+    addresses: () => Promise.resolve(ok({ addresses: control.addresses })),
     pubKey: () =>
       Promise.resolve(control.state === 'unlocked' ? ok(PUBKEY) : fail('needs-password', 'locked')),
     signDirect: (address: string, doc: Uint8Array): Promise<Result<Uint8Array>> => {
-      if (address !== SIGNER) return Promise.resolve(fail('unknown_address', 'No such address.'));
+      if (!control.addresses.some((a) => a.address === address)) {
+        return Promise.resolve(fail('unknown_address', 'No such address.'));
+      }
       calls.sign++;
       signedFor.push(address);
       signed.push(doc);
@@ -352,6 +357,8 @@ const prepareReq = (over: Record<string, unknown> = {}) => ({
 
 const submitFrom = (q: SendQuote) => ({
   fromIndex: 0,
+  fromAddress: q.from.address,
+  network: q.network,
   to: q.to,
   denom: q.token.denom,
   amount: q.amount,
@@ -1223,5 +1230,74 @@ describe('transaction expiry', () => {
     });
     expect(s.calls.sign).toBe(0);
     expect(s.calls.broadcast).toBe(0);
+  });
+});
+
+describe('the reviewed network and sender', () => {
+  it('the quote names the network it was prepared on', async () => {
+    const s = setup();
+    expect(await quoteOf(s)).toMatchObject({
+      network: 'mainnet',
+      from: { index: 0, address: SIGNER },
+    });
+    s.control.network = NETWORKS.testnet;
+    expect(await quoteOf(s)).toMatchObject({ network: 'testnet' });
+  });
+
+  it('signs nothing when the active network is no longer the reviewed one', async () => {
+    const s = setup();
+    s.control.network = NETWORKS.testnet;
+    const quote = await quoteOf(s);
+    s.control.network = NETWORKS.mainnet;
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
+      ok: false,
+      error: { code: 'review-changed' },
+    });
+    expect(s.calls.sign).toBe(0);
+    expect(s.calls.broadcast).toBe(0);
+
+    // Reviewed again on the network now active, it goes out there.
+    const again = await quoteOf(s);
+    expect(await s.call('send.submit', submitFrom(again))).toMatchObject({ ok: true });
+    expect(s.signed).toHaveLength(1);
+  });
+
+  it('signs nothing when the address at the reviewed index is another one now', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    s.control.addresses = [{ index: 0, label: 'Main', address: RECIPIENT }];
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({
+      ok: false,
+      error: { code: 'review-changed' },
+    });
+    expect(s.signedFor).toEqual([]);
+    expect(s.calls.broadcast).toBe(0);
+  });
+
+  it('sends as before when neither changed', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    expect(await s.call('send.submit', submitFrom(quote))).toMatchObject({ ok: true });
+    expect(s.signedFor).toEqual([SIGNER]);
+  });
+
+  it('refuses a submit that does not name the reviewed network and sender', async () => {
+    const s = setup();
+    const quote = await quoteOf(s);
+    const without = (key: string) =>
+      Object.fromEntries(Object.entries(submitFrom(quote)).filter(([k]) => k !== key));
+    for (const payload of [
+      without('network'),
+      without('fromAddress'),
+      { ...submitFrom(quote), network: 'constructor' },
+      { ...submitFrom(quote), network: 1 },
+      { ...submitFrom(quote), fromAddress: 7 },
+    ]) {
+      expect(await s.call('send.submit', payload)).toMatchObject({
+        ok: false,
+        error: { code: 'bad_request' },
+      });
+    }
+    expect(s.calls.sign).toBe(0);
   });
 });

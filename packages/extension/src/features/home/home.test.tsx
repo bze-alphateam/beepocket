@@ -180,7 +180,7 @@ function setup(
     },
     'book.list': () => ok({ contacts: [], own: [] }),
     'sites.list': () => ok({ network: w.network, sites: [], addresses: [] }),
-    'sites.current': () => ok({ site: w.site, addresses: w.addresses }),
+    'sites.current': () => ok({ network: w.network, site: w.site, addresses: w.addresses }),
     'sites.change': (r) => {
       if (w.sitesFail !== null) return fail(w.sitesFail, 'refused');
       const picked = w.addresses.find((a) => a.index === r.index);
@@ -1063,7 +1063,7 @@ describe('current site strip', () => {
     );
     await s.tick();
     expect(s.calls.filter((c) => c.method === 'sites.change').map((c) => c.req)).toEqual([
-      { origin: SITE.origin, index: 1 },
+      { origin: SITE.origin, index: 1, network: 'mainnet' },
     ]);
     expect(s.host.querySelector('[role="dialog"]')).toBeNull();
     expect(strip(s.host)?.textContent).toContain('Savings');
@@ -1090,7 +1090,7 @@ describe('current site strip', () => {
     click(byLabel(s.host, 'Disconnect testnet-dex.getbze.com'));
     await s.tick();
     expect(s.calls.filter((c) => c.method === 'sites.disconnect').map((c) => c.req)).toEqual([
-      { origin: SITE.origin },
+      { origin: SITE.origin, network: 'mainnet' },
     ]);
     expect(strip(s.host)).toBeNull();
   });

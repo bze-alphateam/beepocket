@@ -1,3 +1,4 @@
+import type { NetworkId } from '@beepocket/core';
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { useClient } from '../../popup/client-context';
@@ -26,6 +27,8 @@ function errorText(code: string): string {
 export function CurrentSite() {
   const client = useClient();
   const [site, setSite] = useState<ConnectedSiteView | null>(null);
+  /** The network `site` was read on: Change and Disconnect act on that one only. */
+  const [network, setNetwork] = useState<NetworkId | null>(null);
   const [addresses, setAddresses] = useState<WalletAddress[]>([]);
   const [changing, setChanging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,9 +38,13 @@ export function CurrentSite() {
     // A worker that cannot answer (its port went away) just means no strip.
     // An empty or malformed answer reads the same: nothing to show.
     const r = await client.call('sites.current', {}).catch(() => null);
-    const answer: { site?: ConnectedSiteView | null; addresses?: WalletAddress[] } | undefined =
-      r?.ok ? r.value : undefined;
-    setSite(answer?.site ?? null);
+    const answer:
+      | { network?: NetworkId; site?: ConnectedSiteView | null; addresses?: WalletAddress[] }
+      | undefined = r?.ok ? r.value : undefined;
+    // A site without the network it was read on has nothing to act on: no strip.
+    const read = answer?.network ?? null;
+    setNetwork(read);
+    setSite(read === null ? null : (answer?.site ?? null));
     setAddresses(answer?.addresses ?? []);
   }, [client]);
 
@@ -45,7 +52,7 @@ export function CurrentSite() {
     void load();
   }, [load]);
 
-  if (site === null) return null;
+  if (site === null || network === null) return null;
 
   const run = async (call: () => Promise<Outcome>) => {
     if (busy) return;
@@ -72,7 +79,7 @@ export function CurrentSite() {
           setChanging(true);
         }}
         onDisconnect={() => {
-          void run(() => client.call('sites.disconnect', { origin: site.origin }));
+          void run(() => client.call('sites.disconnect', { origin: site.origin, network }));
         }}
       />
       {error !== null && !changing && <Banner tone="red">{error}</Banner>}
@@ -83,7 +90,7 @@ export function CurrentSite() {
           busy={busy}
           error={error}
           onSave={(index) => {
-            void run(() => client.call('sites.change', { origin: site.origin, index }));
+            void run(() => client.call('sites.change', { origin: site.origin, index, network }));
           }}
           onClose={() => {
             setChanging(false);

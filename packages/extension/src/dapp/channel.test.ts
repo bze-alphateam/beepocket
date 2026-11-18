@@ -12,11 +12,12 @@ import {
   type Random,
 } from '@beepocket/core';
 import { describe, expect, it, vi } from 'vitest';
+import { HandlerRegistry } from '../background/registry';
 import type { Services } from '../background/services';
 import { ChromeSessionStorage, ChromeStorage, type Platform } from '../platform';
 import { FakeArea } from '../platform/test-support';
 import { WalletService } from '../features/wallet/service';
-import { createDappService } from '.';
+import { createDappService, registerSitesHandlers } from '.';
 import type { UserAnswer } from './registry';
 import type { DappSender } from './types';
 import { bytesFromWire, bytesToWire } from './wire';
@@ -592,7 +593,7 @@ describe('connected sites', () => {
     await connectSite(t, t.site(OTHER, 2, 'doc-2'), 0);
     await t.ask('getKey', chainId(), t.site(ORIGIN, 3, 'doc-3'));
 
-    expect(await t.dapp.sites.change(ORIGIN, 1)).toEqual({ ok: true, value: {} });
+    expect(await t.dapp.sites.change(ORIGIN, 1, 'mainnet')).toEqual({ ok: true, value: {} });
     expect(pushes(t)).toEqual(['1:doc-1', '3:doc-3']);
     expect(t.delivered.at(-1)?.message).toEqual({ dapp: { event: 'accountChanged' } });
 
@@ -605,11 +606,11 @@ describe('connected sites', () => {
   it('Change refuses an unknown site or address and pushes nothing', async () => {
     const t = await rig();
     await connectSite(t, t.site());
-    expect(await t.dapp.sites.change(OTHER, 1)).toMatchObject({
+    expect(await t.dapp.sites.change(OTHER, 1, 'mainnet')).toMatchObject({
       ok: false,
       error: { code: 'unknown-site' },
     });
-    expect(await t.dapp.sites.change(ORIGIN, 9)).toMatchObject({
+    expect(await t.dapp.sites.change(ORIGIN, 9, 'mainnet')).toMatchObject({
       ok: false,
       error: { code: 'unknown_address' },
     });
@@ -621,13 +622,13 @@ describe('connected sites', () => {
     await connectSite(t, t.site(ORIGIN, 1, 'doc-1'));
     await connectSite(t, t.site(OTHER, 2, 'doc-2'));
 
-    expect(await t.dapp.sites.disconnect(ORIGIN)).toEqual({ ok: true, value: {} });
+    expect(await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).toEqual({ ok: true, value: {} });
     expect(pushes(t)).toEqual(['1:doc-1']);
     const key = await t.ask('getKey', chainId());
     expect(one(t.answersFor(key.id))).toMatchObject({ error: { code: 'not-connected' } });
     const listed = await t.dapp.sites.list();
     expect(listed.ok && listed.value.sites.map((s) => s.origin)).toEqual([OTHER]);
-    expect(await t.dapp.sites.disconnect(ORIGIN)).toMatchObject({
+    expect(await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).toMatchObject({
       ok: false,
       error: { code: 'unknown-site' },
     });
@@ -637,7 +638,7 @@ describe('connected sites', () => {
     const t = await rig();
     await connectSite(t, t.site());
     await t.wallet.weakLock();
-    expect(await t.dapp.sites.disconnect(ORIGIN)).toMatchObject({
+    expect(await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).toMatchObject({
       ok: false,
       error: { code: 'needs-password' },
     });
@@ -709,13 +710,110 @@ describe('connected sites', () => {
     const t = await rig();
     await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 0);
     t.active.tabs = [{ url: ORIGIN }];
-    expect((await t.dapp.sites.change(ORIGIN, 1)).ok).toBe(true);
+    expect((await t.dapp.sites.change(ORIGIN, 1, 'mainnet')).ok).toBe(true);
     const changed = await t.dapp.sites.current();
     expect(changed.ok && changed.value.site?.label).toBe('Address 2');
     expect(pushes(t)).toEqual(['1:doc-1']);
-    expect((await t.dapp.sites.disconnect(ORIGIN)).ok).toBe(true);
+    expect((await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).ok).toBe(true);
     const gone = await t.dapp.sites.current();
     expect(gone.ok && gone.value.site).toBeNull();
+  });
+
+  describe('bound to the network on screen', () => {
+    /** The popup's own calls, through the handlers and their validation. */
+    const popup = (t: Awaited<ReturnType<typeof rig>>) => {
+      const registry = new HandlerRegistry();
+      registerSitesHandlers(registry, t.dapp);
+      return (method: string, payload: unknown) => registry.dispatch({ method, payload });
+    };
+    /** The same origin connected on both networks, mainnet active again. */
+    async function onBoth(t: Awaited<ReturnType<typeof rig>>) {
+      await connectSite(t, t.site(ORIGIN, 1, 'doc-1'), 0);
+      t.setNetwork('testnet');
+      const a = await t.ask('connect', chainId('testnet'), t.site(ORIGIN, 1, 'doc-1'));
+      expect((await t.answer(a.id, { approve: true, index: 0 })).ok).toBe(true);
+      t.setNetwork('mainnet');
+      t.delivered.length = 0;
+    }
+    const origins = async (t: Awaited<ReturnType<typeof rig>>) => {
+      const listed = await t.dapp.sites.list();
+      if (!listed.ok) throw new Error('list failed');
+      return listed.value.sites.map((s) => `${s.origin}=${s.address}`);
+    };
+
+    it('Disconnect for the listed network leaves the other network alone', async () => {
+      const t = await rig();
+      await onBoth(t);
+      const call = popup(t);
+      const listed = await call('sites.list', {});
+      expect(listed).toMatchObject({ ok: true, value: { network: 'mainnet' } });
+
+      t.setNetwork('testnet');
+      expect(await call('sites.disconnect', { origin: ORIGIN, network: 'mainnet' })).toMatchObject({
+        ok: false,
+        error: { code: 'unknown-site' },
+      });
+      expect(await origins(t)).toEqual([`${ORIGIN}=${deriveAccount(PHRASE, 0).address}`]);
+      expect(pushes(t)).toEqual([]);
+
+      t.setNetwork('mainnet');
+      expect(await call('sites.disconnect', { origin: ORIGIN, network: 'mainnet' })).toEqual({
+        ok: true,
+        value: {},
+      });
+      expect(await origins(t)).toEqual([]);
+      t.setNetwork('testnet');
+      expect(await origins(t)).toHaveLength(1);
+    });
+
+    it('Change for the listed network leaves the other network alone', async () => {
+      const t = await rig();
+      await onBoth(t);
+      const call = popup(t);
+      t.setNetwork('testnet');
+      expect(
+        await call('sites.change', { origin: ORIGIN, index: 1, network: 'mainnet' }),
+      ).toMatchObject({ ok: false, error: { code: 'unknown-site' } });
+      expect(await origins(t)).toEqual([`${ORIGIN}=${deriveAccount(PHRASE, 0).address}`]);
+      expect(pushes(t)).toEqual([]);
+
+      expect(await call('sites.change', { origin: ORIGIN, index: 1, network: 'testnet' })).toEqual({
+        ok: true,
+        value: {},
+      });
+      expect(await origins(t)).toEqual([`${ORIGIN}=${deriveAccount(PHRASE, 1).address}`]);
+      t.setNetwork('mainnet');
+      expect(await origins(t)).toEqual([`${ORIGIN}=${deriveAccount(PHRASE, 0).address}`]);
+    });
+
+    it('the current site names the network it was read on', async () => {
+      const t = await rig();
+      await onBoth(t);
+      t.active.tabs = [{ url: ORIGIN }];
+      expect(await popup(t)('sites.current', {})).toMatchObject({
+        ok: true,
+        value: { network: 'mainnet', site: { origin: ORIGIN } },
+      });
+    });
+
+    it('refuses Change and Disconnect that do not name a network', async () => {
+      const t = await rig();
+      await onBoth(t);
+      const call = popup(t);
+      for (const [method, payload] of [
+        ['sites.disconnect', { origin: ORIGIN }],
+        ['sites.disconnect', { origin: ORIGIN, network: 'constructor' }],
+        ['sites.change', { origin: ORIGIN, index: 1 }],
+        ['sites.change', { origin: ORIGIN, index: 1, network: 7 }],
+      ] as const) {
+        expect(await call(method, payload)).toMatchObject({
+          ok: false,
+          error: { code: 'bad_request' },
+        });
+      }
+      expect(await origins(t)).toHaveLength(1);
+      expect(pushes(t)).toEqual([]);
+    });
   });
 
   it('a network switch pushes to every recorded document', async () => {

@@ -859,9 +859,33 @@ describe('a sign request waiting in the queue', () => {
     expect(await t.dapp.current()).toMatchObject({ status: 'sign', id: first.id, count: 2 });
 
     await t.answer(first.id, { approve: false });
-    expect(await t.dapp.sites.disconnect(ORIGIN)).toEqual({ ok: true, value: {} });
+    expect(await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).toEqual({ ok: true, value: {} });
     expect(await t.dapp.current()).toEqual({ status: 'none' });
     expect(t.answerOf(second.id)).toMatchObject({ error: { code: 'not-connected' } });
+  });
+  it('is never signed from another address when the site moved before it reached the head', async () => {
+    const t = await rig();
+    await t.connect();
+    const first = await t.ask('signDirect', request().params);
+    const second = await t.ask('signDirect', request().params);
+    await t.answer(first.id, { approve: false });
+    expect(await t.dapp.sites.change(ORIGIN, 1, 'mainnet')).toEqual({ ok: true, value: {} });
+    expect(await t.dapp.current()).toEqual({ status: 'none' });
+    expect(t.answerOf(second.id)).toMatchObject({ error: { code: 'not-connected' } });
+    expect(t.signedOf(second.id)).toBeUndefined();
+  });
+});
+
+describe('a sign request under review when its site moves to another address', () => {
+  it("signs nothing on approve: the reviewed signer is no longer the site's address", async () => {
+    const t = await rig();
+    await t.connect();
+    const r = await review(t);
+    expect(r.view.signer).toMatchObject({ address: MAIN.address });
+    expect(await t.dapp.sites.change(ORIGIN, 1, 'mainnet')).toEqual({ ok: true, value: {} });
+    await t.answer(r.id, { approve: true, fee: feeFor(r.view) });
+    expect(t.answerOf(r.id)).toMatchObject({ error: { code: 'not-connected' } });
+    expect(t.signedOf(r.id)).toBeUndefined();
   });
 });
 

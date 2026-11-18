@@ -1,3 +1,4 @@
+import type { NetworkId } from '@beepocket/core';
 import {
   DappProtocolCodes,
   fail,
@@ -45,7 +46,7 @@ export class SitesService {
 
   async list(): Promise<
     Result<{
-      network: 'mainnet' | 'testnet';
+      network: NetworkId;
       sites: ConnectedSiteView[];
       addresses: WalletAddress[];
     }>
@@ -74,7 +75,9 @@ export class SitesService {
    * The URL comes from the browser (readable thanks to `activeTab`), never from the page; without
    * it, or on a non-web tab, there is no site.
    */
-  async current(): Promise<Result<{ site: ConnectedSiteView | null; addresses: WalletAddress[] }>> {
+  async current(): Promise<
+    Result<{ network: NetworkId; site: ConnectedSiteView | null; addresses: WalletAddress[] }>
+  > {
     let origin: string | null = null;
     try {
       const [tab] = await this.deps.tabs.query({ active: true, lastFocusedWindow: true });
@@ -86,11 +89,25 @@ export class SitesService {
     if (!listed.ok) return listed;
     const site =
       origin === null ? null : (listed.value.sites.find((s) => s.origin === origin) ?? null);
-    return ok({ site, addresses: listed.value.addresses });
+    return ok({ network: listed.value.network, site, addresses: listed.value.addresses });
   }
 
-  async change(origin: string, index: number): Promise<Result<Record<string, never>>> {
-    const network = (await this.deps.services.activeNetwork()).id;
+  /**
+   * Change and Disconnect act on the network the site was listed for (`listed`) and only while
+   * it is still the active one; otherwise the site is not there to act on.
+   */
+  private async onScreen(listed: NetworkId): Promise<boolean> {
+    return (await this.deps.services.activeNetwork()).id === listed;
+  }
+
+  async change(
+    origin: string,
+    index: number,
+    network: NetworkId,
+  ): Promise<Result<Record<string, never>>> {
+    if (!(await this.onScreen(network))) {
+      return fail(DappProtocolCodes.unknownSite, 'This site is not connected on this network.');
+    }
     const outcome = { missing: false, unknownAddress: false };
     const saved = await this.deps.wallet.updateProfile((profile) => {
       const sites = profile.sites[network];
@@ -108,8 +125,10 @@ export class SitesService {
     return ok({});
   }
 
-  async disconnect(origin: string): Promise<Result<Record<string, never>>> {
-    const network = (await this.deps.services.activeNetwork()).id;
+  async disconnect(origin: string, network: NetworkId): Promise<Result<Record<string, never>>> {
+    if (!(await this.onScreen(network))) {
+      return fail(DappProtocolCodes.unknownSite, 'This site is not connected on this network.');
+    }
     const outcome = { missing: false };
     const saved = await this.deps.wallet.updateProfile((profile) => {
       if (Object.hasOwn(profile.sites[network], origin)) {
