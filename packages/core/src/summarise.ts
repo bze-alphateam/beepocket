@@ -1796,6 +1796,53 @@ function onlyKey(obj: Record<string, unknown>, name: string): string | null | un
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/**
+ * Whether an object in the JSON text names a key twice, in any letter case. Parsers disagree on
+ * which copy wins, so instructions holding one cannot be read for sure.
+ */
+function hasRepeatedKey(text: string): boolean {
+  // One entry per open container: the keys of an object, null for an array.
+  const stack: (Set<string> | null)[] = [];
+  let expectKey = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (c === '"') {
+      let end = i + 1;
+      while (end < text.length && text[end] !== '"') end += text[end] === '\\' ? 2 : 1;
+      const keys = stack[stack.length - 1];
+      if (expectKey && keys) {
+        let key: unknown;
+        try {
+          key = JSON.parse(text.slice(i, end + 1));
+        } catch {
+          return true;
+        }
+        if (typeof key !== 'string') return true;
+        const folded = key.toLowerCase();
+        if (keys.has(folded)) return true;
+        keys.add(folded);
+      }
+      expectKey = false;
+      i = end;
+    } else if (c === '{') {
+      stack.push(new Set());
+      expectKey = true;
+    } else if (c === '[') {
+      stack.push(null);
+      expectKey = false;
+    } else if (c === '}' || c === ']') {
+      stack.pop();
+      expectKey = false;
+    } else if (c === ',') {
+      expectKey = Boolean(stack[stack.length - 1]);
+    }
+  }
+  return false;
+}
+
+/** A receiver as an address is written: letters and digits only. */
+const ADDRESS_LIKE = /^[A-Za-z0-9]+$/;
+
 function parseObject(raw: string): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -1810,6 +1857,13 @@ function parseObject(raw: string): Record<string, unknown> | null {
  * sure gives `unknown`: the final recipient is never guessed.
  */
 function memoDestination(memo: string): Destination {
+  const destination = readDestination(memo);
+  return destination.kind !== 'none' && hasRepeatedKey(memo)
+    ? { kind: 'unknown', why: 'unreadable' }
+    : destination;
+}
+
+function readDestination(memo: string): Destination {
   const unreadable: Destination = { kind: 'unknown', why: 'unreadable' };
   let obj: Record<string, unknown> | null = parseObject(memo);
   if (obj === null) {
@@ -1832,7 +1886,7 @@ function memoDestination(memo: string): Destination {
       typeof value !== 'string' ||
       value === '' ||
       value.length > MAX_RECEIVER ||
-      sanitiseText(value, MAX_RECEIVER) !== value
+      !ADDRESS_LIKE.test(value)
     ) {
       return unreadable;
     }
@@ -1842,6 +1896,7 @@ function memoDestination(memo: string): Destination {
     if (nextKey === null) return unreadable;
     const next: unknown = forward[nextKey];
     if (next === null) return { kind: 'forward', receiver };
+    if (typeof next === 'string' && hasRepeatedKey(next)) return unreadable;
     const nextObj: unknown = typeof next === 'string' ? parseObject(next) : next;
     if (!isPlainObject(nextObj)) return unreadable;
     obj = nextObj;
