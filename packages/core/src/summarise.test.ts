@@ -2421,6 +2421,16 @@ describe('IBC transfer destination', () => {
     ['a forward that is not an object', JSON.stringify({ forward: 'osmo1' })],
     ['a next that does not parse', JSON.stringify(forward(OSMO, { next: '{nope' }))],
     ['broken JSON', `{"forward":{"receiver":"${OSMO}"`],
+    [
+      'a key that appears twice',
+      `{"forward":{"receiver":"${OSMO}","next":{"forward":{"receiver":"${FINAL}"}}},` +
+        `"forward":{"receiver":"${OSMO}"}}`,
+    ],
+    [
+      'a key that appears twice in another spelling',
+      `{"forward":{"receiver":"${OSMO}","Receiver":"${FINAL}"}}`,
+    ],
+    ['a receiver that is not an address', JSON.stringify({ forward: { receiver: 'pay to bob' } })],
   ])('says the final recipient is unknown for %s', async (_, memo) => {
     const s = await run([transfer(memo)]);
     expect(s.level).toBe('dangerous');
