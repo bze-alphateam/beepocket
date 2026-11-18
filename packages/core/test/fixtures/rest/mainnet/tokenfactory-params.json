@@ -1,0 +1,13 @@
+{
+  "method": "GET",
+  "path": "/bze/tokenfactory/params",
+  "status": 200,
+  "body": {
+    "params": {
+      "create_denom_fee": {
+        "denom": "ubze",
+        "amount": "25000000000"
+      }
+    }
+  }
+}

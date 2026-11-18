@@ -20,6 +20,7 @@ import poolsPage2 from '../../test/fixtures/rest/mainnet/liquidity-pools-page2.j
 import simulateError from '../../test/fixtures/rest/mainnet/simulate-error.json';
 import supplyMain from '../../test/fixtures/rest/mainnet/supply.json';
 import tradebinMain from '../../test/fixtures/rest/mainnet/tradebin-params.json';
+import tokenFactoryMain from '../../test/fixtures/rest/mainnet/tokenfactory-params.json';
 import txMain from '../../test/fixtures/rest/mainnet/tx.json';
 import txMissing from '../../test/fixtures/rest/mainnet/tx-missing.json';
 import accountTest from '../../test/fixtures/rest/testnet/account.json';
@@ -364,6 +365,31 @@ describe('RestChainClient params', () => {
 
   it('reads native_denom (snake) and minNativeLiquidityForModuleSwap (camel)', async () => {
     const t = mainnet().replay(f(tradebinMain));
+    expect(await new RestChainClient(t, MAINNET).tradebinParams()).toMatchObject({
+      nativeDenom: 'ubze',
+      minNativeLiquidityForModuleSwap: 100000000000n,
+    });
+  });
+
+  it('reads the market creation fee and the maker and taker fees', async () => {
+    const t = mainnet().replay(f(tradebinMain));
+    expect(await new RestChainClient(t, MAINNET).tradebinParams()).toEqual({
+      nativeDenom: 'ubze',
+      minNativeLiquidityForModuleSwap: 100000000000n,
+      createMarketFee: { denom: 'ubze', amount: 25000000000n },
+      marketMakerFee: { denom: 'ubze', amount: 1000n },
+      marketTakerFee: { denom: 'ubze', amount: 100000n },
+    });
+  });
+
+  it('still reads the other tradebin fields when a fee is missing or malformed', async () => {
+    const params = {
+      ...tradebinMain.body.params,
+      createMarketFee: undefined,
+      marketMakerFee: { denom: 'ubze', amount: '-1' },
+      marketTakerFee: '100000ubze',
+    };
+    const t = mainnet().on('GET', '/bze/tradebin/params', json(200, { params }));
     expect(await new RestChainClient(t, MAINNET).tradebinParams()).toEqual({
       nativeDenom: 'ubze',
       minNativeLiquidityForModuleSwap: 100000000000n,
@@ -375,6 +401,33 @@ describe('RestChainClient params', () => {
     const t = mainnet().on('GET', '/bze/tradebin/params', json(200, { params }));
     await expect(new RestChainClient(t, MAINNET).tradebinParams()).rejects.toThrow(
       expect.objectContaining({ path: 'params.native_denom' }) as Error,
+    );
+  });
+});
+
+describe('RestChainClient.tokenFactoryParams', () => {
+  it('reads the token creation fee', async () => {
+    const t = mainnet().replay(f(tokenFactoryMain));
+    expect(await new RestChainClient(t, MAINNET).tokenFactoryParams()).toEqual({
+      createDenomFee: { denom: 'ubze', amount: 25000000000n },
+    });
+  });
+
+  it('reads no fee when the node reports none or a malformed one', async () => {
+    for (const fee of [undefined, { denom: 'ubze' }, { denom: '', amount: '1' }, '5ubze']) {
+      const t = mainnet().on(
+        'GET',
+        '/bze/tokenfactory/params',
+        json(200, { params: { create_denom_fee: fee } }),
+      );
+      expect(await new RestChainClient(t, MAINNET).tokenFactoryParams()).toEqual({});
+    }
+  });
+
+  it('rejects a body without params', async () => {
+    const t = mainnet().on('GET', '/bze/tokenfactory/params', json(200, {}));
+    await expect(new RestChainClient(t, MAINNET).tokenFactoryParams()).rejects.toBeInstanceOf(
+      UnexpectedResponseError,
     );
   });
 });
@@ -690,6 +743,12 @@ describe('amounts are never numbers', () => {
     expectTypeOf<
       Result<'tradebinParams'>['minNativeLiquidityForModuleSwap']
     >().toEqualTypeOf<bigint>();
+    expectTypeOf<
+      NonNullable<Result<'tradebinParams'>['createMarketFee']>['amount']
+    >().toEqualTypeOf<bigint>();
+    expectTypeOf<
+      NonNullable<Result<'tokenFactoryParams'>['createDenomFee']>['amount']
+    >().toEqualTypeOf<bigint>();
     expectTypeOf<Result<'liquidityPools'>[number]['reserveBase']>().toEqualTypeOf<bigint>();
     expectTypeOf<Result<'liquidityPools'>[number]['reserveQuote']>().toEqualTypeOf<bigint>();
     expectTypeOf<NonNullable<Result<'marketOrder'>>['amount']>().toEqualTypeOf<bigint>();
@@ -810,6 +869,7 @@ describe('RestChainClient hardening', () => {
       ['GET', '/bze/tokenfactory/denom_branding?denom=ubze', (c) => c.denomBranding('ubze')],
       ['GET', '/bze/txfeecollector/params', (c) => c.feeParams()],
       ['GET', '/bze/tradebin/params', (c) => c.tradebinParams()],
+      ['GET', '/bze/tokenfactory/params', (c) => c.tokenFactoryParams()],
       ['GET', '/bze/tradebin/all_liquidity_pools', (c) => c.liquidityPools()],
       ['GET', '/bze/tradebin/halted_denoms', (c) => c.haltedDenoms()],
       ['GET', '/bze/tradebin/all_markets', (c) => c.markets()],
