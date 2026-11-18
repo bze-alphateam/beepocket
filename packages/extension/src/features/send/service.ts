@@ -38,6 +38,7 @@ import type {
 } from '../../protocol/send';
 import { WalletErrorCodes, type WalletAddress, type WalletState } from '../../protocol/wallet';
 import { multiplierOf, pricingToWire } from './override';
+import { PENDING_WINDOW_MS, TIMEOUT_BLOCKS, type PendingSend, type PendingSends } from './pending';
 
 /** The slice of the wallet service the send flow signs through. */
 export interface SendWallet {
@@ -52,11 +53,16 @@ export interface SendWallet {
 
 export interface SendDeps {
   network: Pick<Network, 'chainId' | 'scan'>;
-  chain: Pick<ChainClient, 'account' | 'balances' | 'balance' | 'broadcast' | 'waitForTx'>;
+  chain: Pick<
+    ChainClient,
+    'account' | 'balances' | 'balance' | 'broadcast' | 'waitForTx' | 'latestHeight'
+  >;
   fees: Pick<FeeEstimator, 'estimate' | 'feeData'>;
   tokens: { resolve(denom: string): Promise<TokenInfo> };
   wallet: SendWallet;
   clock: Clock;
+  /** The last send each address signed on this network. */
+  pending: PendingSends;
 }
 
 /** Waiting for inclusion: poll every second for up to a minute (Technical Design §7). */
@@ -68,6 +74,8 @@ const SIMULATION_PUBKEY = Uint8Array.from([2, ...new Array<number>(32).fill(1)])
 /** Passes to settle the fee of a max send paid in the sent token (the amount feeds the gas). */
 const MAX_PASSES = 5;
 const TX_HASH = /^[0-9A-Fa-f]{64}$/;
+/** `ErrTxInMempoolCache`: the node already has these very bytes. */
+const ALREADY_SENT = { codespace: 'sdk', code: 19 };
 const BASE_UNITS = /^\d{1,60}$/;
 const CANNOT_PAY = "This address can't pay the network fee.";
 const LEAVES_NO_FEE = {
@@ -81,6 +89,8 @@ interface Context {
   accountNumber: bigint;
   accountPubKey: Uint8Array | null;
   balances: Map<string, bigint>;
+  /** The latest block height the node reported. */
+  height: bigint;
 }
 
 function nodeProblem(e: unknown): Result<never> | null {
@@ -99,31 +109,20 @@ function nodeProblem(e: unknown): Result<never> | null {
 }
 
 /** Runs a node call; node failures become typed errors, anything else is a bug and propagates. */
-async function guarded<T>(run: () => Promise<T>): Promise<Result<T>>;
-/** With `unknownOutcome`, an answer that never arrived gives `null` (the request may have landed). */
-async function guarded<T>(run: () => Promise<T>, unknownOutcome: true): Promise<Result<T | null>>;
-async function guarded<T>(
-  run: () => Promise<T>,
-  unknownOutcome = false,
-): Promise<Result<T | null>> {
+async function guarded<T>(run: () => Promise<T>): Promise<Result<T>> {
   try {
     return ok(await run());
   } catch (e) {
-    if (
-      unknownOutcome &&
-      (e instanceof TransportError ||
-        e instanceof HttpStatusError ||
-        e instanceof UnexpectedResponseError)
-    ) {
-      return ok(null);
-    }
     const problem = nodeProblem(e);
     if (problem) return problem;
     throw e;
   }
 }
 
-/** Sending from one of the wallet's own addresses. Built per request; holds no state. */
+/**
+ * Sending from one of the wallet's own addresses. Built per request; the only state is the
+ * last send each address signed (`PendingSends`).
+ */
 export class SendService {
   constructor(private readonly deps: SendDeps) {}
 
@@ -223,6 +222,14 @@ export class SendService {
     const context = await this.context(req.fromIndex, [req.denom, req.feeDenom]);
     if (!context.ok) return context;
     const ctx = context.value;
+    // Right after a signed send, another one waits: the first may still be on its way.
+    const previous = await this.deps.pending.get(ctx.from.address);
+    if (previous && Math.abs(this.deps.clock.now() - previous.signedAt) < PENDING_WINDOW_MS) {
+      return fail(
+        SendErrorCodes.pendingSend,
+        'A previous send is still pending. Check Activity before you send again.',
+      );
+    }
     const held = ctx.balances.get(req.denom) ?? 0n;
     const feeHeld = ctx.balances.get(req.feeDenom) ?? 0n;
     const spent = req.feeDenom === req.denom ? amount + reviewedFee : amount;
@@ -312,11 +319,50 @@ export class SendService {
     const txRaw = txRawBytes({ bodyBytes, authInfoBytes, signatures: [signature.value] });
     // The hash is known before the node answers, so a lost answer can still be followed up.
     const hash = txHash(txRaw);
-    const sent = await guarded(() => this.deps.chain.broadcast(txRaw), true);
+    // Recorded before it leaves: whatever the node answers, this send may land.
+    await this.deps.pending.record(ctx.from.address, {
+      txHash: hash,
+      sequence: ctx.sequence.toString(),
+      timeoutHeight: this.timeoutHeight(ctx).toString(),
+      signedAt: this.deps.clock.now(),
+    });
+    const sent = await this.broadcast(txRaw, hash, previous, ctx.height);
     if (!sent.ok) return sent;
     await this.deps.wallet.rearm();
-    if (sent.value === null) return ok({ txHash: hash, unconfirmed: true });
-    return ok({ txHash: sent.value.txHash });
+    return sent;
+  }
+
+  /**
+   * The node's answer, read for what it proves. Only a refusal of a send that never went out
+   * before is a failure; anything that may still land is an unknown outcome with the local hash.
+   */
+  private async broadcast(
+    txRaw: Uint8Array,
+    hash: string,
+    previous: PendingSend | null,
+    height: bigint,
+  ): Promise<Result<{ txHash: string; unconfirmed?: true }>> {
+    const unknown = ok({ txHash: hash, unconfirmed: true as const });
+    try {
+      const sent = await this.deps.chain.broadcast(txRaw);
+      return sent.txHash.toUpperCase() === hash ? ok({ txHash: hash }) : unknown;
+    } catch (e) {
+      if (
+        e instanceof TransportError ||
+        e instanceof HttpStatusError ||
+        e instanceof UnexpectedResponseError
+      ) {
+        return unknown;
+      }
+      if (e instanceof BroadcastError) {
+        if (e.codespace === ALREADY_SENT.codespace && e.code === ALREADY_SENT.code) return unknown;
+        // An earlier send of this address can still be included: this refusal says nothing of it.
+        if (previous !== null && BigInt(previous.timeoutHeight) >= height) return unknown;
+      }
+      const problem = nodeProblem(e);
+      if (problem) return problem;
+      throw e;
+    }
   }
 
   async status(txHash: string): Promise<Result<TxStatus & { explorerUrl: string }>> {
@@ -328,6 +374,8 @@ export class SendService {
         intervalMs: STATUS_INTERVAL_MS,
         timeoutMs: STATUS_TIMEOUT_MS,
       });
+      // Included, so no longer pending, whether it succeeded or not.
+      await this.deps.pending.settle(txHash);
       return ok(
         tx.code === 0
           ? {
@@ -364,9 +412,10 @@ export class SendService {
     const from = addresses.value.addresses.find((a) => a.index === fromIndex);
     if (!from) return fail(SendErrorCodes.unknownAddress, 'No such address.');
     const read = await guarded(async () => {
-      const [account, listed] = await Promise.all([
+      const [account, listed, height] = await Promise.all([
         this.deps.chain.account(from.address),
         this.deps.chain.balances(from.address),
+        this.deps.chain.latestHeight(),
       ]);
       // A list cut short may miss the tokens this send needs: those are read on their own.
       const balances = balancesMayBeCut(listed)
@@ -375,10 +424,10 @@ export class SendService {
             ...(await this.deps.fees.feeData()).rates.keys(),
           ])
         : listed;
-      return { account, balances };
+      return { account, balances, height };
     });
     if (!read.ok) return read;
-    const { account, balances } = read.value;
+    const { account, balances, height } = read.value;
     if (account === null) return fail(SendErrorCodes.fundFirst, 'Fund this address first.');
     return ok({
       from,
@@ -386,7 +435,13 @@ export class SendService {
       accountNumber: account.accountNumber,
       accountPubKey: account.pubKey,
       balances,
+      height,
     });
+  }
+
+  /** The last block that may include a send built now. */
+  private timeoutHeight(ctx: Context): bigint {
+    return ctx.height + TIMEOUT_BLOCKS;
   }
 
   /** Review works in the weak lock too, where no key can be derived: the simulation does not need it. */
@@ -395,8 +450,10 @@ export class SendService {
     return derived.ok ? derived.value : (ctx.accountPubKey ?? SIMULATION_PUBKEY);
   }
 
+  /** The body is simulated with the same expiry it is signed with, so the gas matches. */
   private body(ctx: Context, to: string, denom: string, amount: bigint): Uint8Array {
     return buildBody({
+      timeoutHeight: this.timeoutHeight(ctx),
       messages: [
         encodeMsgSend({
           fromAddress: ctx.from.address,

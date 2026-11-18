@@ -5,6 +5,7 @@ import type { HandlerDeps } from '../../background/handlers';
 import type { HandlerRegistry } from '../../background/registry';
 import { createTokenResolver } from '../tokens/resolver';
 import { validOverride } from './override';
+import { SessionPendingSends } from './pending';
 import { SendService } from './service';
 
 type Payload = Record<string, unknown>;
@@ -76,7 +77,10 @@ function validateSubmit(payload: unknown): Result<SendSubmitRequest> {
   });
 }
 
-/** The send service is built per request over the active network's clients; nothing is kept. */
+/**
+ * The send service is built per request over the active network's clients. The last send each
+ * address signed is kept in session storage, per network.
+ */
 export function registerSendHandlers(
   registry: HandlerRegistry,
   deps: Pick<HandlerDeps, 'platform' | 'services' | 'wallet'>,
@@ -96,6 +100,7 @@ export function registerSendHandlers(
       }),
       wallet,
       clock: platform.clock,
+      pending: new SessionPendingSends(platform.session, network.id),
     });
   };
 

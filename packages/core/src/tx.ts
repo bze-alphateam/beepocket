@@ -33,12 +33,20 @@ export function encodeMsgSend(msg: {
   };
 }
 
-/** Serialized `TxBody` (`timeout_height` 0, no extension options). */
-export function buildBody(params: { messages: AnyMsg[]; memo?: string }): Uint8Array {
+/**
+ * Serialized `TxBody`, no extension options. `timeoutHeight` is the last block that may include
+ * it; 0 (the default) never expires.
+ */
+export function buildBody(params: {
+  messages: AnyMsg[];
+  memo?: string;
+  timeoutHeight?: bigint;
+}): Uint8Array {
   return TxBody.encode(
     TxBody.fromPartial({
       messages: params.messages.map((m) => Any.fromPartial(m)),
       memo: params.memo ?? '',
+      timeoutHeight: params.timeoutHeight ?? 0n,
     }),
   ).finish();
 }
