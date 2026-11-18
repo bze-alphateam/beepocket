@@ -106,7 +106,8 @@ export class BinaryReader implements IBinaryReader {
   }
 
   constructor(buf?: ArrayLike<number>) {
-    this.buf = buf ? new Uint8Array(buf) : new Uint8Array(0);
+    // A view, not a copy: nested messages read their parent's bytes in place.
+    this.buf = buf instanceof Uint8Array ? buf : buf ? new Uint8Array(buf) : new Uint8Array(0);
     this.pos = 0;
     this.type = 0;
     this.len = this.buf.length;

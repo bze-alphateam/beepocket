@@ -196,10 +196,18 @@ const RISK_ORDER: Record<RiskLevel, number> = { normal: 0, unknown: 1, dangerous
 /** Untrusted text for display: no unsafe characters, bounded. */
 const safeText = (raw: string, max = MAX_TEXT): string => sanitiseText(raw, max);
 
-/** An unsigned integer string, or null for anything else. */
+/**
+ * A whole number written in plain decimal, or null for anything else: empty, a sign, a
+ * leading zero, a prefix such as `0x`, separators. The chain could read those differently.
+ */
 function toUint(raw: string): bigint | null {
-  return raw.length > 0 && raw.length <= MAX_UINT_DIGITS && /^\d+$/.test(raw) ? BigInt(raw) : null;
+  return raw.length > 0 && raw.length <= MAX_UINT_DIGITS && /^(0|[1-9]\d*)$/.test(raw)
+    ? BigInt(raw)
+    : null;
 }
+
+/** Whether every amount is a plain whole number. */
+const allUint = (...amounts: string[]): boolean => amounts.every((a) => toUint(a) !== null);
 
 function isDecimal(raw: string): boolean {
   return raw.length > 0 && raw.length <= 100 && /^\d+(\.\d+)?$/.test(raw);
@@ -437,7 +445,15 @@ async function sendParts(l: Lookups, msg: MsgSend): Promise<Parts> {
       : msg.amount.length === 0
         ? 'No tokens'
         : `${String(msg.amount.length)} tokens`;
-  return { level: 'normal', icon: 'send', title: 'Send', hero, sub: `to ${to}`, rows };
+  const readable = allUint(...msg.amount.map((c) => c.amount));
+  return {
+    level: readable ? 'normal' : 'unknown',
+    icon: 'send',
+    title: 'Send',
+    hero,
+    sub: `to ${to}`,
+    rows,
+  };
 }
 
 /** The denoms a swap route passes through, as symbols; unknown pools show their id. */
@@ -481,7 +497,8 @@ async function swapParts(l: Lookups, msg: MsgMultiSwap): Promise<Parts> {
   ]);
   return {
     // A route that does not end in the denom the swap promises is not what it says it is.
-    level: route.consistent ? 'normal' : 'unknown',
+    level:
+      route.consistent && allUint(msg.input.amount, msg.minOutput.amount) ? 'normal' : 'unknown',
     icon: 'swap',
     title: 'Swap',
     hero: pay,
@@ -673,7 +690,7 @@ async function addLiquidityParts(l: Lookups, msg: MsgAddLiquidity): Promise<Part
         `${safeText(msg.quoteAmount, 40)} (base units)`,
       ];
   return {
-    level: 'normal',
+    level: allUint(msg.baseAmount, msg.quoteAmount, msg.minLpTokens) ? 'normal' : 'unknown',
     icon: 'liquidity',
     title: 'Add liquidity',
     hero: `${base} + ${quote}`,
@@ -691,7 +708,7 @@ async function removeLiquidityParts(l: Lookups, msg: MsgRemoveLiquidity): Promis
     ? await Promise.all([l.money(pool.base, msg.minBase), l.money(pool.quote, msg.minQuote)])
     : [`${safeText(msg.minBase, 40)} (base units)`, `${safeText(msg.minQuote, 40)} (base units)`];
   return {
-    level: 'normal',
+    level: allUint(msg.lpTokens, msg.minBase, msg.minQuote) ? 'normal' : 'unknown',
     icon: 'liquidity',
     title: 'Remove liquidity',
     hero: `${lp(msg.lpTokens)} LP`,

@@ -1,6 +1,7 @@
 import { GOVERNANCE_ONLY } from './governance';
 import type { Network } from './net';
 import { signersOf } from './signers';
+import { strictEncodingProblem } from './strict';
 import { PubKey } from './proto/cosmos/crypto/secp256k1/keys';
 import { SignMode } from './proto/cosmos/tx/signing/v1beta1/signing';
 import { AuthInfo, Fee, TxBody } from './proto/cosmos/tx/v1beta1/tx';
@@ -64,6 +65,10 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
  * approvable. The wallet checks the dapp's fee itself and rebuilds the auth info with the fee
  * the user approved, using `withWalletFee`.
  *
+ * The body and every readable message must also pass `strictEncodingProblem`: exactly the
+ * bytes the wallet would write itself, plain whole-number amounts, bounded nesting. Anything
+ * else is refused as `bad-body`, so what the wallet shows is what the chain executes.
+ *
  * Messages of a type the wallet cannot decode (and that are not in `RAW_SIGNER_FIELD`) have no
  * checkable signer field; they are let through (the chain refuses a transaction that lacks a
  * signature) and summarised as unknown.
@@ -102,11 +107,15 @@ export function verifySignRequest(input: VerifyInput): VerifyResult {
     return fail('bad-auth-info', 'The signer information cannot be read');
   }
 
+  // Signed by the gov module only: a wallet user never signs one, whatever it decodes to.
+  if (messages.some((msg) => GOVERNANCE_ONLY.has(msg.typeUrl)))
+    return fail('multi-signer', 'A message can only be signed by governance');
+
+  const problem = strictEncodingProblem(signDoc.bodyBytes, messages);
+  if (problem !== null) return fail('bad-body', problem);
+
   const messageSigners: (string[] | null)[] = [];
   for (const msg of messages) {
-    // Signed by the gov module only: a wallet user never signs one, whatever it decodes to.
-    if (GOVERNANCE_ONLY.has(msg.typeUrl))
-      return fail('multi-signer', 'A message can only be signed by governance');
     try {
       messageSigners.push(signersOf(msg));
     } catch {
