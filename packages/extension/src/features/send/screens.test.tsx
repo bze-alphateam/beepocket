@@ -414,6 +414,24 @@ describe('review', () => {
     expect(call.mock.calls.some(([m]) => m === 'network.get')).toBe(false);
   });
 
+  it('says the send changed when it cannot be reviewed again, next to the reason', async () => {
+    let calls = 0;
+    const { host } = setup({
+      'send.submit': () => fail('review-changed', 'changed'),
+      'send.prepare': () =>
+        ++calls === 1
+          ? ok(quote({ network: 'testnet' }))
+          : fail('token-unavailable', "This token's details could not be read."),
+    });
+    await toReview(host);
+    await press(host, 'Confirm and send');
+    expect(host.textContent).toContain(
+      'This send changed since you reviewed it and could not be prepared again',
+    );
+    expect(host.textContent).toContain("This token's details could not be read.");
+    expect(host.textContent).not.toContain('The network fee changed');
+  });
+
   it('says the network or the sender changed when that is what moved', async () => {
     let calls = 0;
     const { host } = setup({
