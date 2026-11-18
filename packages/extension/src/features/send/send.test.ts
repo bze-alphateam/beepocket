@@ -16,7 +16,6 @@ import {
   signDocBytes,
   txRawBytes,
   type HttpTransport,
-  type Network,
   type TxResult,
 } from '@beepocket/core';
 import { describe, expect, it } from 'vitest';
@@ -180,7 +179,7 @@ function setup(opts: Options = {}) {
     accountPubKey: null as Uint8Array | null,
     signature: bytes(golden('send-ubze').signature),
     /** The active network: what the worker reads on every call. */
-    network: NETWORK as Network,
+    network: NETWORK,
     /** The wallet's addresses as the profile holds them right now. */
     addresses: [{ index: 0, label: 'Main', address: SIGNER }],
   };
