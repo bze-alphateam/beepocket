@@ -1620,7 +1620,7 @@ async function multiSendParts(l: Lookups, msg: MsgMultiSend): Promise<Parts> {
       ? {
           danger: {
             title: 'Not every recipient is shown here',
-            text: `This sends to ${group(String(count))} addresses and only the first ${group(String(MAX_MULTISEND_RECIPIENTS))} are listed. The totals count all of them. Read the rest in the message details before you continue.`,
+            text: `This sends to ${group(String(count))} addresses and only the first ${group(String(MAX_MULTISEND_RECIPIENTS))} are listed. The totals count all of them, but the other recipients are only in the raw message. Reject this request unless you expect them.`,
           },
         }
       : {}),
@@ -1788,10 +1788,20 @@ const MAX_RECEIVER = 128;
  * match keys without regard to case, so another spelling is not ignored.
  */
 function onlyKey(obj: Record<string, unknown>, name: string): string | null | undefined {
-  const keys = Object.keys(obj).filter((k) => k.toLowerCase() === name);
+  const keys = Object.keys(obj).filter((k) => foldKey(k) === name);
   if (keys.length === 0) return undefined;
   return keys.length === 1 && keys[0] === name ? name : null;
 }
+
+/**
+ * A key in lower case, with the two letters outside ASCII that some readers match to an ASCII
+ * one (the long s and the Kelvin sign) turned into that letter.
+ */
+const foldKey = (key: string): string =>
+  key
+    .replace(/\u017F/g, 's')
+    .replace(/\u212A/g, 'k')
+    .toLowerCase();
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -1818,7 +1828,7 @@ function hasRepeatedKey(text: string): boolean {
           return true;
         }
         if (typeof key !== 'string') return true;
-        const folded = key.toLowerCase();
+        const folded = foldKey(key);
         if (keys.has(folded)) return true;
         keys.add(folded);
       }
