@@ -32,6 +32,8 @@ export const send = {
   'send.review.changed': 'The network fee changed. Check the new numbers before you send.',
   'send.review.changedDetails':
     'The network or the sending address changed. Check the details before you send.',
+  'send.review.stale':
+    'This send changed since you reviewed it and could not be prepared again. Edit it and review it again.',
   'send.review.unlock': 'Enter your password to sign',
   'send.review.password': 'Password',
   'send.fee.title': 'Pay network fee with',

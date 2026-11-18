@@ -29,9 +29,10 @@ export function ReviewScreen(props: {
   locked: boolean;
   busy: boolean;
   /**
-   * What moved since the last look: the fee, or the network or the sending address (`details`).
+   * What moved since the last look: the fee, or the network or the sending address (`details`);
+   * `stale` when the send could not be prepared again, so what is shown is out of date.
    */
-  changed: 'fee' | 'details' | null;
+  changed: 'fee' | 'details' | 'stale' | null;
   error: string | null;
   onConfirm: () => void;
   onUnlocked: () => void;
@@ -92,7 +93,13 @@ export function ReviewScreen(props: {
       {props.reset && <Banner tone="amber">{t('send.fee.reset')}</Banner>}
       {props.changed !== null && (
         <Banner tone="amber">
-          {t(props.changed === 'fee' ? 'send.review.changed' : 'send.review.changedDetails')}
+          {t(
+            props.changed === 'fee'
+              ? 'send.review.changed'
+              : props.changed === 'details'
+                ? 'send.review.changedDetails'
+                : 'send.review.stale',
+          )}
         </Banner>
       )}
       {props.error !== null && <Banner tone="red">{props.error}</Banner>}

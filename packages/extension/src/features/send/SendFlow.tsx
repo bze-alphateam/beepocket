@@ -193,7 +193,7 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
   const [quote, setQuote] = useState<SendQuote | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [changed, setChanged] = useState<'fee' | 'details' | null>(null);
+  const [changed, setChanged] = useState<'fee' | 'details' | 'stale' | null>(null);
   const [locked, setLocked] = useState(loaded.weakLocked);
   const [sheet, setSheet] = useState<'none' | 'from' | 'fee' | 'book' | 'save'>('none');
   const latestMatch = useRef(0);
@@ -341,7 +341,11 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
             setOverride(null);
             setOverrideReset(true);
           }
-        } else setError(again.error);
+        } else {
+          // The old numbers stay on screen: say they are out of date, next to the reason.
+          setChanged('stale');
+          setError(again.error);
+        }
       } else if (sent.error.code === SendErrorCodes.pendingSend) {
         // Nothing was signed: stay on Review and say why.
         setError(sent.error);
