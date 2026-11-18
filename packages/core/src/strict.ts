@@ -3,8 +3,8 @@ import { TxBody } from './proto/cosmos/tx/v1beta1/tx';
 import type { AnyMsg } from './tx';
 
 /**
- * Integer fields the chain reads as `math.Int` (which also accepts octal, hex, `_` and signs),
- * by message type. A path step that is an array applies to each item. `Coin` amounts are
+ * Integer fields the chain reads as `math.Int`, by message type; it may read forms other than
+ * plain decimals differently. A path step that is an array applies to each item. `Coin` amounts are
  * checked wherever they appear, so they are not listed. Prices are base-10 decimals and are
  * not integer fields.
  */

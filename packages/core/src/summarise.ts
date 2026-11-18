@@ -198,7 +198,7 @@ const safeText = (raw: string, max = MAX_TEXT): string => sanitiseText(raw, max)
 
 /**
  * A whole number written in plain decimal, or null for anything else: empty, a sign, a
- * leading zero, a prefix such as `0x`, separators. The chain could read those differently.
+ * leading zero, a prefix such as `0x`, separators.
  */
 function toUint(raw: string): bigint | null {
   return raw.length > 0 && raw.length <= MAX_UINT_DIGITS && /^(0|[1-9]\d*)$/.test(raw)
