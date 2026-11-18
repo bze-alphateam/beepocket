@@ -43,6 +43,17 @@ describe('buildBody', () => {
     const body = decodeTxBody(buildBody({ messages: [] }));
     expect(body).toMatchObject({ messages: [], memo: '', timeoutHeight: '0' });
   });
+
+  it('carries a timeout height when one is given', () => {
+    const body = decodeTxBody(buildBody({ messages: [], timeoutHeight: 1_030n }));
+    expect(body).toMatchObject({ timeoutHeight: '1030' });
+  });
+
+  it('is byte for byte the old body without a timeout height', () => {
+    expect(buildBody({ messages: [], memo: 'x', timeoutHeight: 0n })).toEqual(
+      buildBody({ messages: [], memo: 'x' }),
+    );
+  });
 });
 
 describe('txHash', () => {

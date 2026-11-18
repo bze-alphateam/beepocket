@@ -22,6 +22,7 @@ export function stubChain(overrides: Partial<ChainClient> = {}): ChainClient {
     haltedDenoms: vi.fn(notStubbed('haltedDenoms')),
     markets: vi.fn(notStubbed('markets')),
     marketOrder: vi.fn(notStubbed('marketOrder')),
+    latestHeight: vi.fn(notStubbed('latestHeight')),
     simulate: vi.fn(notStubbed('simulate')),
     broadcast: vi.fn(notStubbed('broadcast')),
     waitForTx: vi.fn(notStubbed('waitForTx')),

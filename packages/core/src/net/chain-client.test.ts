@@ -515,6 +515,35 @@ describe('RestChainClient.broadcast', () => {
   });
 });
 
+describe('RestChainClient.latestHeight', () => {
+  const path = '/cosmos/base/tendermint/v1beta1/blocks/latest';
+
+  it('reads the height of the latest block', async () => {
+    const t = mainnet().on(
+      'GET',
+      path,
+      json(200, { block_id: {}, block: { header: { chain_id: 'beezee-1', height: '21500123' } } }),
+    );
+    expect(await new RestChainClient(t, MAINNET).latestHeight()).toBe(21_500_123n);
+  });
+
+  it('names a missing or malformed height', async () => {
+    for (const body of [{ block: { header: {} } }, { block: { header: { height: '-1' } } }, {}]) {
+      const t = mainnet().on('GET', path, json(200, body));
+      await expect(new RestChainClient(t, MAINNET).latestHeight()).rejects.toBeInstanceOf(
+        UnexpectedResponseError,
+      );
+    }
+  });
+
+  it('fails on any other status', async () => {
+    const t = mainnet().on('GET', path, json(503, {}));
+    await expect(new RestChainClient(t, MAINNET).latestHeight()).rejects.toBeInstanceOf(
+      HttpStatusError,
+    );
+  });
+});
+
 describe('RestChainClient.waitForTx', () => {
   const hash = txMain.body.tx_response.txhash;
   const path = `/cosmos/tx/v1beta1/txs/${hash}`;

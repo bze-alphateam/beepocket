@@ -335,6 +335,9 @@ function Flow({ route, loaded }: { route: SendRoute; loaded: Loaded }) {
             setOverrideReset(true);
           }
         } else setError(again.error);
+      } else if (sent.error.code === SendErrorCodes.pendingSend) {
+        // Nothing was signed: stay on Review and say why.
+        setError(sent.error);
       } else {
         finish({ kind: 'failed', message: errorText(sent.error, quote.token.symbol) });
       }

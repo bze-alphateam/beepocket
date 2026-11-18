@@ -124,7 +124,7 @@ export function PendingScreen({ amount, symbol }: { amount: string; symbol: stri
 
 export type Outcome =
   | { kind: 'success'; txHash: string; explorerUrl: string }
-  /** `lost`: the broadcast got no answer, so it may never have reached the network. */
+  /** `lost`: the broadcast's outcome is unknown; it may or may not reach the chain. */
   | { kind: 'unconfirmed'; txHash: string; explorerUrl: string | null; lost: boolean }
   /** `txHash` when the chain included it and it failed there (the fee was taken). */
   | { kind: 'failed'; message: string | null; txHash?: string; explorerUrl?: string };
@@ -147,7 +147,7 @@ export function ResultScreen(props: {
     outcome.kind === 'success'
       ? t('send.success.title')
       : outcome.kind === 'unconfirmed'
-        ? t('send.unconfirmed.title')
+        ? t(outcome.lost ? 'send.unconfirmed.unknown' : 'send.unconfirmed.title')
         : t('send.failed.title');
   const sub =
     outcome.kind === 'success'

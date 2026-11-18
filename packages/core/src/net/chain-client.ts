@@ -134,6 +134,8 @@ export interface ChainClient {
   markets(): Promise<Market[]>;
   /** `null` when the order does not exist (any more). */
   marketOrder(marketId: string, orderType: OrderType, orderId: string): Promise<MarketOrder | null>;
+  /** The height of the latest block the node has. */
+  latestHeight(): Promise<bigint>;
   /** Throws `SimulationError` when the node rejects the transaction. */
   simulate(txBytes: Uint8Array): Promise<SimulationResult>;
   /** Throws `BroadcastError` when the node rejects the transaction. */
@@ -399,6 +401,13 @@ export class RestChainClient implements ChainClient {
       price: v.decimalString(v.field(order, 'price', 'order'), 'order.price'),
       owner: v.string(v.field(order, 'owner', 'order'), 'order.owner'),
     };
+  }
+
+  async latestHeight(): Promise<bigint> {
+    const body = v.object(await this.getJson('/cosmos/base/tendermint/v1beta1/blocks/latest'), '$');
+    const block = v.object(v.field(body, 'block', '$'), 'block');
+    const header = v.object(v.field(block, 'header', 'block'), 'block.header');
+    return v.uintString(v.field(header, 'height', 'block.header'), 'block.header.height');
   }
 
   async simulate(txBytes: Uint8Array): Promise<SimulationResult> {

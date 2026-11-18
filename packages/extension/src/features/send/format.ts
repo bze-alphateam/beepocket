@@ -49,6 +49,8 @@ export function errorText(error: { code: string; message: string }, symbol: stri
         return 'send.error.network';
       case SendErrorCodes.keyMismatch:
         return 'send.error.keyMismatch';
+      case SendErrorCodes.pendingSend:
+        return 'send.error.pending';
       case 'wallet_locked':
         return 'send.error.locked';
       default:

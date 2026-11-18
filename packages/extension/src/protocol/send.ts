@@ -25,6 +25,8 @@ export const SendErrorCodes = {
   network: 'network-error',
   /** The address's on-chain key is not the wallet's key for it: nothing is signed. */
   keyMismatch: 'key-mismatch',
+  /** The address signed a send moments ago that may still land: nothing new is signed yet. */
+  pendingSend: 'send-pending',
 } as const;
 
 export interface SendDraft {
@@ -132,8 +134,9 @@ export type TxStatus =
 export interface SendProtocol {
   'send.prepare': { req: SendPrepareRequest; res: SendQuote };
   /**
-   * Re-simulates, signs and broadcasts exactly the reviewed quote. `unconfirmed` means the
-   * broadcast got no usable answer: the transaction may still land, so the hash is polled.
+   * Re-simulates, signs and broadcasts exactly the reviewed quote. `txHash` is always the hash
+   * of the signed bytes. `unconfirmed` means the outcome is unknown (no usable answer, the node
+   * already had it, or an answer that does not match): it may still land, so the hash is polled.
    */
   'send.submit': { req: SendSubmitRequest; res: { txHash: string; unconfirmed?: true } };
   /** Waits for inclusion for up to 60 s. */
