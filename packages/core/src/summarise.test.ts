@@ -67,6 +67,8 @@ import { Any } from './proto/google/protobuf/any';
 const ME = 'bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g';
 const ALEX = 'bze1q8t5x0yvl9jzx5pq4m3vvrmkz8cndhqk8z9rfc';
 const STRANGER = 'bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p';
+/** Another address of the same wallet. */
+const ME2 = bech32.encode('bze', bech32.toWords(new Uint8Array(20).fill(7)));
 const VDL = 'factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl';
 const USDC = `ibc/${'AB'.repeat(32)}`;
 /** A quote token with more decimals than amounts are usually shown with. */
@@ -110,6 +112,16 @@ function context(overrides: Partial<SummaryContext> = {}): SummaryContext {
     markets: vi.fn().mockResolvedValue(MARKETS),
     liquidityPools: vi.fn().mockResolvedValue(POOLS),
     marketOrder: vi.fn().mockResolvedValue(null),
+    tradebinParams: vi.fn().mockResolvedValue({
+      nativeDenom: 'ubze',
+      minNativeLiquidityForModuleSwap: 1n,
+      createMarketFee: { denom: 'ubze', amount: 25_000_000_000n },
+      marketMakerFee: { denom: 'ubze', amount: 1_000n },
+      marketTakerFee: { denom: 'ubze', amount: 100_000n },
+    }),
+    tokenFactoryParams: vi.fn().mockResolvedValue({
+      createDenomFee: { denom: 'ubze', amount: 25_000_000_000n },
+    }),
   });
   const scan = stubScan({
     token: vi.fn((denom: string) =>
@@ -126,6 +138,8 @@ function context(overrides: Partial<SummaryContext> = {}): SummaryContext {
     tokens: new TokenResolver(chain, scan),
     markets: chain,
     orders: chain,
+    fees: chain,
+    ownAddresses: [ME, ME2],
     addressBook: (a) => (a === ALEX ? 'Alex' : null),
     ...overrides,
   };
@@ -219,6 +233,7 @@ describe('Swap', () => {
       ['Route', 'BZE → USDC'],
       ['You pay', '1,000.00 BZE'],
       ['You get at least', '318.20 USDC'],
+      ['Trading fee', '0.10 BZE'],
     ]);
     expect(s.level).toBe('normal');
   });
@@ -259,6 +274,7 @@ describe('orders', () => {
       ['Amount', '500.00 BZE'],
       ['Price', '0.3350 USDC'],
       ['Total', '167.50 USDC'],
+      ['Trading fee', '0.001 BZE if it waits on the book, 0.10 BZE if it fills at once'],
     ]);
     expect(s.messages[0]?.icon).toBe('order');
   });
@@ -416,6 +432,7 @@ describe('Fill orders', () => {
       ['Order 2', '50.00 BZE @ 0.3100 USDC/BZE'],
       ['You get', '150.00 BZE'],
       ['You pay up to', '45.50 USDC'],
+      ['Trading fee', '0.10 BZE'],
     ]);
   });
 
@@ -431,6 +448,7 @@ describe('Fill orders', () => {
       ['Order 2', '50.00 BZE @ 0.3100 USDC/BZE'],
       ['You pay', '150.00 BZE'],
       ['You get', '45.50 USDC'],
+      ['Trading fee', '0.10 BZE'],
     ]);
   });
 
@@ -1635,7 +1653,7 @@ const SAMPLES: Record<string, AnyMsg> = {
   }),
   [MsgSetWithdrawAddress.typeUrl]: pack(MsgSetWithdrawAddress, {
     delegatorAddress: ME,
-    withdrawAddress: ALEX,
+    withdrawAddress: ME2,
   }),
   [MsgWithdrawDelegatorReward.typeUrl]: pack(MsgWithdrawDelegatorReward, {
     delegatorAddress: ME,
@@ -1793,7 +1811,7 @@ describe('BZE and cosmos message summaries', () => {
     [
       MsgSetWithdrawAddress.typeUrl,
       'rewards',
-      `Change rewards address · ${ALEX} · Your future staking rewards go there`,
+      `Change rewards address · ${ME2} · Your future staking rewards go there`,
     ],
     [
       MsgTransfer.typeUrl,
@@ -1906,10 +1924,19 @@ describe('BZE and cosmos message summaries', () => {
     expect(s.hero).not.toContain('\u202E');
   });
 
-  it('lists each multi-send output with its contact name', async () => {
+  it('lists each multi-send output with its full address and contact name', async () => {
     const s = await run([sample(MsgMultiSend.typeUrl)]);
-    expect(s.rows[0]).toEqual(['Alex', '300.00 BZE']);
-    expect(s.rows).toHaveLength(4);
+    expect(s.rows).toEqual([
+      ['Total', '1,200.00 BZE'],
+      ['Alex', ALEX, 'mono'],
+      ['Amount', '300.00 BZE'],
+      ['To', STRANGER, 'mono'],
+      ['Amount', '300.00 BZE'],
+      ['To', ME, 'mono'],
+      ['Amount', '300.00 BZE'],
+      ['To', NOBLE, 'mono'],
+      ['Amount', '300.00 BZE'],
+    ]);
   });
 
   it('is unknown when an amount it must read does not parse', async () => {
@@ -2272,5 +2299,305 @@ describe('every message type the chain registers', () => {
     expect(GOVERNED.has(typeUrl) || typeUrl in WELL_FORMED || TICK_ONLY.has(typeUrl)).toBe(false);
     // The tick still catches it at signing time.
     expect(needsTrust(await run([{ typeUrl, value: new Uint8Array() }]))).toBe(true);
+  });
+});
+
+describe('multi-send review', () => {
+  const out = (address: string, denom: string, amount: string) => ({
+    address,
+    coins: [{ denom, amount }],
+  });
+  const multiSend = (outputs: { address: string; coins: { denom: string; amount: string }[] }[]) =>
+    pack(MsgMultiSend, { inputs: [{ address: ME, coins: [] }], outputs });
+  const monoValues = (s: TxSummary) => s.rows.filter((r) => r[2] === 'mono').map((r) => r[1]);
+  const dust = out(STRANGER, 'ubze', '1');
+
+  it('shows an output past the first ten in full, and a total per token', async () => {
+    const outputs = [
+      ...Array.from({ length: 10 }, () => out(ME, 'ubze', '1')),
+      out(STRANGER, USDC, '5000000000'),
+    ];
+    const s = await run([multiSend(outputs)]);
+    expect(monoValues(s)).toContain(STRANGER);
+    expect(s.rows).toContainEqual(['Amount', '5,000.00 USDC']);
+    expect(s.rows).toContainEqual(['Total', '0.00001 BZE']);
+    expect(s.rows).toContainEqual(['Total', '5,000.00 USDC']);
+    expect(s.level).toBe('normal');
+    expect(needsTrust(s)).toBe(false);
+  });
+
+  it('is unknown with no outputs', async () => {
+    const s = await run([multiSend([])]);
+    expect(s.level).toBe('unknown');
+    expect(s.hero).toBe('No tokens');
+  });
+
+  it('shows the full address of a single output, like a send', async () => {
+    const s = await run([multiSend([out(STRANGER, 'ubze', '1000000')])]);
+    expect(s.rows).toEqual([
+      ['To', STRANGER, 'mono'],
+      ['Amount', '1.00 BZE'],
+    ]);
+    expect(s.hero).toBe('1.00 BZE');
+  });
+
+  it('lists every recipient of a long airdrop without asking for the tick', async () => {
+    const s = await run([multiSend(Array.from({ length: 1000 }, () => dust))]);
+    expect(monoValues(s)).toHaveLength(1000);
+    expect(s.level).toBe('normal');
+    expect(needsTrust(s)).toBe(false);
+    expect(JSON.stringify(s.rows)).not.toContain('Showing');
+  });
+
+  it('says when the list is cut short, totals every output and asks for the tick', async () => {
+    const s = await run([multiSend(Array.from({ length: 1001 }, () => dust))]);
+    expect(monoValues(s)).toHaveLength(1000);
+    expect(s.rows).toContainEqual(['…', 'Showing 1,000 of 1,001 recipients']);
+    expect(s.rows).toContainEqual(['Total', '0.001001 BZE']);
+    expect(s.level).toBe('dangerous');
+    expect(needsTrust(s)).toBe(true);
+    expect(s.dangers.length).toBeGreaterThan(0);
+  });
+});
+
+describe('IBC transfer destination', () => {
+  const OSMO = 'osmo1r5v5srda7xfth3hn2s26txvrcrntldjuh9m7ad';
+  const FINAL = 'cosmos1vtad8680vhdfqvxx0f2yaxa6agdylelm7vcg6e';
+  const transfer = (memo: string, receiver = NOBLE) =>
+    pack(MsgTransfer, {
+      sourcePort: 'transfer',
+      sourceChannel: 'channel-3',
+      token: { denom: USDC, amount: '25000000' },
+      sender: ME,
+      receiver,
+      memo,
+    });
+  const forward = (receiver: string, extra: Record<string, unknown> = {}) => ({
+    forward: { ...extra, receiver, port: 'transfer', channel: 'channel-0' },
+  });
+  /** `count` forwards, each nested in the one before, ending at `FINAL`. */
+  const hops = (count: number): Record<string, unknown> => {
+    let memo = forward(FINAL);
+    for (let i = 1; i < count; i += 1) memo = forward(OSMO, { next: memo });
+    return memo;
+  };
+
+  it('names the forward receiver as the final recipient', async () => {
+    const s = await run([transfer(JSON.stringify(forward(OSMO)))]);
+    expect(s.sub).toContain(OSMO);
+    expect(s.rows).toContainEqual(['Final recipient', OSMO, 'mono']);
+    expect(s.level).toBe('dangerous');
+    expect(needsTrust(s)).toBe(true);
+    expect(JSON.stringify(s.dangers)).toContain(OSMO);
+  });
+
+  it('names the forward receiver of a long memo in full', async () => {
+    const memo = JSON.stringify(forward(OSMO, { note: 'p'.repeat(300) }));
+    expect(memo.indexOf(OSMO)).toBeGreaterThan(200);
+    const s = await run([transfer(memo)]);
+    expect(s.sub).toContain(OSMO);
+    expect(s.rows).toContainEqual(['Final recipient', OSMO, 'mono']);
+  });
+
+  it('follows nested forwards to the last receiver, as an object or as a JSON string', async () => {
+    const inner = forward(FINAL);
+    for (const next of [inner, JSON.stringify(inner)]) {
+      const s = await run([transfer(JSON.stringify(forward(OSMO, { next })))]);
+      expect(s.sub, typeof next).toContain(FINAL);
+      expect(s.rows, typeof next).toContainEqual(['Final recipient', FINAL, 'mono']);
+      expect(s.level).toBe('dangerous');
+    }
+  });
+
+  it('says the final recipient is unknown for a contract call', async () => {
+    const s = await run([transfer(JSON.stringify({ wasm: { contract: OSMO, msg: {} } }))]);
+    expect(s.sub).toContain('unknown');
+    expect(s.rows).toContainEqual(['Final recipient', 'Unknown (contract call)']);
+    expect(s.level).toBe('dangerous');
+    expect(needsTrust(s)).toBe(true);
+  });
+
+  it('reads eight forwards, a null next and padded keys', async () => {
+    const memos = [
+      JSON.stringify(hops(8)),
+      JSON.stringify(forward(FINAL, { next: null })),
+      `{ "forward" : { "receiver" : "${FINAL}" , "channel" : "channel-0" } }`,
+    ];
+    for (const memo of memos) {
+      const s = await run([transfer(memo)]);
+      expect(s.rows, memo).toContainEqual(['Final recipient', FINAL, 'mono']);
+      expect(s.sub, memo).toContain(FINAL);
+      expect(s.level, memo).toBe('dangerous');
+    }
+  });
+
+  it('says the final recipient is unknown for a contract call after a forward', async () => {
+    const memo = JSON.stringify(forward(OSMO, { next: { wasm: { contract: OSMO, msg: {} } } }));
+    const s = await run([transfer(memo)]);
+    expect(s.rows).toContainEqual(['Final recipient', 'Unknown (contract call)']);
+    expect(s.sub).not.toContain(OSMO);
+    expect(s.level).toBe('dangerous');
+  });
+
+  it.each([
+    ['another spelling of the key', JSON.stringify({ Forward: { receiver: OSMO } })],
+    ['another spelling of the receiver', JSON.stringify({ forward: { Receiver: OSMO } })],
+    ['a receiver that is not text', JSON.stringify({ forward: { receiver: 7 } })],
+    ['no receiver', JSON.stringify({ forward: { channel: 'channel-0' } })],
+    ['a forward that is not an object', JSON.stringify({ forward: 'osmo1' })],
+    ['a next that does not parse', JSON.stringify(forward(OSMO, { next: '{nope' }))],
+    ['broken JSON', `{"forward":{"receiver":"${OSMO}"`],
+    [
+      'a key that appears twice',
+      `{"forward":{"receiver":"${OSMO}","next":{"forward":{"receiver":"${FINAL}"}}},` +
+        `"forward":{"receiver":"${OSMO}"}}`,
+    ],
+    [
+      'a key that appears twice in another spelling',
+      `{"forward":{"receiver":"${OSMO}","Receiver":"${FINAL}"}}`,
+    ],
+    ['a receiver that is not an address', JSON.stringify({ forward: { receiver: 'pay to bob' } })],
+    ['a contract call in capitals', JSON.stringify({ WASM: { contract: OSMO, msg: {} } })],
+    ['a contract call in mixed case', JSON.stringify({ Wasm: { contract: OSMO, msg: {} } })],
+    ['a key with a long s', JSON.stringify({ 'wa\u017fm': { contract: OSMO, msg: {} } })],
+    [
+      'a long-s contract key next to a forward',
+      `{"forward":{"receiver":"${OSMO}"},"wa\u017fm":{}}`,
+    ],
+    ['a forward and a contract call together', JSON.stringify({ ...forward(OSMO), wasm: {} })],
+    ['an array of instructions', JSON.stringify([forward(OSMO)])],
+    ['more than eight forwards', JSON.stringify(hops(9))],
+  ])('says the final recipient is unknown for %s', async (_, memo) => {
+    const s = await run([transfer(memo)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.rows.find((r) => r[0] === 'Final recipient')?.[1]).toMatch(/^Unknown/);
+    expect(s.sub).toContain('unknown');
+  });
+
+  it('never shows only a contact name when the memo forwards the tokens', async () => {
+    const s = await run([transfer(JSON.stringify(forward(OSMO)))], {
+      addressBook: (a) => (a === NOBLE || a === OSMO ? 'Alex' : null),
+    });
+    expect(s.sub).toContain(OSMO);
+  });
+
+  it('stays normal with a plain memo or none', async () => {
+    for (const memo of ['', 'thanks for lunch', '{"note":"hi"}', '[1,2]']) {
+      const s = await run([transfer(memo)]);
+      expect(s.level, memo).toBe('normal');
+      expect(s.sub, memo).toBe(`to ${short(NOBLE)} on another chain · channel-3`);
+    }
+  });
+});
+
+describe('protocol fees', () => {
+  const down = () => Promise.reject(new Error('node down'));
+  const creations = () => [
+    sample(factory.MsgCreateDenom.typeUrl),
+    sample(MsgCreateMarket.typeUrl),
+    sample(MsgCreateLiquidityPool.typeUrl),
+  ];
+  const fill = pack(MsgFillOrders, {
+    creator: ME,
+    marketId: BZE_USDC.id,
+    orderType: 'sell',
+    orders: [{ price: '0.3', amount: '100000000' }],
+  });
+
+  it('shows the creation fee of a new token, market or pool', async () => {
+    for (const msg of creations()) {
+      const s = await run([msg]);
+      expect(s.rows, msg.typeUrl).toContainEqual(['Creation fee', '25,000.00 BZE']);
+    }
+  });
+
+  it('shows the trading fee of an order, a fill and a swap', async () => {
+    const order = await run([
+      pack(MsgCreateOrder, {
+        creator: ME,
+        marketId: BZE_USDC.id,
+        orderType: 'buy',
+        amount: '500000000',
+        price: '0.335',
+      }),
+    ]);
+    expect(order.rows).toContainEqual([
+      'Trading fee',
+      '0.001 BZE if it waits on the book, 0.10 BZE if it fills at once',
+    ]);
+    expect((await run([fill])).rows).toContainEqual(['Trading fee', '0.10 BZE']);
+    expect((await run([swap()])).rows).toContainEqual(['Trading fee', '0.10 BZE']);
+  });
+
+  it('falls back to a generic fee text when the fees cannot be read', async () => {
+    const failing = [
+      { tradebinParams: down, tokenFactoryParams: down },
+      stubChain(),
+      {
+        tradebinParams: () =>
+          Promise.resolve({ nativeDenom: 'ubze', minNativeLiquidityForModuleSwap: 1n }),
+        tokenFactoryParams: () => Promise.resolve({}),
+      },
+    ];
+    for (const fees of failing) {
+      for (const msg of creations()) {
+        const s = await run([msg], { fees });
+        expect(s.rows, msg.typeUrl).toContainEqual(['Creation fee', "The chain's creation fee"]);
+      }
+      expect((await run([fill], { fees })).rows).toContainEqual([
+        'Trading fee',
+        "The chain's trading fee",
+      ]);
+      expect((await run([swap()], { fees })).rows).toContainEqual([
+        'Trading fee',
+        "The chain's trading fee",
+      ]);
+    }
+  });
+
+  it('reads the fee settings once per summary', async () => {
+    const tradebinParams = vi.fn().mockResolvedValue({
+      nativeDenom: 'ubze',
+      minNativeLiquidityForModuleSwap: 1n,
+      marketTakerFee: { denom: 'ubze', amount: 100_000n },
+    });
+    const tokenFactoryParams = vi.fn().mockResolvedValue({});
+    const denom = sample(factory.MsgCreateDenom.typeUrl);
+    const fees = { tradebinParams, tokenFactoryParams };
+    await run([swap(), swap(), fill, denom, denom], { fees });
+    expect(tradebinParams).toHaveBeenCalledTimes(1);
+    expect(tokenFactoryParams).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('rewards address change', () => {
+  const change = (withdrawAddress: string, delegatorAddress = ME) =>
+    pack(MsgSetWithdrawAddress, { delegatorAddress, withdrawAddress });
+
+  it.each([
+    ['a stranger', STRANGER],
+    ['a contact', ALEX],
+    [
+      'an address of another chain with your bytes',
+      bech32.encode('cosmos', bech32.decode(ME as `${string}1${string}`).words),
+    ],
+    ['an invalid address', 'bze1nope'],
+  ])('warns before sending future rewards to %s', async (_, address) => {
+    const s = await run([change(address)]);
+    expect(s.level).toBe('dangerous');
+    expect(needsTrust(s)).toBe(true);
+    expect(s.dangers).toHaveLength(1);
+    expect(s.dangers[0]?.text).toContain('staking rewards');
+    expect(s.rows).toContainEqual(['Rewards address', address, 'mono']);
+  });
+
+  it.each([
+    ['the delegator itself', ME],
+    ['the delegator in upper case', ME.toUpperCase()],
+    ['another address of this wallet', ME2],
+  ])('stays normal for %s', async (_, address) => {
+    const s = await run([change(address)]);
+    expect(s.level).toBe('normal');
+    expect(s.dangers).toEqual([]);
   });
 });

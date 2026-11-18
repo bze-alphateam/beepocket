@@ -18,6 +18,7 @@ export function stubChain(overrides: Partial<ChainClient> = {}): ChainClient {
     denomBranding: vi.fn(notStubbed('denomBranding')),
     feeParams: vi.fn(notStubbed('feeParams')),
     tradebinParams: vi.fn(notStubbed('tradebinParams')),
+    tokenFactoryParams: vi.fn(notStubbed('tokenFactoryParams')),
     liquidityPools: vi.fn(notStubbed('liquidityPools')),
     haltedDenoms: vi.fn(notStubbed('haltedDenoms')),
     markets: vi.fn(notStubbed('markets')),

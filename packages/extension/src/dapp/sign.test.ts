@@ -167,6 +167,8 @@ async function rig(options: { local?: FakeArea } = {}) {
       markets: () => Promise.resolve([]),
       liquidityPools: () => Promise.resolve([]),
       marketOrder: () => Promise.resolve(null),
+      tradebinParams: () => Promise.reject(new Error('not read')),
+      tokenFactoryParams: () => Promise.reject(new Error('not read')),
     },
     fees: {
       estimate: (params) => {
