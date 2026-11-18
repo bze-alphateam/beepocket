@@ -112,16 +112,13 @@ export class SessionPendingSends implements PendingSends {
   settle(txHash: string): Promise<void> {
     return this.serial(async () => {
       const hash = txHash.toUpperCase();
-      const all = await this.all();
-      let changed = false;
-      for (const [address, sends] of Object.entries(all)) {
-        const kept = sends.filter((s) => s.txHash !== hash);
-        if (kept.length === sends.length) continue;
-        changed = true;
-        if (kept.length === 0) delete all[address];
-        else all[address] = kept;
-      }
-      if (changed) await this.session.set(this.key, all);
+      const all = Object.entries(await this.all());
+      const kept = all
+        .map(([address, sends]) => [address, sends.filter((s) => s.txHash !== hash)] as const)
+        .filter(([, sends]) => sends.length > 0);
+      const before = all.reduce((n, [, sends]) => n + sends.length, 0);
+      const after = kept.reduce((n, [, sends]) => n + sends.length, 0);
+      if (after !== before) await this.session.set(this.key, Object.fromEntries(kept));
     });
   }
 
