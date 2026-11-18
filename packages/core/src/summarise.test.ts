@@ -2601,3 +2601,77 @@ describe('rewards address change', () => {
     expect(s.dangers).toEqual([]);
   });
 });
+
+describe('amounts that are not plain whole numbers', () => {
+  const ODD = ['', '0777777777', '010', '0x10', '1_000', '+5'];
+
+  it.each(ODD)('a swap with %j as an amount is not normal', async (amount) => {
+    const input = pack(MsgMultiSwap, {
+      creator: ME,
+      routes: ['pool-bze-usdc'],
+      input: { denom: 'ubze', amount },
+      minOutput: { denom: USDC, amount: '318200000' },
+    });
+    const minimum = pack(MsgMultiSwap, {
+      creator: ME,
+      routes: ['pool-bze-usdc'],
+      input: { denom: 'ubze', amount: '1000000000' },
+      minOutput: { denom: USDC, amount },
+    });
+    expect((await run([input])).level).toBe('unknown');
+    expect((await run([minimum])).level).toBe('unknown');
+  });
+
+  it.each(ODD)(
+    'adding or removing liquidity with %j as an amount is not normal',
+    async (amount) => {
+      const add = (over: object) =>
+        pack(MsgAddLiquidity, {
+          creator: ME,
+          poolId: 'pool-bze-usdc',
+          baseAmount: '100000000',
+          quoteAmount: '33500000',
+          minLpTokens: '5000000000000',
+          ...over,
+        });
+      const remove = (over: object) =>
+        pack(MsgRemoveLiquidity, {
+          creator: ME,
+          poolId: 'pool-bze-usdc',
+          lpTokens: '12500000000000',
+          minBase: '10000000',
+          minQuote: '3350000',
+          ...over,
+        });
+      for (const msg of [
+        add({ baseAmount: amount }),
+        add({ quoteAmount: amount }),
+        add({ minLpTokens: amount }),
+        remove({ lpTokens: amount }),
+        remove({ minBase: amount }),
+        remove({ minQuote: amount }),
+      ]) {
+        expect((await run([msg])).level).toBe('unknown');
+      }
+      // An unknown pool shows base units, which must be readable too.
+      const unknownPool = add({ poolId: 'pool-nope', baseAmount: amount });
+      expect((await run([unknownPool])).level).toBe('unknown');
+    },
+  );
+
+  it.each(ODD)('a send of %j is not normal', async (amount) => {
+    expect((await run([send(ALEX, [{ denom: 'ubze', amount }])])).level).toBe('unknown');
+  });
+
+  it('never reads a leading zero as a smaller-looking decimal', async () => {
+    const s = await run([
+      pack(MsgMultiSwap, {
+        creator: ME,
+        routes: ['pool-bze-usdc'],
+        input: { denom: 'ubze', amount: '1000000000' },
+        minOutput: { denom: USDC, amount: '0777777777' },
+      }),
+    ]);
+    expect(JSON.stringify(s)).not.toMatch(/777\.7/);
+  });
+});

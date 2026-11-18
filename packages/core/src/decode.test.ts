@@ -169,3 +169,43 @@ describe('decodeTxBody and decodeAuthInfo', () => {
     expect(toB64(fromB64(goldenCases[0]?.pubKey ?? ''))).toBe(goldenCases[0]?.pubKey);
   });
 });
+
+describe('decodeAny nesting', () => {
+  /** A MsgSend wrapped `depth` times in `google.protobuf.Any`. */
+  function nested(depth: number) {
+    let msg = encodeMsgSend(send);
+    for (let k = 0; k < depth; k += 1) {
+      msg = {
+        typeUrl: '/google.protobuf.Any',
+        value: Any.encode(Any.fromPartial(msg)).finish(),
+      };
+    }
+    return msg;
+  }
+  /** How many levels deep the decoded value goes, and whether it ends in an opaque entry. */
+  function walk(decoded: unknown): { levels: number; opaque: boolean } {
+    let levels = 0;
+    let node = decoded;
+    for (;;) {
+      if (typeof node !== 'object' || node === null) return { levels, opaque: false };
+      if ('unknown' in node) return { levels, opaque: true };
+      if (!('value' in node)) return { levels, opaque: false };
+      levels += 1;
+      node = node.value;
+    }
+  }
+
+  it('decodes a shallow nesting in full', () => {
+    const { levels, opaque } = walk(decodeAny(nested(3)));
+    expect(opaque).toBe(false);
+    expect(levels).toBeGreaterThanOrEqual(4);
+  });
+
+  it('stops decoding a deep nesting early and leaves the rest opaque', () => {
+    const started = performance.now();
+    const { levels, opaque } = walk(decodeAny(nested(200)));
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(opaque).toBe(true);
+    expect(levels).toBeLessThanOrEqual(16);
+  });
+});
