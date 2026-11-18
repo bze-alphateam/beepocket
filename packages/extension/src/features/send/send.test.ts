@@ -287,8 +287,10 @@ function setup(opts: Options = {}) {
     session: {
       get: (k: string) => Promise.resolve(session.get(k)),
       set: (k: string, v: unknown) => Promise.resolve(void session.set(k, v)),
-      setMany: (items: Record<string, unknown>) =>
-        Promise.resolve(void Object.entries(items).forEach(([k, v]) => session.set(k, v))),
+      setMany: (items: Record<string, unknown>) => {
+        for (const [k, v] of Object.entries(items)) session.set(k, v);
+        return Promise.resolve();
+      },
       remove: (k: string) => Promise.resolve(void session.delete(k)),
     },
     cache: {
@@ -381,7 +383,8 @@ describe('golden transactions', () => {
     it(`${c.name}: the reviewed quote is what the signer gets, byte for byte`, async () => {
       const g = golden(c.name);
       const s = setup({ balances: { ubze: 100_000_000n, [FACTORY]: 100_000_000n } });
-      // The signature the real bzed produced for this very transaction.
+      // The signature bzed produced for the golden bytes; a stand-in here, since the body the
+      // wallet signs now also carries a timeout height.
       s.control.signature = bytes(g.signature);
       const quote = await quoteOf(s, { denom: c.denom, amount: c.amount, feeDenom: c.feeDenom });
       expect(quote.fee).toMatchObject(g.fee[0] ?? {});
@@ -1080,6 +1083,22 @@ describe('pending sends', () => {
     expect((await s.call('send.status', { txHash: hash })).ok).toBe(true);
     expect((await s.call('send.submit', submitFrom(await quoteOf(s)))).ok).toBe(true);
     expect(s.calls.sign).toBe(2);
+  });
+
+  it('keeps the wait when the previous send is reported failed on chain', async () => {
+    const s = setup();
+    const first = await s.call('send.submit', submitFrom(await quoteOf(s)));
+    if (!first.ok) throw new Error(first.error.code);
+    s.control.tx = { height: 10n, code: 11, rawLog: 'out of gas', gasUsed: 1n };
+    const { txHash: hash } = first.value as { txHash: string };
+    expect(await s.call('send.status', { txHash: hash })).toMatchObject({
+      ok: true,
+      value: { status: 'failed' },
+    });
+    expect(await s.call('send.submit', submitFrom(await quoteOf(s)))).toMatchObject({
+      ok: false,
+      error: { code: PENDING },
+    });
   });
 
   it('treats "already in the mempool" as sent, with the hash of the signed bytes', async () => {

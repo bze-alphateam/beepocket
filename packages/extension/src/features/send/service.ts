@@ -374,8 +374,8 @@ export class SendService {
         intervalMs: STATUS_INTERVAL_MS,
         timeoutMs: STATUS_TIMEOUT_MS,
       });
-      // Included, so no longer pending, whether it succeeded or not.
-      await this.deps.pending.settle(txHash);
+      // Found committed: the next send need not wait. A reported failure keeps the wait.
+      if (tx.code === 0) await this.deps.pending.settle(txHash);
       return ok(
         tx.code === 0
           ? {
