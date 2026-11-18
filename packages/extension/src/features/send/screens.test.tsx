@@ -29,6 +29,7 @@ const clock: Clock = { now: () => 1_000_000, sleep: () => Promise.resolve() };
 const events = { subscribe: () => () => undefined };
 
 const quote = (over: Partial<SendQuote> = {}): SendQuote => ({
+  network: 'mainnet',
   from: { index: 0, address: OWN },
   to: TO,
   token: { denom: 'ubze', symbol: 'BZE', decimals: 6 },
@@ -393,6 +394,38 @@ describe('review', () => {
     await press(host, 'Confirm and send');
     expect(host.textContent).toContain('The network fee changed');
     expect(host.textContent).toContain('0.003 BZE');
+  });
+
+  it('signs for the network and the address on the review screen', async () => {
+    const { host, call } = setup({ 'send.prepare': () => ok(quote({ network: 'testnet' })) });
+    await toReview(host);
+    expect(host.querySelector('.bp-screen-header')?.textContent).toContain('Testnet');
+    await press(host, 'Confirm and send');
+    expect(call).toHaveBeenCalledWith(
+      'send.submit',
+      expect.objectContaining({ network: 'testnet', fromIndex: 0, fromAddress: OWN }),
+    );
+  });
+
+  it('marks no network on a mainnet review, without asking the worker', async () => {
+    const { host, call } = setup();
+    await toReview(host);
+    expect(host.querySelector('.bp-screen-header')?.textContent).not.toContain('Testnet');
+    expect(call.mock.calls.some(([m]) => m === 'network.get')).toBe(false);
+  });
+
+  it('says the network or the sender changed when that is what moved', async () => {
+    let calls = 0;
+    const { host } = setup({
+      'send.submit': () => fail('review-changed', 'changed'),
+      'send.prepare': () => ok(++calls === 1 ? quote({ network: 'testnet' }) : quote()),
+    });
+    await toReview(host);
+    expect(host.querySelector('.bp-screen-header')?.textContent).toContain('Testnet');
+    await press(host, 'Confirm and send');
+    expect(host.textContent).toContain('The network or the sending address changed');
+    expect(host.textContent).not.toContain('The network fee changed');
+    expect(host.querySelector('.bp-screen-header')?.textContent).not.toContain('Testnet');
   });
 });
 
