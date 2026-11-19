@@ -303,10 +303,21 @@ async function rig(options: { local?: FakeArea } = {}) {
     created,
     delivered,
     connect,
+    local,
   };
 }
 
 type Rig = Awaited<ReturnType<typeof rig>>;
+
+const NOT_CONNECTED = { code: 'not-connected', message: 'This site is not connected.' };
+
+/** The wallet states a site that is not connected must not be able to tell apart. */
+const WALLET_STATES: [string, (t: Rig) => Promise<unknown>][] = [
+  ['unlocked', () => Promise.resolve()],
+  ['weak locked', (t) => t.wallet.weakLock()],
+  ['fully locked', (t) => t.wallet.lock()],
+  ['without a wallet', (t) => t.local.remove('vault')],
+];
 
 interface DocOptions {
   signer?: string;
@@ -392,12 +403,22 @@ describe('signDirect refuses before any window opens', () => {
     });
   }
 
-  it('for a site that is not connected', async () => {
-    const t = await rig();
-    const a = await t.ask('signDirect', request().params);
-    expect(t.answerOf(a.id)).toMatchObject({ error: { code: 'not-connected' } });
-    expect(t.created).toHaveLength(0);
-  });
+  for (const [name, enter] of WALLET_STATES.filter(([n]) => n !== 'fully locked')) {
+    it(`for a site that is not connected, one answer for any chain, ${name}`, async () => {
+      const t = await rig();
+      await enter(t);
+      const asked = [
+        request().params,
+        { ...request().params, chainId: NETWORKS.testnet.chainId },
+        request({ chainId: 'other-1' }).params,
+      ];
+      for (const params of asked) {
+        const a = await t.ask('signDirect', params);
+        expect(t.answerOf(a.id)).toEqual({ id: a.id, error: NOT_CONNECTED });
+      }
+      expect(t.created).toHaveLength(0);
+    });
+  }
 
   it('for a request made for the other network', async () => {
     const t = await rig();
@@ -821,12 +842,31 @@ describe('sendTx', () => {
     }
   });
 
-  it('refuses a site that is not connected, and the wrong chain', async () => {
+  for (const [name, enter] of WALLET_STATES) {
+    it(`answers a site that is not connected the same way, ${name}`, async () => {
+      const t = await rig();
+      await enter(t);
+      const sent = [
+        params(),
+        { ...params(), chainId: NETWORKS.testnet.chainId },
+        params(Uint8Array.from([0x0a, 0x05, 1])),
+      ];
+      for (const p of sent) {
+        const a = await t.ask('sendTx', p);
+        expect(t.answerOf(a.id)).toEqual({ id: a.id, error: NOT_CONNECTED });
+      }
+      expect(t.created).toHaveLength(0);
+      expect(t.node.broadcast).not.toHaveBeenCalled();
+    });
+  }
+
+  it('refuses the wrong chain for a connected site, naming the active network', async () => {
     const t = await rig();
-    const a = await t.ask('sendTx', params());
-    expect(t.answerOf(a.id)).toMatchObject({ error: { code: 'not-connected' } });
-    const b = await t.ask('sendTx', { ...params(), chainId: NETWORKS.testnet.chainId });
-    expect(t.answerOf(b.id)).toMatchObject({ error: { code: 'wrong-chain' } });
+    await t.connect();
+    const a = await t.ask('sendTx', { ...params(), chainId: NETWORKS.testnet.chainId });
+    expect(t.answerOf(a.id)).toMatchObject({
+      error: { code: 'wrong-chain', message: 'BeePocket is on Mainnet' },
+    });
     expect(t.node.broadcast).not.toHaveBeenCalled();
   });
 

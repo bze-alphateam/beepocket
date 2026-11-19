@@ -223,9 +223,57 @@ const one = <T>(xs: T[]): T => {
   return xs[0] as T;
 };
 
-describe('wrong chain', () => {
+const NOT_CONNECTED = { code: 'not-connected', message: 'This site is not connected.' };
+
+describe('a site that is not connected', () => {
+  const states: [string, (t: Awaited<ReturnType<typeof rig>>) => Promise<unknown>][] = [
+    ['unlocked', () => Promise.resolve()],
+    ['weak locked', (t) => t.wallet.weakLock()],
+    ['without a wallet', (t) => t.local.remove('vault')],
+  ];
+  for (const [name, enter] of states) {
+    it(`gets one answer from getKey whatever the chain, ${name}, without a window`, async () => {
+      const t = await rig();
+      await enter(t);
+      for (const params of [chainId('mainnet'), chainId('testnet'), { chainId: 'other-1' }]) {
+        const a = await t.ask('getKey', params);
+        expect(one(t.answersFor(a.id))).toEqual({ id: a.id, error: NOT_CONNECTED });
+      }
+      t.setNetwork('testnet');
+      const b = await t.ask('getKey', chainId('mainnet'));
+      expect(one(t.answersFor(b.id))).toEqual({ id: b.id, error: NOT_CONNECTED });
+      expect(t.created).toHaveLength(0);
+    });
+  }
+
+  it('gets the same answer from connect for another chain, or without a wallet', async () => {
+    const t = await rig();
+    const wrong = await t.ask('connect', chainId('testnet'));
+    expect(one(t.answersFor(wrong.id))).toEqual({ id: wrong.id, error: NOT_CONNECTED });
+    await t.local.remove('vault');
+    const none = await t.ask('connect', chainId());
+    expect(one(t.answersFor(none.id))).toEqual({ id: none.id, error: NOT_CONNECTED });
+    expect(t.created).toHaveLength(0);
+  });
+
+  it('is not told the network while the wallet is fully locked', async () => {
+    const t = await rig();
+    await t.wallet.lock();
+    const a = await t.ask('getKey', chainId('testnet'));
+    expect(t.answersFor(a.id)).toEqual([]);
+    expect(await t.dapp.current()).toMatchObject({ status: 'locked', origin: ORIGIN });
+    await t.wallet.unlock(PASSWORD);
+    expect(await t.dapp.current()).toEqual({ status: 'none' });
+    expect(one(t.answersFor(a.id))).toEqual({ id: a.id, error: NOT_CONNECTED });
+  });
+});
+
+describe('wrong chain, connected site', () => {
   it('refuses a chain id that is not the active network, naming the active one', async () => {
     const t = await rig();
+    const first = await t.ask('connect', chainId());
+    await t.answer(first.id, { approve: true, index: 0 });
+    const windows = t.created.length;
     const a = await t.ask('connect', chainId('testnet'));
     expect(one(t.answersFor(a.id))).toMatchObject({
       error: { code: 'wrong-chain', message: 'BeePocket is on Mainnet' },
@@ -235,7 +283,18 @@ describe('wrong chain', () => {
     expect(one(t.answersFor(b.id))).toMatchObject({
       error: { code: 'wrong-chain', message: 'BeePocket is on Testnet' },
     });
-    expect(t.created).toHaveLength(0);
+    expect(t.created).toHaveLength(windows);
+  });
+
+  it('names the active network in the weak lock too', async () => {
+    const t = await rig();
+    const first = await t.ask('connect', chainId());
+    await t.answer(first.id, { approve: true, index: 0 });
+    await t.wallet.weakLock();
+    const a = await t.ask('getKey', chainId('testnet'));
+    expect(one(t.answersFor(a.id))).toMatchObject({
+      error: { code: 'wrong-chain', message: 'BeePocket is on Mainnet' },
+    });
   });
 });
 
@@ -404,7 +463,7 @@ describe('connect and getKey, wallet locked', () => {
     const t = await rig();
     await t.local.remove('vault');
     const a = await t.ask('getKey', chainId());
-    expect(one(t.answersFor(a.id))).toMatchObject({ error: { code: 'not-connected' } });
+    expect(one(t.answersFor(a.id))).toEqual({ id: a.id, error: NOT_CONNECTED });
   });
 });
 
