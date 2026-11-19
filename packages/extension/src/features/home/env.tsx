@@ -10,9 +10,19 @@ export interface Scheduler {
   after(ms: number, fn: () => void): () => void;
 }
 
+/** What the request window's answer buttons wait on before they respond. */
+export interface ArmingSource {
+  /** Calls `fn` once after `ms` unless cancelled. */
+  after(ms: number, fn: () => void): () => void;
+  /** Calls `listener` whenever the window regains focus or becomes visible again. */
+  subscribe(listener: () => void): () => void;
+}
+
 /** Everything the home screen needs from the browser, handed in at the composition root. */
 export interface HomeEnv {
   scheduler: Scheduler;
+  /** Kept apart from `scheduler` so tests drive the two clocks on their own. */
+  arming: ArmingSource;
   /** Polling pauses while the document is hidden. */
   visibility: { hidden(): boolean };
   themeTarget: ThemeTarget;
@@ -22,6 +32,12 @@ export interface HomeEnv {
 
 /** `scheme` is the popup's appearance (setting + OS), so screens never read the OS alone. */
 export function browserHomeEnv(scheme: SchemeSource): HomeEnv {
+  const after = (ms: number, fn: () => void) => {
+    const id = setTimeout(fn, ms);
+    return () => {
+      clearTimeout(id);
+    };
+  };
   return {
     scheduler: {
       every: (ms, fn) => {
@@ -30,10 +46,19 @@ export function browserHomeEnv(scheme: SchemeSource): HomeEnv {
           clearInterval(id);
         };
       },
-      after: (ms, fn) => {
-        const id = setTimeout(fn, ms);
+      after,
+    },
+    arming: {
+      after,
+      subscribe: (listener) => {
+        const visible = () => {
+          if (!document.hidden) listener();
+        };
+        window.addEventListener('focus', listener);
+        document.addEventListener('visibilitychange', visible);
         return () => {
-          clearTimeout(id);
+          window.removeEventListener('focus', listener);
+          document.removeEventListener('visibilitychange', visible);
         };
       },
     },

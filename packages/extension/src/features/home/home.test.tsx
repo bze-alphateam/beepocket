@@ -250,6 +250,13 @@ function setup(
         };
       },
     },
+    arming: {
+      after: (_ms, fn) => {
+        fn();
+        return () => undefined;
+      },
+      subscribe: () => () => undefined,
+    },
     visibility: { hidden: () => w.hidden },
     themeTarget: {
       style: {

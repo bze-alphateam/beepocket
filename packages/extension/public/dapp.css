@@ -457,3 +457,8 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* Wraps a request's answer buttons without taking part in the layout. */
+.bp-armed {
+  display: contents;
+}

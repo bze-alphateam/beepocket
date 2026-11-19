@@ -94,6 +94,35 @@ test('Cancel answers rejected', async ({ context, extensionId }) => {
   }
 });
 
+test('Connect waits a moment after focus, and a press made before that does not connect', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  await walletWithAddresses(context, extensionId);
+  const { dapp, stop } = await openDapp(context);
+  try {
+    const request = await connect(context, dapp);
+    const button = request.getByRole('button', { name: 'Connect', exact: true });
+    await expect(button).toBeEnabled();
+    const box = await button.boundingBox();
+    if (box === null) throw new Error('Connect has no box');
+    await request.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    // The window comes back to the front: pressed at once, released only once Connect responds.
+    await request.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await request.mouse.down();
+    await expect(button).toBeEnabled();
+    await request.mouse.up();
+    // Nothing was answered: the request stays on screen and a fresh click still connects.
+    await request.waitForTimeout(1_000);
+    await expect(button).toBeVisible();
+    await button.click();
+    await expect(dapp.getByRole('status')).toHaveText(/name Main$/);
+  } finally {
+    stop();
+  }
+});
+
 test('the actions stay on screen when the title bar takes part of the window', async ({
   context,
   extensionId,
