@@ -21,7 +21,7 @@ import { registerTokenHandlers } from './handlers';
 import { MAX_SEARCH_LOOKUPS } from './service';
 import type { WalletService } from '../wallet';
 import type { PreferredTokensStore, WalletAddress, WalletAddresses } from './ports';
-import { ok, WalletErrorCodes, type TokenSearch } from '../../protocol';
+import { ok, WalletErrorCodes, type ListedToken, type TokenSearch } from '../../protocol';
 
 const FACTORY = 'factory/bze1abc/gold';
 const LP_SLASH = 'ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209';
@@ -637,6 +637,38 @@ describe('tokens.preferred when the node fails', () => {
       unresolved: true,
     });
     expect(r.ok && r.value[0]).not.toHaveProperty('unresolved');
+  });
+});
+
+describe('look-alike tokens', () => {
+  const FAKE = 'factory/bze1abc/fake';
+  const NAMED_BZE = 'factory/bze1abc/bze';
+
+  it('flags a held factory token that calls itself BZE, and never ubze', async () => {
+    const t = setup({ addresses: ADDRS });
+    t.chainData.metadata[FAKE] = {
+      name: 'BeeZee',
+      symbol: 'BZE',
+      display: 'BZE',
+      exponent: 6,
+      description: '',
+    };
+    t.chainData.balances.bze1a = new Map([[FAKE, 7n]]);
+    const r = await t.call<TokenSearch>('tokens.search', { query: '' });
+    const tokens = r.ok ? r.value.tokens : [];
+    expect(tokens.find((x) => x.denom === FAKE)).toMatchObject({ symbol: 'BZE', lookalike: true });
+    expect(tokens.find((x) => x.denom === 'ubze')).not.toHaveProperty('lookalike');
+  });
+
+  it('flags the placeholder of an unreadable factory token named bze', async () => {
+    const t = setup({ preferred: ['ubze', NAMED_BZE] });
+    t.chainData.broken.add(NAMED_BZE);
+    const r = await t.call<ListedToken[]>('tokens.preferred');
+    expect(r.ok && r.value[1]).toMatchObject({
+      denom: NAMED_BZE,
+      unresolved: true,
+      lookalike: true,
+    });
   });
 });
 

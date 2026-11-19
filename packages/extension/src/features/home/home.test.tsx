@@ -689,6 +689,28 @@ describe('token switcher', () => {
     expect(groups(s)[0]).toEqual({ title: 'Preferred · 3', rows: ['BZE', 'PAGE', 'GOLD'] });
   });
 
+  it('marks a held look-alike token with its denom', async () => {
+    const fake: ListedToken = {
+      ...tok('factory/bze1x/fake', 'BZE'),
+      kind: 'factory',
+      lookalike: true,
+    };
+    const s = setup({
+      held: [BZE, fake],
+      amounts: {
+        ubze: ['1234567890', '0'],
+        [PAGE.denom]: ['500', '700'],
+        [fake.denom]: ['3000000', '0'],
+      },
+    });
+    await open(s);
+    const rows = [...(dialog(s)?.querySelectorAll('.bp-list-row') ?? [])];
+    const row = rows.find((r) => r.textContent?.includes('factory/bze1x/fake'));
+    expect(row?.textContent).toContain('Look-alike');
+    // The real BZE row stays as it was.
+    expect(groups(s)[0]).toEqual({ title: 'Preferred · 2', rows: ['BZE', 'PAGE'] });
+  });
+
   it('filters by symbol or name into one Results group', async () => {
     const s = setup({ search: [] });
     await open(s);

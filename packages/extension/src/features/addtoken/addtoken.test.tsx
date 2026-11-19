@@ -212,6 +212,13 @@ describe('the Add a token screen', () => {
       [BZE, { ...GOLD, denom: 'factory/bze1other/gold' }],
     ],
     ['the native coin', { ...GOLD, symbol: 'bze' }, [BZE]],
+    ['the native coin in Greek letters', { ...GOLD, symbol: 'ΒΖΕ' }, [BZE]],
+    [
+      'a held token in fullwidth letters',
+      { ...GOLD, symbol: 'ＧＯＬＤ' },
+      [BZE, { ...GOLD, denom: 'factory/bze1other/gold' }],
+    ],
+    ['a verified token', { ...GOLD, symbol: 'ATOM', lookalike: true }, [BZE]],
   ])('warns when the symbol imitates %s', async (_name, found, held) => {
     const t = await mounted(link(), {
       'tokens.lookup': () => ok(found),

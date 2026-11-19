@@ -396,3 +396,45 @@ describe('activity.page', () => {
     expect(v.items[0]?.amounts.map((a) => a.denom)).toEqual(['uaaa', 'ubbb', 'uccc']);
   });
 });
+
+describe('activity text from Scan', () => {
+  const FAKE = 'factory/bze1x/fake';
+  const one = (over: Partial<ActivityRow>) =>
+    setup({ bze1addr0: [row({ time: ago(1000), ...over })] }, ADDRS.slice(0, 1));
+
+  it('drops control and bidi characters from monikers and symbols', async () => {
+    const { page } = one({
+      counterparty: { address: 'bze1valoper', label: null, moniker: '‮evil‬' },
+      deltas: [{ denom: FAKE, amount: 5n, symbol: 'B​ZE', exponent: 6 }],
+    });
+    const item = valueOf(await page({})).items[0];
+    expect(item?.counterparty).toBe('evil');
+    expect(item?.amounts[0]?.symbol).toBe('BZE');
+    expect(JSON.stringify(item)).not.toMatch(/\p{Cf}/u);
+  });
+
+  it('drops them from label names too, and bounds their length', async () => {
+    const { page } = one({
+      counterparty: {
+        address: 'bze1pool',
+        label: { name: `Pool⁦${'x'.repeat(500)}`, kind: 'pool' },
+        moniker: null,
+      },
+    });
+    const item = valueOf(await page({})).items[0];
+    expect(item?.counterparty).not.toMatch(/\p{Cf}/u);
+    expect(item?.counterparty?.length).toBeLessThanOrEqual(65);
+  });
+
+  it('flags a token other than ubze that Scan calls BZE, and keeps ubze plain', async () => {
+    const { page } = one({
+      deltas: [
+        { denom: FAKE, amount: 7n, symbol: 'ΒΖΕ', exponent: 6 },
+        { denom: DENOM, amount: 5n, symbol: 'BZE', exponent: 6 },
+      ],
+    });
+    const [fake, bze] = valueOf(await page({})).items[0]?.amounts ?? [];
+    expect(fake).toMatchObject({ denom: FAKE, lookalike: true });
+    expect(bze).toEqual({ denom: DENOM, amount: '5', symbol: 'BZE', exponent: 6 });
+  });
+});

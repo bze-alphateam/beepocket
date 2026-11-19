@@ -183,6 +183,22 @@ describe('Swatches and TokenRow', () => {
     expect(onToggle).toHaveBeenCalledOnce();
   });
 
+  it('a look-alike token shows the marker and its denom', () => {
+    const { host } = render(
+      <TokenRow
+        symbol="BZE"
+        name="BeeZee"
+        caption="No brand kit"
+        lookalike
+        tail="factory/bze1x/fake"
+        onToggle={vi.fn()}
+      />,
+    );
+    const row = host.querySelector('button');
+    expect(row?.textContent).toContain('Look-alike');
+    expect(row?.textContent).toContain('factory/bze1x/fake');
+  });
+
   it('a card row has no control and no swatches without a kit', () => {
     const { host } = render(
       <TokenRow variant="card" symbol="USDC" name="USD Coin" caption="No brand kit" />,

@@ -229,6 +229,42 @@ describe('ActivityTab card', () => {
     expect(host.querySelectorAll('[data-unknown]')).toHaveLength(0);
   });
 
+  it('marks a look-alike token next to its symbol, with the denom on hover', async () => {
+    const fake = 'factory/bze1x/fake';
+    const host = await cards([
+      item(1, {
+        amounts: [amt('500', { denom: fake, symbol: 'BZE', exponent: 6, lookalike: true })],
+      }),
+    ]);
+    const symbol = host.querySelector('.bp-act-symbol');
+    expect(symbol?.textContent).toContain('BZE');
+    expect(symbol?.textContent).toContain('Look-alike');
+    expect(symbol?.getAttribute('title')).toBe(fake);
+    expect(host.querySelector('a.bp-act-card')?.getAttribute('aria-label')).toContain('look-alike');
+  });
+
+  it("prefers the wallet's own label to Scan's symbol for a token it knows", async () => {
+    const fake: ListedToken = {
+      ...PAGE,
+      denom: 'factory/bze1x/fake',
+      symbol: 'ΒΖΕ',
+      lookalike: true,
+    };
+    const { host, tick } = setup(
+      () =>
+        reply({
+          items: [item(1, { amounts: [amt('2500', { denom: fake.denom, symbol: 'BZE' })] })],
+        }),
+      undefined,
+      null,
+      [PAGE, fake],
+    );
+    await tick();
+    const symbol = host.querySelector('.bp-act-symbol');
+    expect(symbol?.textContent).toContain('ΒΖΕ');
+    expect(symbol?.textContent).toContain('Look-alike');
+  });
+
   it('tags a failed card, strikes its amounts and says so to screen readers', async () => {
     const host = await cards([
       item(1, { success: false, kind: 'send', category: 'sent', amounts: [amt('-100')] }),
