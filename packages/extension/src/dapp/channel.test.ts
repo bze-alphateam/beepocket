@@ -961,6 +961,7 @@ describe('connected sites', () => {
     it('leaves Connect, Change and Disconnect telling only their own site', async () => {
       const t = await rig();
       await connectedOnEach(t);
+      expect(pushes(t)).toEqual([]);
       await t.ask('getKey', chainId(), t.site(ORIGIN, 6, 'doc-6'));
       t.delivered.length = 0;
       expect((await t.dapp.sites.change(ORIGIN, 2, 'mainnet')).ok).toBe(true);
