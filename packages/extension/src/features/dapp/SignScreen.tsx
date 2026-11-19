@@ -32,6 +32,7 @@ import { applyOverride, pricingOf, priceText, type AppliedFee } from '../send/Ad
 import { feeText } from '../send/format';
 import { feeKey, FeeSheet } from '../send/Sheets';
 import { requestBadge, type Answer } from './answers';
+import { useArmed } from './armed';
 import { siteName } from './ConnectedSitesScreen';
 import { useFirstToken } from './theme';
 
@@ -273,6 +274,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
   const [trusted, setTrusted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { armed, guard } = useArmed();
 
   // A fee token the signer can no longer pay with falls back to the worker's pick.
   const base = view.options.find((o) => feeKey(o) === picked) ?? view.fee;
@@ -357,7 +359,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
         labelIcon="lock"
         placeholder={t('lock.password')}
         submitLabel={t('dapp.sign.unlock')}
-        hold={busy || !canApprove}
+        hold={busy || !canApprove || !armed}
         variant={variant}
         secondary={reject}
         onUnlocked={() => {
@@ -370,7 +372,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
       {reject}
       <Button
         variant={variant}
-        disabled={busy || !canApprove}
+        disabled={busy || !canApprove || !armed}
         onClick={() => {
           void answer(true);
         }}
@@ -392,7 +394,9 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
       >
         {details !== null && <Details view={view} index={details === 'all' ? null : details} />}
       </Sheet>
-      {actions}
+      <div class="bp-armed" {...guard}>
+        {actions}
+      </div>
     </>
   );
 

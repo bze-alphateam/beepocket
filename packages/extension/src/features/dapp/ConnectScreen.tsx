@@ -18,6 +18,7 @@ import { useBalances } from '../home/data';
 import { amountText } from '../home/format';
 import { PasswordGate } from '../lock/PasswordGate';
 import { requestBadge, type Answer } from './answers';
+import { useArmed } from './armed';
 import { useFirstToken } from './theme';
 
 type ConnectView = Extract<RequestView, { status: 'connect' }>;
@@ -42,6 +43,7 @@ export function ConnectScreen({ view, done, queue }: ConnectScreenProps) {
   const [busy, setBusy] = useState(false);
   const [needsPassword, setNeedsPassword] = useState(false);
   const [failed, setFailed] = useState(false);
+  const { armed, guard } = useArmed();
 
   const answer = async (approve: boolean) => {
     if (busy) return;
@@ -97,7 +99,7 @@ export function ConnectScreen({ view, done, queue }: ConnectScreenProps) {
         {t('dapp.connect.cancel')}
       </Button>
       <Button
-        disabled={busy}
+        disabled={busy || !armed}
         onClick={() => {
           void answer(true);
         }}
@@ -117,21 +119,23 @@ export function ConnectScreen({ view, done, queue }: ConnectScreenProps) {
         />
       }
       footer={
-        needsPassword ? (
-          <div class="bp-bottom">
-            <PasswordGate
-              submitLabel={t('dapp.connect.unlock')}
-              labelIcon="lock"
-              hold={busy}
-              onUnlocked={() => {
-                setNeedsPassword(false);
-                void answer(true);
-              }}
-            />
-          </div>
-        ) : (
-          <BottomActions row>{actions}</BottomActions>
-        )
+        <div class="bp-armed" {...guard}>
+          {needsPassword ? (
+            <div class="bp-bottom">
+              <PasswordGate
+                submitLabel={t('dapp.connect.unlock')}
+                labelIcon="lock"
+                hold={busy || !armed}
+                onUnlocked={() => {
+                  setNeedsPassword(false);
+                  void answer(true);
+                }}
+              />
+            </div>
+          ) : (
+            <BottomActions row>{actions}</BottomActions>
+          )}
+        </div>
       }
     >
       <main class="bp-dapp">

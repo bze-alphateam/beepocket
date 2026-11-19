@@ -58,6 +58,14 @@ function rig(
   const close = vi.fn();
   const env = {
     scheduler: { every, after },
+    // The answer buttons respond at once here; their delay has its own tests.
+    arming: {
+      after: (_ms: number, fn: () => void) => {
+        fn();
+        return () => undefined;
+      },
+      subscribe: () => () => undefined,
+    },
     visibility: { hidden: () => false },
     themeTarget: { style: { setProperty: () => undefined }, dataset: {} },
     scheme: { current: () => 'dark', subscribe: () => () => undefined },
