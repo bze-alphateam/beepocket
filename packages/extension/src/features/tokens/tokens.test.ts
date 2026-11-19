@@ -646,13 +646,7 @@ describe('look-alike tokens', () => {
 
   it('flags a held factory token that calls itself BZE, and never ubze', async () => {
     const t = setup({ addresses: ADDRS });
-    t.chainData.metadata[FAKE] = {
-      name: 'BeeZee',
-      symbol: 'BZE',
-      display: 'BZE',
-      exponent: 6,
-      description: '',
-    };
+    t.chainData.metadata[FAKE] = { symbol: 'BZE', name: 'BeeZee', exponent: 6 };
     t.chainData.balances.bze1a = new Map([[FAKE, 7n]]);
     const r = await t.call<TokenSearch>('tokens.search', { query: '' });
     const tokens = r.ok ? r.value.tokens : [];
