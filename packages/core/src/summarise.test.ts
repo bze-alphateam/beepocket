@@ -2206,7 +2206,10 @@ const V83_SAMPLES: Record<string, AnyMsg> = {
     signer: ME,
     denoms: [VDL],
   }),
-  [guardian.MsgHaltChain.typeUrl]: pack(guardian.MsgHaltChain, { signer: ME, reason: 'exploit' }),
+  [guardian.MsgHaltChain.typeUrl]: pack(guardian.MsgHaltChain, {
+    signer: ME,
+    reason: 'maintenance',
+  }),
   [guardian.MsgPauseAutomation.typeUrl]: pack(guardian.MsgPauseAutomation, { signer: ME }),
   [guardian.MsgCloseChannel.typeUrl]: pack(guardian.MsgCloseChannel, {
     signer: ME,
@@ -2495,7 +2498,7 @@ describe('guardian actions', () => {
     const s = await run([v83(guardian.MsgHaltChain.typeUrl)]);
     expect(s.rows).toEqual([
       ['Action', 'Halt the chain'],
-      ['Reason', 'exploit'],
+      ['Reason', 'maintenance'],
     ]);
   });
 });
