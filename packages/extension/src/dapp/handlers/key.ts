@@ -41,7 +41,7 @@ export function validateKeyParams(params: unknown): Result<KeyParams> {
 }
 
 /** Business Logic §1: the wallet works on one network at a time. */
-export function networkRefusal(
+function networkRefusal(
   request: PendingRequest,
   params: KeyParams,
   activeId: string,
@@ -75,10 +75,57 @@ function wireKey(entry: ProfileAddress, pubKey: string): WireKey {
   };
 }
 
-export function connectedAddress(
-  profile: Profile,
+/** The one answer a site that is not connected gets, whatever the wallet's state. */
+export const notConnected = (): Outcome =>
+  refuse(DappErrorCodes.notConnected, 'This site is not connected.');
+
+/** What a site may learn before its request goes further. */
+export type SiteCheck =
+  /** Settled: the site gets this answer. */
+  | { kind: 'answer'; outcome: Outcome }
+  /** Fully locked: the wallet cannot read its sites until it is unlocked. */
+  | { kind: 'locked' }
+  /** The profile is readable and the chain is the active one; `entry` is the connected address. */
+  | {
+      kind: 'site';
+      unlocked: boolean;
+      profile: Profile;
+      entry: ProfileAddress | undefined;
+    };
+
+/**
+ * The checks every site request starts with. A site that is not connected learns nothing about
+ * the wallet: with no wallet, or for a chain that is not the active one, it gets the same answer
+ * as when it simply is not connected. Only a site the user connected (on either network) is told
+ * which network is active.
+ */
+export async function checkSite(
+  deps: Pick<KeyDeps, 'wallet' | 'services'>,
   request: PendingRequest,
-): ProfileAddress | undefined {
+  params: KeyParams,
+): Promise<SiteCheck> {
+  const { state } = await deps.wallet.state();
+  if (state === 'uninitialised') return { kind: 'answer', outcome: notConnected() };
+  if (state === 'locked') return { kind: 'locked' };
+  const profile = await deps.wallet.getProfile();
+  if (!profile.ok) return { kind: 'locked' };
+  const entry = connectedAddress(profile.value, request);
+  const active = await deps.services.activeNetwork();
+  const wrong = networkRefusal(request, params, active.id);
+  if (wrong) {
+    const known = entry !== undefined || knownSite(profile.value, request.origin);
+    return { kind: 'answer', outcome: known ? wrong : notConnected() };
+  }
+  return { kind: 'site', unlocked: state === 'unlocked', profile: profile.value, entry };
+}
+
+/** Whether the user connected the site on either network. */
+function knownSite(profile: Profile, origin: string): boolean {
+  const { mainnet, testnet } = profile.sites;
+  return Object.hasOwn(mainnet, origin) || Object.hasOwn(testnet, origin);
+}
+
+function connectedAddress(profile: Profile, request: PendingRequest): ProfileAddress | undefined {
   const site = Object.hasOwn(profile.sites[request.network], request.origin)
     ? profile.sites[request.network][request.origin]
     : undefined;
@@ -94,32 +141,17 @@ export function keyHandler(deps: KeyDeps, mode: 'connect' | 'getKey'): DappHandl
     validate: validateKeyParams,
 
     async decide(request) {
-      const active = await deps.services.activeNetwork();
-      const wrong = networkRefusal(request, request.params, active.id);
-      if (wrong) return { kind: 'answer', outcome: wrong };
-      const { state } = await deps.wallet.state();
-      if (state === 'uninitialised') {
-        return {
-          kind: 'answer',
-          outcome: refuse(DappErrorCodes.notConnected, 'BeePocket has no wallet yet.'),
-        };
-      }
-      const profile = state === 'locked' ? null : await deps.wallet.getProfile();
-      if (!profile?.ok) return { kind: 'locked' };
-      const entry = connectedAddress(profile.value, request);
+      const site = await checkSite(deps, request, request.params);
+      if (site.kind !== 'site') return site;
+      const { entry, profile, unlocked } = site;
       if (entry) {
-        const pubKey = await pubKeyOf(deps, entry, state === 'unlocked');
+        const pubKey = await pubKeyOf(deps, entry, unlocked);
         return pubKey === null
           ? { kind: 'unlock' }
           : { kind: 'answer', outcome: answer(wireKey(entry, pubKey)) };
       }
-      if (mode === 'getKey') {
-        return {
-          kind: 'answer',
-          outcome: refuse(DappErrorCodes.notConnected, 'This site is not connected.'),
-        };
-      }
-      return { kind: 'connect', addresses: profile.value.addresses.map(listed) } satisfies Decision;
+      if (mode === 'getKey') return { kind: 'answer', outcome: notConnected() };
+      return { kind: 'connect', addresses: profile.addresses.map(listed) } satisfies Decision;
     },
 
     async confirm(request, user: UserAnswer) {
@@ -129,8 +161,8 @@ export function keyHandler(deps: KeyDeps, mode: 'connect' | 'getKey'): DappHandl
         return fail(DappProtocolCodes.unknownRequest, 'This request is no longer waiting.');
       }
       const active = await deps.services.activeNetwork();
-      const wrong = networkRefusal(request, request.params, active.id);
-      if (wrong) return ok(wrong);
+      // The site is not connected yet: it is not told which network is active.
+      if (networkRefusal(request, request.params, active.id)) return ok(notConnected());
       const profile = await deps.wallet.getProfile();
       if (!profile.ok) return profile;
       const entry = profile.value.addresses.find((a) => a.index === user.index);
