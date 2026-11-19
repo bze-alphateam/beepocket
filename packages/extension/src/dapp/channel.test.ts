@@ -286,6 +286,21 @@ describe('wrong chain, connected site', () => {
     expect(t.created).toHaveLength(windows);
   });
 
+  it('names the active network once a fully locked wallet is unlocked', async () => {
+    const t = await rig();
+    const first = await t.ask('connect', chainId());
+    await t.answer(first.id, { approve: true, index: 0 });
+    await t.wallet.lock();
+    const a = await t.ask('getKey', chainId('testnet'));
+    expect(t.answersFor(a.id)).toEqual([]);
+    expect(await t.dapp.current()).toMatchObject({ status: 'locked', origin: ORIGIN });
+    await t.wallet.unlock(PASSWORD);
+    expect(await t.dapp.current()).toEqual({ status: 'none' });
+    expect(one(t.answersFor(a.id))).toMatchObject({
+      error: { code: 'wrong-chain', message: 'BeePocket is on Mainnet' },
+    });
+  });
+
   it('names the active network in the weak lock too', async () => {
     const t = await rig();
     const first = await t.ask('connect', chainId());
