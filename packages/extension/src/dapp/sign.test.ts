@@ -870,7 +870,7 @@ describe('sendTx', () => {
     expect(t.node.broadcast).not.toHaveBeenCalled();
   });
 
-  it('answers a connected site not-connected at once in the full lock, without a window', async () => {
+  it('answers a connected site not-connected in the full lock, without a window', async () => {
     const t = await rig();
     await t.connect();
     await t.wallet.lock();
