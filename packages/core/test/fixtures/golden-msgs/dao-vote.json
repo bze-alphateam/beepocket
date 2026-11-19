@@ -1,0 +1,30 @@
+{
+  "accountNumber": "7",
+  "authInfoBytes": "ClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiECumaoTPeDmvFyoT5/yfXnAIy4vKFYX487r7MDnto8H90SBAoCCAEYAxISCgwKBHViemUSBDIwMDAQwJoM",
+  "bodyBytes": "CkQKEC9iemUuZGFvLk1zZ1ZvdGUSMAoqYnplMXI1djVzcmRhN3hmdGgzaG4yczI2dHh2cmNybnRsZGp1eDB0czlnEAQYAQ==",
+  "chainId": "beezee-1",
+  "description": "a DAO vote: yes on proposal 4",
+  "fee": [
+    {
+      "amount": "2000",
+      "denom": "ubze"
+    }
+  ],
+  "gasLimit": "200000",
+  "memo": "",
+  "messages": [
+    {
+      "@type": "/bze.dao.MsgVote",
+      "option": "YES",
+      "proposal_id": "4",
+      "voter": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g"
+    }
+  ],
+  "name": "dao-vote",
+  "pubKey": "ArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/d",
+  "sequence": "3",
+  "signature": "l9WyEwadl3QGat2OJ61UfOlqZOB2FUOGsJYDowPEgOEOgWqHGlhk2vKMDpThC6tES51r6cYnOY5Nxq3E+F6OWw==",
+  "signer": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+  "signerIndex": 0,
+  "txRaw": "CkYKRAoQL2J6ZS5kYW8uTXNnVm90ZRIwCipiemUxcjV2NXNyZGE3eGZ0aDNobjJzMjZ0eHZyY3JudGxkanV4MHRzOWcQBBgBEmYKUApGCh8vY29zbW9zLmNyeXB0by5zZWNwMjU2azEuUHViS2V5EiMKIQK6ZqhM94Oa8XKhPn/J9ecAjLi8oVhfjzuvswOe2jwf3RIECgIIARgDEhIKDAoEdWJ6ZRIEMjAwMBDAmgwaQJfVshMGnZd0BmrdjietVHzpamTgdhVDhrCWA6MDxIDhDoFqhxpYZNryjA6U4QurREuda+nGJzmOTcatxPhejls="
+}

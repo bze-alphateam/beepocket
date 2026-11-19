@@ -1,0 +1,32 @@
+{
+  "accountNumber": "7",
+  "authInfoBytes": "ClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiECumaoTPeDmvFyoT5/yfXnAIy4vKFYX487r7MDnto8H90SBAoCCAEYAxISCgwKBHViemUSBDIwMDAQwJoM",
+  "bodyBytes": "CuABCiMvYnplLnRva2VuZmFjdG9yeS5Nc2dTZXREZW5vbUNvbmZpZxK4AQoqYnplMXI1djVzcmRhN3hmdGgzaG4yczI2dHh2cmNybnRsZGp1eDB0czlnEjdmYWN0b3J5L2J6ZTEzZ3pxNDBjaGU5M3RnZm05a3pta3BqYW1haDVuajBqNzNweWhxay91dmRsGipiemUxdnRhZDg2ODB2aGRmcXZ4eDBmMnlheGE2YWdkeWxlbG05MnNtNnAiETEwMDAwMDAwMDAwMDAwMDAwKhI1MDAwMDAwMDAwMDAwMDAwMDA=",
+  "chainId": "beezee-1",
+  "description": "token fees for a factory denom: 1% transfer fee, 0.5 gas surcharge",
+  "fee": [
+    {
+      "amount": "2000",
+      "denom": "ubze"
+    }
+  ],
+  "gasLimit": "200000",
+  "memo": "",
+  "messages": [
+    {
+      "@type": "/bze.tokenfactory.MsgSetDenomConfig",
+      "community_pool": "bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p",
+      "creator": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+      "denom": "factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl",
+      "gas_surcharge": "0.500000000000000000",
+      "transfer_fee": "0.010000000000000000"
+    }
+  ],
+  "name": "set-denom-config",
+  "pubKey": "ArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/d",
+  "sequence": "3",
+  "signature": "2+1YeN5Ev2ARezxDNmPVULt1CDt2Znz2Z3LV3W/C3IoSwjBQguULRSHm/No1p9sSaDWaZeP2GP6e+l7C5s0dog==",
+  "signer": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+  "signerIndex": 0,
+  "txRaw": "CuMBCuABCiMvYnplLnRva2VuZmFjdG9yeS5Nc2dTZXREZW5vbUNvbmZpZxK4AQoqYnplMXI1djVzcmRhN3hmdGgzaG4yczI2dHh2cmNybnRsZGp1eDB0czlnEjdmYWN0b3J5L2J6ZTEzZ3pxNDBjaGU5M3RnZm05a3pta3BqYW1haDVuajBqNzNweWhxay91dmRsGipiemUxdnRhZDg2ODB2aGRmcXZ4eDBmMnlheGE2YWdkeWxlbG05MnNtNnAiETEwMDAwMDAwMDAwMDAwMDAwKhI1MDAwMDAwMDAwMDAwMDAwMDASZgpQCkYKHy9jb3Ntb3MuY3J5cHRvLnNlY3AyNTZrMS5QdWJLZXkSIwohArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/dEgQKAggBGAMSEgoMCgR1YnplEgQyMDAwEMCaDBpA2+1YeN5Ev2ARezxDNmPVULt1CDt2Znz2Z3LV3W/C3IoSwjBQguULRSHm/No1p9sSaDWaZeP2GP6e+l7C5s0dog=="
+}

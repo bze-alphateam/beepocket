@@ -4,7 +4,8 @@ Message encoders/decoders for the transaction types BeePocket builds or inspects
 the generated code of [`@bze/bzejs`](https://github.com/bze-alphateam/bzejs) (branch `main-v2`,
 version 4.0.0 = chain v8.3.0). The wallet has no runtime dependency on bzejs, cosmjs or any
 other package outside `@noble/*`, `@scure/*` and `preact`. Do not edit these files by hand;
-correctness is proven byte-for-byte against `bzed` in `../golden.test.ts`.
+correctness is proven byte-for-byte against `bzed` in `../golden.test.ts` (bank sends) and
+`../golden-msgs.test.ts` (a DAO vote, a DAO proposal and a token fee config).
 
 ESLint and Prettier ignore this directory (generated code). `tsc` includes it, but the files
 that carry the original telescope `//@ts-nocheck` line are not type-checked (the trimmed

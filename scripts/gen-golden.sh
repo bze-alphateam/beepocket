@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Regenerates the golden transaction fixtures in packages/core/test/fixtures/golden/ with the
-# real `bzed` binary (needs `bzed` on PATH; fixtures were made with v8.2.0). Everything runs
+# real `bzed` binary (needs `bzed` on PATH; the bank sends were made with v8.2.0 and are unchanged
+# with v8.3.0, the BZE module messages in golden-msgs/ were made with v8.3.0-rc1). Everything runs
 # offline against a throwaway keyring holding the public test mnemonic ("abandon" x23 + "art").
 # Never use a real key here. Re-running must produce identical files.
 set -euo pipefail
@@ -15,11 +16,12 @@ FOREIGN_GAS=300000
 ADDR1=bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p
 FACTORY=factory/bze13gzq40che93tgfm9kzmkpjamah5nj0j73pyhqk/uvdl
 
-out="$(cd "$(dirname "$0")/.." && pwd)/packages/core/test/fixtures/golden"
+fixtures="$(cd "$(dirname "$0")/.." && pwd)/packages/core/test/fixtures"
+out="$fixtures/golden"
 home=$(mktemp -d)
 work=$(mktemp -d)
 trap 'rm -rf "$home" "$work"' EXIT
-mkdir -p "$out"
+mkdir -p "$out" "$fixtures/golden-msgs"
 
 mnemonic="$(printf 'abandon %.0s' $(seq 23))art"
 keyring=(--keyring-backend test --home "$home")
@@ -36,7 +38,9 @@ unsigned() {
     --fees "$fees" --note "$note" "${keyring[@]}" >"$file"
 }
 
-# finish <name> <description> <unsigned-file>: sign, encode, write the fixture.
+# finish <name> <description> <unsigned-file>: sign, encode, write the fixture to $out.
+# Bank sends keep their messages in the wallet's MsgSend shape; with `raw_messages` set, the
+# messages are written as bzed prints them (the module messages in golden-msgs/).
 finish() {
   local name=$1 description=$2 file=$3
   "$BZED" tx sign "$file" --from signer --offline --sign-mode direct \
@@ -63,7 +67,8 @@ finish() {
     --arg name "$name" --arg description "$description" \
     --arg chainId "$CHAIN_ID" --arg accountNumber "$ACCOUNT_NUMBER" --arg sequence "$SEQUENCE" \
     --arg pubKey "$pubkey" --arg signer "$addr0" --arg raw "$raw" \
-    --slurpfile tx "$work/signed.json" --argjson parts "$parts" '
+    --slurpfile tx "$work/signed.json" --argjson parts "$parts" \
+    --arg raw_messages "${raw_messages:-}" '
     {
       name: $name,
       description: $description,
@@ -76,8 +81,9 @@ finish() {
       gasLimit: $tx[0].auth_info.fee.gas_limit,
       fee: $tx[0].auth_info.fee.amount,
       memo: $tx[0].body.memo,
-      messages: [$tx[0].body.messages[] | {
-        typeUrl: ."@type", fromAddress: .from_address, toAddress: .to_address, amount: .amount }],
+      messages: (if $raw_messages == "" then [$tx[0].body.messages[] | {
+        typeUrl: ."@type", fromAddress: .from_address, toAddress: .to_address, amount: .amount }]
+        else $tx[0].body.messages end),
       bodyBytes: $parts.body,
       authInfoBytes: $parts.authInfo,
       signature: $parts.signature,
@@ -102,3 +108,27 @@ unsigned "$work/e1.json" 2000ubze "" "$ADDR1" 1000000ubze
 unsigned "$work/e2.json" 2000ubze "" "$ADDR1" 250000"$FACTORY"
 jq -c '.body.messages += input.body.messages' "$work/e1.json" "$work/e2.json" >"$work/e.json"
 finish two-messages "two bank sends in one transaction (ubze and a factory denom)" "$work/e.json"
+
+# module <name> <description> <message-json>: one module message signed by the test key. bzed has
+# no offline builder for every message, so the message replaces the one of an unsigned send.
+module() {
+  local name=$1 description=$2 msg=$3
+  unsigned "$work/m.json" 2000ubze "" "$ADDR1" 1ubze
+  jq -c --argjson msg "$msg" '.body.messages = [$msg]' "$work/m.json" >"$work/m2.json"
+  out="$fixtures/golden-msgs" raw_messages=1 finish "$name" "$description" "$work/m2.json"
+}
+
+module dao-vote "a DAO vote: yes on proposal 4" "$(jq -nc --arg v "$addr0" \
+  '{"@type": "/bze.dao.MsgVote", voter: $v, proposal_id: "4", option: "YES"}')"
+
+module dao-submit-proposal "a DAO proposal that sends 5,000,000 ubze from the DAO" "$(jq -nc \
+  --arg p "$addr0" --arg dao "$ADDR1" '{
+    "@type": "/bze.dao.MsgSubmitProposal", proposer: $p, dao_id: "2", title: "Fund the meetup",
+    summary: "Pay the venue", expedited: false,
+    msgs: [{"@type": "/cosmos.bank.v1beta1.MsgSend", from_address: $dao, to_address: $p,
+      amount: [{denom: "ubze", amount: "5000000"}]}]}')"
+
+module set-denom-config "token fees for a factory denom: 1% transfer fee, 0.5 gas surcharge" "$(jq -nc \
+  --arg c "$addr0" --arg d "$FACTORY" --arg pool "$ADDR1" '{
+    "@type": "/bze.tokenfactory.MsgSetDenomConfig", creator: $c, denom: $d, community_pool: $pool,
+    transfer_fee: "0.010000000000000000", gas_surcharge: "0.500000000000000000"}')"
