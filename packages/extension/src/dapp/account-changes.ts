@@ -2,8 +2,11 @@ import type { NetworkId } from '@beepocket/core';
 import type { Deliverer } from './deliver';
 import type { DocumentLog } from './documents';
 
-/** Which documents to tell: those of one site on one network, or all of them. */
-export type Audience = { origin: string; network: NetworkId } | 'all';
+/**
+ * Which documents to tell: those of one site on one network, or every document of the given
+ * sites, whatever network they last talked on.
+ */
+export type Audience = { origin: string; network: NetworkId } | { origins: ReadonlySet<string> };
 
 export interface AccountChangesDeps {
   documents: Pick<DocumentLog, 'list' | 'drop'>;
@@ -20,8 +23,8 @@ export class AccountChanges {
   async notify(audience: Audience): Promise<void> {
     const all = await this.deps.documents.list();
     const targets =
-      audience === 'all'
-        ? all
+      'origins' in audience
+        ? all.filter((d) => audience.origins.has(d.origin))
         : all.filter((d) => d.origin === audience.origin && d.network === audience.network);
     const sent = await Promise.all(
       targets.map(async (d) => ((await this.deps.deliverer.push(d, 'accountChanged')) ? null : d)),

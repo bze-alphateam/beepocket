@@ -1,3 +1,4 @@
+import type { NetworkId } from '@beepocket/core';
 import {
   ErrorCodes,
   fail,
@@ -42,7 +43,7 @@ export interface DappServiceDeps {
   deliverer: Deliverer;
   documents: Pick<DocumentLog, 'record' | 'removeTab'>;
   changes: Pick<AccountChanges, 'notify'>;
-  sites: Pick<SitesService, 'list' | 'current' | 'change' | 'disconnect'>;
+  sites: Pick<SitesService, 'list' | 'current' | 'change' | 'disconnect' | 'connectedOrigins'>;
   services: Pick<Services, 'activeNetwork'>;
   /** Requests being handled and whether their page gave up on them; `sendTx` checks it too. */
   cancellations: Cancellations;
@@ -94,9 +95,16 @@ export class DappService {
     return this.deps.sites;
   }
 
-  /** The network switched: every site's view changed, so every open page is told. */
-  networkChanged(): Promise<void> {
-    return this.deps.changes.notify('all');
+  /**
+   * The network switched from `from` to `to`: what a site connected on either of them sees has
+   * changed, so its open pages are told. No other page is. While the connected sites cannot be
+   * read (the wallet is locked), no page is told; a connected page learns the change on its
+   * next call.
+   */
+  async networkChanged(from: NetworkId, to: NetworkId): Promise<void> {
+    const origins = await this.deps.sites.connectedOrigins([from, to]);
+    if (origins === null || origins.size === 0) return;
+    await this.deps.changes.notify({ origins });
   }
 
   /** `message` is the untrusted `dapp` field of a content-script message; `from` is the browser's word. */

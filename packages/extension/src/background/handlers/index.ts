@@ -35,7 +35,7 @@ export function registerHandlers(registry: HandlerRegistry, deps: HandlerDeps): 
     new SettingsService({
       wallet: deps.wallet,
       storage: deps.platform.storage,
-      onNetworkChanged: () => deps.dapp.networkChanged(),
+      onNetworkChanged: (from, to) => deps.dapp.networkChanged(from, to),
     }),
   );
   registerBookHandlers(registry, walletBookStore(deps.wallet));
