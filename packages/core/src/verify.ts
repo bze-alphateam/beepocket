@@ -96,6 +96,9 @@ export function verifySignRequest(input: VerifyInput): VerifyResult {
     return fail('bad-body', 'The transaction has too many messages');
   if (body.extensionOptions.length > 0 || body.nonCriticalExtensionOptions.length > 0)
     return fail('bad-body', 'Transaction extension options are not supported');
+  // An unordered transaction skips the sequence the wallet checks; neither is shown to the user.
+  if (body.unordered || body.timeoutTimestamp !== undefined)
+    return fail('bad-body', 'Unordered transactions and time-based timeouts are not supported');
   const messages: AnyMsg[] = body.messages.map((m) => ({ typeUrl: m.typeUrl, value: m.value }));
 
   if (signDoc.authInfoBytes.length > MAX_AUTH_INFO_BYTES)

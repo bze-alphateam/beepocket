@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/bank/v1beta1/bank.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 4.0.0 (src/cosmos/bank/v1beta1/bank.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";
 import { BinaryReader, BinaryWriter } from "../../../binary";
@@ -317,28 +317,20 @@ export interface Metadata {
   display: string;
   /**
    * name defines the name of the token (eg: Cosmos Atom)
-   * 
-   * Since: cosmos-sdk 0.43
    */
   name: string;
   /**
    * symbol is the token symbol usually shown on exchanges (eg: ATOM). This can
    * be the same as the display.
-   * 
-   * Since: cosmos-sdk 0.43
    */
   symbol: string;
   /**
    * URI to a document (on or off-chain) that contains additional information. Optional.
-   * 
-   * Since: cosmos-sdk 0.46
    */
   uri: string;
   /**
    * URIHash is a sha256 hash of a document pointed by URI. It's used to verify that
    * the document didn't change. Optional.
-   * 
-   * Since: cosmos-sdk 0.46
    */
   uriHash: string;
 }
@@ -370,28 +362,20 @@ export interface MetadataAmino {
   display?: string;
   /**
    * name defines the name of the token (eg: Cosmos Atom)
-   * 
-   * Since: cosmos-sdk 0.43
    */
   name?: string;
   /**
    * symbol is the token symbol usually shown on exchanges (eg: ATOM). This can
    * be the same as the display.
-   * 
-   * Since: cosmos-sdk 0.43
    */
   symbol?: string;
   /**
    * URI to a document (on or off-chain) that contains additional information. Optional.
-   * 
-   * Since: cosmos-sdk 0.46
    */
   uri?: string;
   /**
    * URIHash is a sha256 hash of a document pointed by URI. It's used to verify that
    * the document didn't change. Optional.
-   * 
-   * Since: cosmos-sdk 0.46
    */
   uri_hash?: string;
 }

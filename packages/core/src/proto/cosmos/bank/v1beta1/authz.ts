@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/bank/v1beta1/authz.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 4.0.0 (src/cosmos/bank/v1beta1/authz.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";
 import { BinaryReader, BinaryWriter } from "../../../binary";
@@ -6,8 +6,6 @@ import { GlobalDecoderRegistry } from "../../../registry";
 /**
  * SendAuthorization allows the grantee to spend up to spend_limit coins from
  * the granter's account.
- * 
- * Since: cosmos-sdk 0.43
  * @name SendAuthorization
  * @package cosmos.bank.v1beta1
  * @see proto type: cosmos.bank.v1beta1.SendAuthorization
@@ -18,8 +16,6 @@ export interface SendAuthorization {
   /**
    * allow_list specifies an optional list of addresses to whom the grantee can send tokens on behalf of the
    * granter. If omitted, any recipient is allowed.
-   * 
-   * Since: cosmos-sdk 0.47
    */
   allowList: string[];
 }
@@ -30,8 +26,6 @@ export interface SendAuthorizationProtoMsg {
 /**
  * SendAuthorization allows the grantee to spend up to spend_limit coins from
  * the granter's account.
- * 
- * Since: cosmos-sdk 0.43
  * @name SendAuthorizationAmino
  * @package cosmos.bank.v1beta1
  * @see proto type: cosmos.bank.v1beta1.SendAuthorization
@@ -41,8 +35,6 @@ export interface SendAuthorizationAmino {
   /**
    * allow_list specifies an optional list of addresses to whom the grantee can send tokens on behalf of the
    * granter. If omitted, any recipient is allowed.
-   * 
-   * Since: cosmos-sdk 0.47
    */
   allow_list?: string[];
 }
@@ -53,8 +45,6 @@ export interface SendAuthorizationAminoMsg {
 /**
  * SendAuthorization allows the grantee to spend up to spend_limit coins from
  * the granter's account.
- * 
- * Since: cosmos-sdk 0.43
  * @name SendAuthorizationSDKType
  * @package cosmos.bank.v1beta1
  * @see proto type: cosmos.bank.v1beta1.SendAuthorization
@@ -74,8 +64,6 @@ function createBaseSendAuthorization(): SendAuthorization {
 /**
  * SendAuthorization allows the grantee to spend up to spend_limit coins from
  * the granter's account.
- * 
- * Since: cosmos-sdk 0.43
  * @name SendAuthorization
  * @package cosmos.bank.v1beta1
  * @see proto type: cosmos.bank.v1beta1.SendAuthorization

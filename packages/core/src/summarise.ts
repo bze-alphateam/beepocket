@@ -80,6 +80,32 @@ import type {
   MsgSetDenomMetadata,
 } from './proto/bze/tokenfactory/tx';
 import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
+import {
+  MsgAcceptAdminNomination,
+  MsgAdminExecute,
+  MsgCancelProposal,
+  MsgCleanupProposal,
+  MsgCreateDao,
+  MsgNominateAdmin,
+  MsgSettleProposal,
+  MsgSubmitProposal,
+  MsgUpdateDaoConfig,
+  MsgUpdateElectorate,
+  MsgUpdateMembers,
+  MsgUpdateMetadata,
+  MsgVote as DaoMsgVote,
+  MsgWithdrawAdminNomination,
+} from './proto/bze/dao/tx';
+import {
+  DaoType,
+  DepositRefundPolicy,
+  FundsDestination,
+  VoteOption as DaoVoteOption,
+  type DaoConfig,
+  type StakeElectorate,
+} from './proto/bze/dao/store';
+import * as guardian from './proto/bze/guardian/v1/tx';
+import type { Duration } from './proto/google/protobuf/duration';
 import { bzeAddressHash, signersOf } from './signers';
 import { sanitiseText } from './text';
 import { labelText, tokenLabel } from './lookalike';
@@ -1060,6 +1086,51 @@ function nestRows(rows: SummaryRow[], n: number): SummaryRow[] {
   });
 }
 
+/** Types that wrap other messages: an authz exec, a DAO proposal and a DAO admin run. */
+const WRAPPERS = new Set([MsgExec.typeUrl, MsgSubmitProposal.typeUrl, MsgAdminExecute.typeUrl]);
+
+/**
+ * Summaries of the messages a wrapper holds, at `depth + 1`. Only the first `MAX_EXEC_ROWS`
+ * make node calls; a message that cannot be summarised is unreadable and dangerous.
+ */
+function wrappedParts(
+  l: Lookups,
+  msgs: AnyMsg[],
+  depth: number,
+  me: string | undefined,
+): Promise<Parts[]> {
+  return Promise.all(
+    msgs.map(async (m, i) => {
+      const lookups = i < MAX_EXEC_ROWS ? l : l.offline();
+      try {
+        return await partsOf(lookups, m, depth + 1, me);
+      } catch {
+        return unreadableParts(m);
+      }
+    }),
+  );
+}
+
+/**
+ * The rows of wrapped messages: a `Message N` line for each of the first `MAX_EXEC_ROWS`, the
+ * row saying whose account it runs from, then its own rows; a count of the rest.
+ */
+function wrappedRows(
+  msgs: AnyMsg[],
+  inner: Parts[],
+  accountRow: (i: number) => SummaryRow,
+): SummaryRow[] {
+  const rows: SummaryRow[] = [];
+  inner.slice(0, MAX_EXEC_ROWS).forEach((p, i) => {
+    const own = WRAPPERS.has(msgs[i]?.typeUrl ?? '') ? nestRows(p.rows, i + 1) : p.rows;
+    rows.push([`Message ${String(i + 1)}`, `${p.title} · ${p.hero} · ${p.sub}`]);
+    rows.push(accountRow(i), ...own);
+  });
+  const more = msgs.length - MAX_EXEC_ROWS;
+  if (more > 0) rows.push(['…', `${String(more)} more ${more === 1 ? 'message' : 'messages'}`]);
+  return rows;
+}
+
 /**
  * `me` is the grantee of the outermost exec, which the request checks pin to the signing
  * address; nested execs compare their messages' signers with it too. Only the first
@@ -1069,15 +1140,7 @@ function nestRows(rows: SummaryRow[], n: number): SummaryRow[] {
 async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): Promise<Parts> {
   const self = me ?? msg.grantee;
   const authorities = msg.msgs.map((m) => authorityOf(self, m, depth + 1));
-  const summarised = async (m: AnyMsg, i: number): Promise<Parts> => {
-    const lookups = i < MAX_EXEC_ROWS ? l : l.offline();
-    try {
-      return await partsOf(lookups, m, depth + 1, self);
-    } catch {
-      return unreadableParts(m);
-    }
-  };
-  const inner = await Promise.all(msg.msgs.map(summarised));
+  const inner = await wrappedParts(l, msg.msgs, depth, self);
   const nested: DangerNotice[] = [];
   // A hidden message needs a look unless it is an ordinary message of another readable account.
   let flagged = 0;
@@ -1117,15 +1180,9 @@ async function execParts(l: Lookups, msg: MsgExec, depth: number, me?: string): 
       nested,
     };
   }
-  const rows: SummaryRow[] = [];
-  inner.slice(0, MAX_EXEC_ROWS).forEach((p, i) => {
-    const a: Authority = authorities[i] ?? { kind: 'unknown' };
-    const own = msg.msgs[i]?.typeUrl === MsgExec.typeUrl ? nestRows(p.rows, i + 1) : p.rows;
-    rows.push([`Message ${String(i + 1)}`, `${p.title} · ${p.hero} · ${p.sub}`]);
-    rows.push(authorityRow(a), ...own);
-  });
-  const more = msg.msgs.length - MAX_EXEC_ROWS;
-  if (more > 0) rows.push(['…', `${String(more)} more ${more === 1 ? 'message' : 'messages'}`]);
+  const rows = wrappedRows(msg.msgs, inner, (i) =>
+    authorityRow(authorities[i] ?? { kind: 'unknown' }),
+  );
   const count = msg.msgs.length;
   return {
     level: 'dangerous',
@@ -1464,7 +1521,7 @@ async function changeAdminParts(l: Lookups, msg: MsgChangeAdmin): Promise<Parts>
   }
   const who = l.who(msg.newAdmin);
   return {
-    // The new admin can mint and change the token, and nothing gives it back.
+    // The new admin controls the token, and nothing gives it back.
     level: 'dangerous',
     icon: 'admin',
     title: 'Hand over admin',
@@ -1476,7 +1533,8 @@ async function changeAdminParts(l: Lookups, msg: MsgChangeAdmin): Promise<Parts>
     ],
     danger: {
       title: `This gives ${who} control of ${symbol}`,
-      text: `They can mint and change ${symbol}. You can't undo this.`,
+      // Whether they can mint depends on the token: a handover never turns minting back on.
+      text: `They can change ${symbol} and pass it on. You can't undo this.`,
     },
   };
 }
@@ -1516,6 +1574,467 @@ async function setBrandingParts(l: Lookups, msg: MsgSetDenomBranding): Promise<P
     sub: 'colours and font of the token',
     rows,
   };
+}
+
+// ---- tokenfactory: token config ----
+
+/** A ratio as a percentage: `0.05` → `5%`; the raw text when it is not a plain decimal. */
+function percentText(ratio: string): string {
+  if (!isDecimal(ratio)) return safeText(ratio, 40);
+  const [whole = '0', fraction = ''] = ratio.split('.');
+  const digits = `${whole}${fraction.padEnd(2, '0')}`;
+  const units = digits.slice(0, whole.length + 2).replace(/^0+(?=\d)/, '');
+  const rest = fraction.slice(2).replace(/0+$/, '');
+  return `${units}${rest === '' ? '' : `.${rest}`}%`;
+}
+
+async function setDenomConfigParts(l: Lookups, msg: factory.MsgSetDenomConfig): Promise<Parts> {
+  const symbol = (await l.token(msg.denom)).symbol;
+  const transfer = percentText(msg.transferFee);
+  const surcharge = percentText(msg.gasSurcharge);
+  const receiver: SummaryRow =
+    msg.communityPool === ''
+      ? ['Fees go to', 'No one']
+      : ['Fees go to', safeText(msg.communityPool, 80), 'mono'];
+  return {
+    level: isDecimal(msg.transferFee) && isDecimal(msg.gasSurcharge) ? 'normal' : 'unknown',
+    icon: 'settings',
+    title: 'Set token fees',
+    hero: symbol,
+    sub: `${transfer} transfer fee, ${surcharge} gas surcharge`,
+    rows: [['Token', symbol], ['Transfer fee', transfer], ['Gas surcharge', surcharge], receiver],
+  };
+}
+
+async function disableMintingParts(l: Lookups, msg: factory.MsgDisableMinting): Promise<Parts> {
+  const symbol = (await l.token(msg.denom)).symbol;
+  return {
+    level: 'dangerous',
+    icon: 'admin',
+    title: 'Stop minting',
+    hero: symbol,
+    sub: 'for good',
+    rows: [['Token', symbol]],
+    danger: {
+      title: `No one can mint ${symbol} again`,
+      text: "This turns minting off for good, for you and any later admin. You can't undo this.",
+    },
+  };
+}
+
+// ---- DAOs ----
+
+const daoText = (id: bigint): string => `DAO #${id.toString()}`;
+const proposalText = (id: bigint): string => `proposal #${id.toString()}`;
+
+const DAO_VOTES: Partial<Record<DaoVoteOption, string>> = {
+  [DaoVoteOption.YES]: 'Yes',
+  [DaoVoteOption.NO]: 'No',
+  [DaoVoteOption.ABSTAIN]: 'Abstain',
+};
+
+/** A duration in whole days, hours, minutes or seconds. */
+function periodText(d: Duration | undefined): string {
+  if (!d) return 'None';
+  const s = d.seconds;
+  for (const [unit, name] of [
+    [86_400n, 'day'],
+    [3_600n, 'hour'],
+    [60n, 'minute'],
+  ] as const) {
+    if (s > 0n && s % unit === 0n) return plural(s / unit, name);
+  }
+  return plural(s, 'second');
+}
+
+const DESTINATIONS: Partial<Record<FundsDestination, string>> = {
+  [FundsDestination.BURN]: 'burned',
+  [FundsDestination.TREASURY]: "kept in the DAO's account",
+};
+
+const REFUNDS: Partial<Record<DepositRefundPolicy, string>> = {
+  [DepositRefundPolicy.ALWAYS]: 'always given back',
+  [DepositRefundPolicy.ONLY_PASSED]: 'given back only when the proposal passes',
+  [DepositRefundPolicy.NEVER]: 'never given back',
+};
+
+/** A coin of a DAO config; `null` when it is absent or zero. */
+async function daoCoin(l: Lookups, coin: Coin | undefined): Promise<string | null> {
+  if (!coin || coin.denom === '' || coin.amount === '' || coin.amount === '0') return null;
+  return l.money(coin.denom, coin.amount);
+}
+
+/** The voting rules of a DAO config. */
+async function daoConfigRows(l: Lookups, c: DaoConfig): Promise<SummaryRow[]> {
+  const [cost, deposit] = await Promise.all([
+    daoCoin(l, c.proposalCost),
+    daoCoin(l, c.proposalDeposit),
+  ]);
+  const rows: SummaryRow[] = [
+    ['Quorum', percentText(c.minQuorum)],
+    ['Passes above', `${percentText(c.threshold)} yes`],
+    ['Voting period', periodText(c.votingPeriod)],
+    [
+      'Expedited voting',
+      c.allowExpedite
+        ? `${periodText(c.expeditedPeriod)}, quorum ${percentText(c.expediteQuorum)}, passes above ${percentText(c.expediteThreshold)} yes`
+        : 'Off',
+    ],
+    ['Who can propose', c.openSubmission ? 'Anyone' : 'Voters only'],
+    [
+      'Proposal cost',
+      cost === null ? 'None' : `${cost}, ${DESTINATIONS[c.costDestination] ?? 'unknown'}`,
+    ],
+  ];
+  if (deposit === null) {
+    rows.push(['Proposal deposit', 'None']);
+  } else {
+    const refund = REFUNDS[c.depositRefundPolicy] ?? 'unknown';
+    const kept = DESTINATIONS[c.keptDepositDestination] ?? 'unknown';
+    rows.push(['Proposal deposit', `${deposit}, ${refund}; when kept, ${kept}`]);
+  }
+  return rows;
+}
+
+/** Whether every enum of a DAO config has a value the wallet knows. */
+const knownConfig = (c: DaoConfig): boolean =>
+  DESTINATIONS[c.costDestination] !== undefined &&
+  DESTINATIONS[c.keptDepositDestination] !== undefined &&
+  REFUNDS[c.depositRefundPolicy] !== undefined;
+
+/** A list of addresses: the first `MAX_EXEC_ROWS`, then how many more. */
+function addressRows(label: string, addresses: string[]): SummaryRow[] {
+  const rows = addresses
+    .slice(0, MAX_EXEC_ROWS)
+    .map((a): SummaryRow => [label, safeText(a, 80), 'mono']);
+  const more = addresses.length - MAX_EXEC_ROWS;
+  if (more > 0) rows.push(['…', `${String(more)} more`]);
+  return rows;
+}
+
+function electorateRows(e: StakeElectorate | undefined): SummaryRow[] {
+  const sources = (e?.srIds ?? []).map((id) => `staking reward ${idText(id)}`);
+  const drDenom = e?.drDenom ?? '';
+  if (drDenom !== '') sources.push(`holder reward of ${safeText(drDenom, 80)}`);
+  if (sources.length === 0) return [['Voters', 'No one']];
+  return [['Voters', `Stakers of ${sources.slice(0, MAX_EXEC_ROWS).join(', ')}`]];
+}
+
+async function createDaoParts(l: Lookups, msg: MsgCreateDao): Promise<Parts> {
+  const name = safeText(msg.name, 60);
+  const stake = msg.type === DaoType.DAO_TYPE_STAKE;
+  const known = stake || msg.type === DaoType.DAO_TYPE_STATIC_LIST;
+  const voters = stake
+    ? electorateRows(msg.electorate)
+    : [
+        ['Members', plural(BigInt(msg.members.length), 'member')] as SummaryRow,
+        ...addressRows('Member', msg.members),
+      ];
+  const admin: SummaryRow =
+    msg.admin === ''
+      ? ['Admin', 'None: its voters run it']
+      : ['Admin', safeText(msg.admin, 80), 'mono'];
+  return {
+    level: known && knownConfig(msg.config) ? 'normal' : 'unknown',
+    icon: 'create',
+    title: 'Create DAO',
+    hero: name,
+    sub: stake ? 'voted by stakers' : `voted by ${plural(BigInt(msg.members.length), 'member')}`,
+    rows: [
+      ['Name', name],
+      ['Description', safeText(msg.description, 200)],
+      admin,
+      ...voters,
+      ...(await daoConfigRows(l, msg.config)),
+      ['Creation fee', "The chain's DAO creation fee"],
+    ],
+  };
+}
+
+/** A DAO's messages that its account signs, each read as an inner message. */
+async function daoWrapperParts(
+  l: Lookups,
+  msgs: AnyMsg[],
+  depth: number,
+  runsAs: string,
+): Promise<{ rows: SummaryRow[]; unreadable: number }> {
+  // The DAO signs these, never the wallet: a nested exec is read for its own grantee.
+  const inner = await wrappedParts(l, msgs, depth, '');
+  const rows = wrappedRows(msgs, inner, () => ['Runs as', runsAs]);
+  return { rows, unreadable: inner.filter((p) => p.unreadable).length };
+}
+
+function unreadableNotice(count: number): DangerNotice {
+  return {
+    title:
+      count === 1
+        ? 'The wallet cannot read 1 message inside'
+        : `The wallet cannot read ${String(count)} messages inside`,
+    text: 'It cannot tell what they do with the DAO and its funds. Continue only if you expect that.',
+  };
+}
+
+async function submitProposalParts(
+  l: Lookups,
+  msg: MsgSubmitProposal,
+  depth: number,
+): Promise<Parts> {
+  const dao = daoText(msg.daoId);
+  const count = msg.msgs.length;
+  const { rows, unreadable } = await daoWrapperParts(l, msg.msgs, depth, `${dao}, if it passes`);
+  const title = safeText(msg.title, 80);
+  return {
+    level: unreadable > 0 ? 'dangerous' : 'normal',
+    icon: 'vote',
+    title: 'DAO proposal',
+    hero: title,
+    sub: `to ${dao} · ${count === 0 ? 'no messages' : plural(BigInt(count), 'message')}`,
+    rows: [
+      ['DAO', dao],
+      ['Title', title],
+      ['Summary', safeText(msg.summary, 200)],
+      ['Voting', msg.expedited ? 'Expedited' : 'Normal'],
+      // Set by the DAO's config, which the request does not carry.
+      ['You pay', "The DAO's proposal cost and deposit, if it has them"],
+      ...rows,
+    ],
+    ...(unreadable > 0 ? { danger: unreadableNotice(unreadable) } : {}),
+  };
+}
+
+async function adminExecuteParts(l: Lookups, msg: MsgAdminExecute, depth: number): Promise<Parts> {
+  const dao = daoText(msg.daoId);
+  const count = msg.msgs.length;
+  const { rows, unreadable } = await daoWrapperParts(l, msg.msgs, depth, dao);
+  return {
+    level: 'dangerous',
+    icon: 'grant',
+    title: 'Run as DAO admin',
+    hero: count === 0 ? 'No messages' : plural(BigInt(count), 'message'),
+    sub: `as ${dao}`,
+    rows: [['DAO', dao], ...rows],
+    danger: {
+      title: `This acts as ${dao} at once`,
+      text: "As its admin, you run these messages with the DAO's account and its funds, without a vote. Continue only if you expect that.",
+    },
+    ...(unreadable > 0 ? { nested: [unreadableNotice(unreadable)] } : {}),
+  };
+}
+
+function daoVoteParts(msg: DaoMsgVote): Parts {
+  const option = DAO_VOTES[msg.option];
+  const proposal = proposalText(msg.proposalId);
+  return {
+    level: option ? 'normal' : 'unknown',
+    icon: 'vote',
+    title: 'DAO vote',
+    hero: option ?? 'Unknown vote',
+    sub: `on DAO ${proposal}`,
+    rows: [
+      ['Proposal', `#${msg.proposalId.toString()}`],
+      ['Vote', option ?? 'Unknown vote'],
+    ],
+  };
+}
+
+function proposalActionParts(icon: MsgIcon, title: string, proposalId: bigint, sub: string): Parts {
+  return {
+    level: 'normal',
+    icon,
+    title,
+    hero: `Proposal #${proposalId.toString()}`,
+    sub,
+    rows: [['Proposal', `#${proposalId.toString()}`]],
+  };
+}
+
+function nominateAdminParts(l: Lookups, msg: MsgNominateAdmin): Parts {
+  const dao = daoText(msg.daoId);
+  if (msg.nominee === '') {
+    return {
+      level: 'dangerous',
+      icon: 'admin',
+      title: 'Give up DAO admin',
+      hero: dao,
+      sub: 'its voters run it from now on',
+      rows: [
+        ['DAO', dao],
+        ['New admin', 'None: its voters'],
+      ],
+      danger: {
+        title: `This hands ${dao} to its voters`,
+        text: "It takes effect at once and the DAO has no admin after this. You can't undo this.",
+      },
+    };
+  }
+  const who = l.who(msg.nominee);
+  return {
+    level: 'dangerous',
+    icon: 'admin',
+    title: 'Nominate DAO admin',
+    hero: dao,
+    sub: `to ${who}`,
+    rows: [
+      ['DAO', dao],
+      ['Nominee', safeText(msg.nominee, 80), 'mono'],
+    ],
+    danger: {
+      title: `This offers ${who} control of ${dao}`,
+      text: 'Once they accept, they run the DAO and its funds. You can withdraw the offer until then.',
+    },
+  };
+}
+
+function daoIdParts(icon: MsgIcon, title: string, daoId: bigint, sub: string): Parts {
+  const dao = daoText(daoId);
+  return { level: 'normal', icon, title, hero: dao, sub, rows: [['DAO', dao]] };
+}
+
+/** A change to a DAO's voters or rules: dangerous, it decides who controls the DAO. */
+function daoChangeDanger(dao: string): DangerNotice {
+  return {
+    title: `This changes who decides in ${dao}`,
+    text: 'It changes who votes or how votes pass. Open proposals keep the rules they started with. Continue only if you expect that.',
+  };
+}
+
+async function updateDaoConfigParts(l: Lookups, msg: MsgUpdateDaoConfig): Promise<Parts> {
+  const dao = daoText(msg.daoId);
+  return {
+    level: 'dangerous',
+    icon: 'settings',
+    title: 'Change DAO rules',
+    hero: dao,
+    sub: 'replaces its voting rules',
+    rows: [['DAO', dao], ...(await daoConfigRows(l, msg.config))],
+    danger: daoChangeDanger(dao),
+  };
+}
+
+function updateMetadataParts(msg: MsgUpdateMetadata): Parts {
+  const dao = daoText(msg.daoId);
+  const name = safeText(msg.name, 60);
+  return {
+    level: 'normal',
+    icon: 'edit',
+    title: 'Rename DAO',
+    hero: dao,
+    sub: `to ${name}`,
+    rows: [
+      ['DAO', dao],
+      ['Name', name],
+      ['Description', safeText(msg.description, 200)],
+    ],
+  };
+}
+
+function updateElectorateParts(msg: MsgUpdateElectorate): Parts {
+  const dao = daoText(msg.daoId);
+  return {
+    level: 'dangerous',
+    icon: 'settings',
+    title: 'Change DAO voters',
+    hero: dao,
+    sub: 'replaces the rewards whose stakers vote',
+    rows: [['DAO', dao], ...electorateRows(msg.electorate)],
+    danger: daoChangeDanger(dao),
+  };
+}
+
+function updateMembersParts(msg: MsgUpdateMembers): Parts {
+  const dao = daoText(msg.daoId);
+  const added = plural(BigInt(msg.add.length), 'member');
+  const removed = plural(BigInt(msg.remove.length), 'member');
+  return {
+    level: 'dangerous',
+    icon: 'settings',
+    title: 'Change DAO members',
+    hero: dao,
+    sub: `adds ${added}, removes ${removed}`,
+    rows: [['DAO', dao], ...addressRows('Add', msg.add), ...addressRows('Remove', msg.remove)],
+    danger: daoChangeDanger(dao),
+  };
+}
+
+// ---- guardian ----
+
+const GUARDIAN_DANGER: DangerNotice = {
+  title: 'Only a chain guardian can send this',
+  text: "It is an emergency action of the chain's guardians, and the chain refuses it from any other address. Continue only if you are one and expect it.",
+};
+
+function guardianParts(hero: string, sub: string, rows: SummaryRow[]): Parts {
+  return {
+    level: 'dangerous',
+    icon: 'settings',
+    title: 'Guardian action',
+    hero,
+    sub,
+    rows: [['Action', hero], ...rows],
+    danger: GUARDIAN_DANGER,
+  };
+}
+
+/** A list of short texts in rows: the first `MAX_EXEC_ROWS`, then how many more. */
+function listRows(label: string, items: string[]): SummaryRow[] {
+  const rows = items
+    .slice(0, MAX_EXEC_ROWS)
+    .map((t): SummaryRow => [label, safeText(t, 120), 'mono']);
+  const more = items.length - MAX_EXEC_ROWS;
+  if (more > 0) rows.push(['…', `${String(more)} more`]);
+  return rows;
+}
+
+function guardianMsgParts(msg: AnyMsg): Parts | null {
+  switch (msg.typeUrl) {
+    case guardian.MsgTightenRateLimit.typeUrl: {
+      const m = guardian.MsgTightenRateLimit.decode(msg.value);
+      return guardianParts('Tighten an IBC rate limit', `of ${safeText(m.denom, 80)}`, [
+        ['Token', safeText(m.denom, 80), 'mono'],
+        ['Channel', safeText(m.channelId, 40), 'mono'],
+        ['Send limit', `${safeText(m.maxPercentSend, 40)}%`],
+        ['Receive limit', `${safeText(m.maxPercentRecv, 40)}%`],
+      ]);
+    }
+    case guardian.MsgBlockDenom.typeUrl: {
+      const m = guardian.MsgBlockDenom.decode(msg.value);
+      return guardianParts('Block a token over IBC', safeText(m.denom, 80), [
+        ['Token', safeText(m.denom, 80), 'mono'],
+      ]);
+    }
+    case guardian.MsgDisableMessages.typeUrl: {
+      const m = guardian.MsgDisableMessages.decode(msg.value);
+      return guardianParts(
+        'Turn off message types',
+        plural(BigInt(m.msgTypeUrls.length), 'type'),
+        listRows('Type', m.msgTypeUrls),
+      );
+    }
+    case guardian.MsgHaltTradingDenoms.typeUrl: {
+      const m = guardian.MsgHaltTradingDenoms.decode(msg.value);
+      return guardianParts(
+        'Halt trading of tokens',
+        plural(BigInt(m.denoms.length), 'token'),
+        listRows('Token', m.denoms),
+      );
+    }
+    case guardian.MsgHaltChain.typeUrl: {
+      const m = guardian.MsgHaltChain.decode(msg.value);
+      return guardianParts('Halt the chain', 'stops the chain', [
+        ['Reason', safeText(m.reason, 200)],
+      ]);
+    }
+    case guardian.MsgPauseAutomation.typeUrl:
+      return guardianParts('Pause automatic chain jobs', 'until governance resumes them', []);
+    case guardian.MsgCloseChannel.typeUrl: {
+      const m = guardian.MsgCloseChannel.decode(msg.value);
+      return guardianParts('Close an IBC channel', safeText(m.channelId, 40), [
+        ['Channel', safeText(m.channelId, 40), 'mono'],
+      ]);
+    }
+    default:
+      return null;
+  }
 }
 
 // ---- burner ----
@@ -2160,6 +2679,67 @@ async function partsOf(l: Lookups, msg: AnyMsg, depth = 0, me?: string): Promise
         return await setMetadataParts(l, factory.MsgSetDenomMetadata.decode(msg.value));
       case factory.MsgSetDenomBranding.typeUrl:
         return await setBrandingParts(l, factory.MsgSetDenomBranding.decode(msg.value));
+      case factory.MsgSetDenomConfig.typeUrl:
+        return await setDenomConfigParts(l, factory.MsgSetDenomConfig.decode(msg.value));
+      case factory.MsgDisableMinting.typeUrl:
+        return await disableMintingParts(l, factory.MsgDisableMinting.decode(msg.value));
+      case MsgCreateDao.typeUrl:
+        return await createDaoParts(l, MsgCreateDao.decode(msg.value));
+      case MsgSubmitProposal.typeUrl:
+        if (depth >= MAX_EXEC_DEPTH)
+          return { ...unknownParts(msg, 'Nested too deeply to read'), level: 'dangerous' };
+        return await submitProposalParts(l, MsgSubmitProposal.decode(msg.value), depth);
+      case MsgAdminExecute.typeUrl:
+        if (depth >= MAX_EXEC_DEPTH)
+          return { ...unknownParts(msg, 'Nested too deeply to read'), level: 'dangerous' };
+        return await adminExecuteParts(l, MsgAdminExecute.decode(msg.value), depth);
+      case DaoMsgVote.typeUrl:
+        return daoVoteParts(DaoMsgVote.decode(msg.value));
+      case MsgCancelProposal.typeUrl:
+        return proposalActionParts(
+          'cancel',
+          'Cancel DAO proposal',
+          MsgCancelProposal.decode(msg.value).proposalId,
+          'withdraws your proposal from the vote',
+        );
+      case MsgSettleProposal.typeUrl:
+        return proposalActionParts(
+          'vote',
+          'Settle DAO proposal',
+          MsgSettleProposal.decode(msg.value).proposalId,
+          'counts the votes and runs it if it passed',
+        );
+      case MsgCleanupProposal.typeUrl:
+        return proposalActionParts(
+          'vote',
+          'Clean up DAO proposal',
+          MsgCleanupProposal.decode(msg.value).proposalId,
+          'deletes a finished proposal',
+        );
+      case MsgNominateAdmin.typeUrl:
+        return nominateAdminParts(l, MsgNominateAdmin.decode(msg.value));
+      case MsgAcceptAdminNomination.typeUrl:
+        return daoIdParts(
+          'admin',
+          'Accept DAO admin',
+          MsgAcceptAdminNomination.decode(msg.value).daoId,
+          'you become its admin',
+        );
+      case MsgWithdrawAdminNomination.typeUrl:
+        return daoIdParts(
+          'cancel',
+          'Withdraw DAO admin offer',
+          MsgWithdrawAdminNomination.decode(msg.value).daoId,
+          'cancels the pending handover',
+        );
+      case MsgUpdateDaoConfig.typeUrl:
+        return await updateDaoConfigParts(l, MsgUpdateDaoConfig.decode(msg.value));
+      case MsgUpdateMetadata.typeUrl:
+        return updateMetadataParts(MsgUpdateMetadata.decode(msg.value));
+      case MsgUpdateElectorate.typeUrl:
+        return updateElectorateParts(MsgUpdateElectorate.decode(msg.value));
+      case MsgUpdateMembers.typeUrl:
+        return updateMembersParts(MsgUpdateMembers.decode(msg.value));
       case MsgStartRaffle.typeUrl:
         return await startRaffleParts(l, MsgStartRaffle.decode(msg.value));
       case MsgMoveIbcLockedCoins.typeUrl: {
@@ -2252,13 +2832,13 @@ async function partsOf(l: Lookups, msg: AnyMsg, depth = 0, me?: string): Promise
         ]);
       }
       default:
-        return unknownParts(msg);
+        return guardianMsgParts(msg) ?? unknownParts(msg);
     }
   } catch {
     // Bytes that do not decode as their type, or a summariser bug: never a normal message.
     return msg.typeUrl === MsgGrant.typeUrl ||
       msg.typeUrl === MsgGrantAllowance.typeUrl ||
-      msg.typeUrl === MsgExec.typeUrl
+      WRAPPERS.has(msg.typeUrl)
       ? { ...unknownParts(msg, 'Unreadable'), level: 'dangerous' }
       : unknownParts(msg, `${safeText(msg.typeUrl)} (unreadable)`);
   }
