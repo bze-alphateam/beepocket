@@ -111,6 +111,8 @@ test('Connect waits a moment after focus, and a press made before that does not 
     // The window comes back to the front: pressed at once, released only once Connect responds.
     await request.evaluate(() => window.dispatchEvent(new Event('focus')));
     await request.mouse.down();
+    // Held past the delay, so the release lands on a button that responds again.
+    await request.waitForTimeout(600);
     await expect(button).toBeEnabled();
     await request.mouse.up();
     // Nothing was answered: the request stays on screen and a fresh click still connects.

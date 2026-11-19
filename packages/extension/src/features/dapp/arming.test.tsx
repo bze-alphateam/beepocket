@@ -267,6 +267,42 @@ describe('the answer buttons of the request window', () => {
     expect(t.answers()).toHaveLength(1);
   });
 
+  it('ignores a click whose press began before the window last came back', async () => {
+    const t = rig({ ...base, 'dapp.current': () => ok(SIGN), 'dapp.answer': () => ok({}) });
+    await settle();
+    await t.arm();
+    await settle();
+    fireEvent(button(t.host, 'Approve'), 'pointerdown');
+    await t.regain();
+    await t.arm();
+    await settle();
+    expect(button(t.host, 'Approve')?.disabled).toBe(false);
+    fireEvent(button(t.host, 'Approve'), 'click');
+    await settle();
+    expect(t.answers()).toHaveLength(0);
+  });
+
+  it('ignores a pointer click it never saw pressed, and takes one it did', async () => {
+    const t = rig({ ...base, 'dapp.current': () => ok(SIGN), 'dapp.answer': () => ok({}) });
+    await settle();
+    await t.arm();
+    await settle();
+    const pointerClick = () =>
+      act(() => {
+        button(t.host, 'Approve')?.dispatchEvent(
+          new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }),
+        );
+      });
+    await pointerClick();
+    await settle();
+    expect(t.answers()).toHaveLength(0);
+
+    fireEvent(button(t.host, 'Approve'), 'pointerdown');
+    await pointerClick();
+    await settle();
+    expect(t.answers()).toHaveLength(1);
+  });
+
   it('starts the delay again when another request takes the place of the one on screen', async () => {
     const other: RequestView = {
       ...SIGN,
