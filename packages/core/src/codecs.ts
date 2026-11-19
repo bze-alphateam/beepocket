@@ -19,6 +19,8 @@ import * as burnerMsgs from './proto/bze/burner/tx';
 import * as rewardsMsgs from './proto/bze/rewards/tx';
 import * as tokenfactoryMsgs from './proto/bze/tokenfactory/tx';
 import * as cointrunkMsgs from './proto/bze/cointrunk/tx';
+import * as daoMsgs from './proto/bze/dao/tx';
+import * as guardianMsgs from './proto/bze/guardian/v1/tx';
 import * as stakingMsgs from './proto/cosmos/staking/v1beta1/tx';
 import * as distributionMsgs from './proto/cosmos/distribution/v1beta1/tx';
 import * as transferMsgs from './proto/ibc/applications/transfer/v1/tx';
@@ -70,6 +72,8 @@ for (const mod of [
   rewardsMsgs,
   tokenfactoryMsgs,
   cointrunkMsgs,
+  daoMsgs,
+  guardianMsgs,
   stakingMsgs,
   distributionMsgs,
   transferMsgs,

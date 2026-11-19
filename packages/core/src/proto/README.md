@@ -2,9 +2,10 @@
 
 Message encoders/decoders for the transaction types BeePocket builds or inspects, copied from
 the generated code of [`@bze/bzejs`](https://github.com/bze-alphateam/bzejs) (branch `main-v2`,
-version 3.2.0 = chain v8.2.0). The wallet has no runtime dependency on bzejs, cosmjs or any
+version 4.0.0 = chain v8.3.0). The wallet has no runtime dependency on bzejs, cosmjs or any
 other package outside `@noble/*`, `@scure/*` and `preact`. Do not edit these files by hand;
-correctness is proven byte-for-byte against `bzed` in `../golden.test.ts`.
+correctness is proven byte-for-byte against `bzed` in `../golden.test.ts` (bank sends) and
+`../golden-msgs.test.ts` (a DAO vote, a DAO proposal and a token fee config).
 
 ESLint and Prettier ignore this directory (generated code). `tsc` includes it, but the files
 that carry the original telescope `//@ts-nocheck` line are not type-checked (the trimmed
@@ -23,7 +24,7 @@ prepended, except where noted. The copied files still import `GlobalDecoderRegis
 - `helpers.ts` (the base64 re-export from `@interchainjs/encoding` is replaced with `@scure/base`,
   and the unused `setPaginationParams`, which needs Node's `Buffer`, is dropped)
 - `google/protobuf/any.ts`, `google/protobuf/duration.ts`, `google/protobuf/timestamp.ts`
-- `cosmos/base/v1beta1/coin.ts` (the `Decimal` import points at the local `decimal.ts`)
+- `cosmos/base/v1beta1/coin.ts`
 - `cosmos/crypto/multisig/v1beta1/multisig.ts`, `cosmos/crypto/secp256k1/keys.ts`
 - `cosmos/tx/signing/v1beta1/signing.ts`, `cosmos/tx/v1beta1/tx.ts`
 - `cosmos/auth/v1beta1/auth.ts`
@@ -32,11 +33,12 @@ prepended, except where noted. The copied files still import `GlobalDecoderRegis
 - `cosmos/feegrant/v1beta1/feegrant.ts`, `cosmos/feegrant/v1beta1/tx.ts`
 - `cosmos/staking/v1beta1/authz.ts`, `ibc/applications/transfer/v1/authz.ts`
 - `bze/burner/params.ts`, `bze/burner/tx.ts`
-- `bze/tradebin/v2/params.ts`, `bze/tradebin/tx.ts`
+- `bze/tradebin/v2/params.ts`, `bze/tradebin/store.ts`, `bze/tradebin/tx.ts`
 - `bze/rewards/params.ts`, `bze/rewards/tx.ts`
 - `bze/tokenfactory/denom_branding.ts`, `bze/tokenfactory/tx.ts`
-- `bze/cointrunk/params.ts` (the `Decimal` import points at the local `decimal.ts`),
-  `bze/cointrunk/tx.ts`
+- `bze/cointrunk/params.ts`, `bze/cointrunk/tx.ts`
+- `bze/dao/params.ts`, `bze/dao/store.ts`, `bze/dao/tx.ts`
+- `bze/guardian/v1/params.ts`, `bze/guardian/v1/tx.ts`
 - `ibc/core/client/v1/client.ts`, `ibc/applications/transfer/v1/tx.ts`
 - `cosmos/vesting/v1beta1/vesting.ts`, `cosmos/vesting/v1beta1/tx.ts`
 - `cosmos/gov/v1/tx.ts`: trimmed to `MsgVote`, `MsgDeposit` and their responses (the full file
@@ -49,6 +51,9 @@ prepended, except where noted. The copied files still import `GlobalDecoderRegis
   `MsgWithdrawDelegatorReward`, `MsgFundCommunityPool`, `MsgDepositValidatorRewardsPool` and
   their responses (the full file pulls in the distribution params); keeps the `//@ts-nocheck`
   line
+
+In every copied file that has one, the `Decimal` import from `@interchainjs/math` points at
+the local `decimal.ts` instead.
 
 ## Hand-written stand-ins
 

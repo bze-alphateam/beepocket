@@ -22,6 +22,7 @@ const INTEGER_FIELDS: Readonly<Record<string, readonly string[]>> = {
   '/bze.rewards.MsgCreateDenomRewardSchedule': ['dailyAmount'],
   '/bze.rewards.MsgDistributeDenomRewards': ['amount'],
   '/bze.burner.MsgStartRaffle': ['pot', 'duration', 'chances', 'ticketPrice'],
+  '/bze.guardian.v1.MsgTightenRateLimit': ['maxPercentSend', 'maxPercentRecv'],
 };
 
 /** A whole number in plain decimal: no sign, no prefix, no separators, no leading zero. */

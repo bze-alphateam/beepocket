@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/distribution/v1beta1/tx.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 4.0.0 (src/cosmos/distribution/v1beta1/tx.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";
 import { BinaryReader, BinaryWriter } from "../../../binary";
@@ -125,9 +125,6 @@ export interface MsgWithdrawDelegatorRewardSDKType {
  * @see proto type: cosmos.distribution.v1beta1.MsgWithdrawDelegatorRewardResponse
  */
 export interface MsgWithdrawDelegatorRewardResponse {
-  /**
-   * Since: cosmos-sdk 0.46
-   */
   amount: Coin[];
 }
 export interface MsgWithdrawDelegatorRewardResponseProtoMsg {
@@ -142,9 +139,6 @@ export interface MsgWithdrawDelegatorRewardResponseProtoMsg {
  * @see proto type: cosmos.distribution.v1beta1.MsgWithdrawDelegatorRewardResponse
  */
 export interface MsgWithdrawDelegatorRewardResponseAmino {
-  /**
-   * Since: cosmos-sdk 0.46
-   */
   amount: CoinAmino[];
 }
 export interface MsgWithdrawDelegatorRewardResponseAminoMsg {
@@ -234,8 +228,6 @@ export interface MsgFundCommunityPoolResponseSDKType {}
 /**
  * DepositValidatorRewardsPool defines the request structure to provide
  * additional rewards to delegators from a specific validator.
- * 
- * Since: cosmos-sdk 0.50
  * @name MsgDepositValidatorRewardsPool
  * @package cosmos.distribution.v1beta1
  * @see proto type: cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool
@@ -252,8 +244,6 @@ export interface MsgDepositValidatorRewardsPoolProtoMsg {
 /**
  * DepositValidatorRewardsPool defines the request structure to provide
  * additional rewards to delegators from a specific validator.
- * 
- * Since: cosmos-sdk 0.50
  * @name MsgDepositValidatorRewardsPoolAmino
  * @package cosmos.distribution.v1beta1
  * @see proto type: cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool
@@ -270,8 +260,6 @@ export interface MsgDepositValidatorRewardsPoolAminoMsg {
 /**
  * DepositValidatorRewardsPool defines the request structure to provide
  * additional rewards to delegators from a specific validator.
- * 
- * Since: cosmos-sdk 0.50
  * @name MsgDepositValidatorRewardsPoolSDKType
  * @package cosmos.distribution.v1beta1
  * @see proto type: cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool
@@ -284,8 +272,6 @@ export interface MsgDepositValidatorRewardsPoolSDKType {
 /**
  * MsgDepositValidatorRewardsPoolResponse defines the response to executing a
  * MsgDepositValidatorRewardsPool message.
- * 
- * Since: cosmos-sdk 0.50
  * @name MsgDepositValidatorRewardsPoolResponse
  * @package cosmos.distribution.v1beta1
  * @see proto type: cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPoolResponse
@@ -298,8 +284,6 @@ export interface MsgDepositValidatorRewardsPoolResponseProtoMsg {
 /**
  * MsgDepositValidatorRewardsPoolResponse defines the response to executing a
  * MsgDepositValidatorRewardsPool message.
- * 
- * Since: cosmos-sdk 0.50
  * @name MsgDepositValidatorRewardsPoolResponseAmino
  * @package cosmos.distribution.v1beta1
  * @see proto type: cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPoolResponse
@@ -312,8 +296,6 @@ export interface MsgDepositValidatorRewardsPoolResponseAminoMsg {
 /**
  * MsgDepositValidatorRewardsPoolResponse defines the response to executing a
  * MsgDepositValidatorRewardsPool message.
- * 
- * Since: cosmos-sdk 0.50
  * @name MsgDepositValidatorRewardsPoolResponseSDKType
  * @package cosmos.distribution.v1beta1
  * @see proto type: cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPoolResponse
@@ -874,8 +856,6 @@ function createBaseMsgDepositValidatorRewardsPool(): MsgDepositValidatorRewardsP
 /**
  * DepositValidatorRewardsPool defines the request structure to provide
  * additional rewards to delegators from a specific validator.
- * 
- * Since: cosmos-sdk 0.50
  * @name MsgDepositValidatorRewardsPool
  * @package cosmos.distribution.v1beta1
  * @see proto type: cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPool
@@ -990,8 +970,6 @@ function createBaseMsgDepositValidatorRewardsPoolResponse(): MsgDepositValidator
 /**
  * MsgDepositValidatorRewardsPoolResponse defines the response to executing a
  * MsgDepositValidatorRewardsPool message.
- * 
- * Since: cosmos-sdk 0.50
  * @name MsgDepositValidatorRewardsPoolResponse
  * @package cosmos.distribution.v1beta1
  * @see proto type: cosmos.distribution.v1beta1.MsgDepositValidatorRewardsPoolResponse

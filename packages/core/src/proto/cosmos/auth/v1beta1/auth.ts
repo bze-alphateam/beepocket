@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/auth/v1beta1/auth.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 4.0.0 (src/cosmos/auth/v1beta1/auth.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Any, AnyAmino, AnySDKType } from "../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../binary";
@@ -101,8 +101,6 @@ export interface ModuleAccountSDKType {
 }
 /**
  * ModuleCredential represents a unclaimable pubkey for base accounts controlled by modules.
- * 
- * Since: cosmos-sdk 0.47
  * @name ModuleCredential
  * @package cosmos.auth.v1beta1
  * @see proto type: cosmos.auth.v1beta1.ModuleCredential
@@ -124,8 +122,6 @@ export interface ModuleCredentialProtoMsg {
 }
 /**
  * ModuleCredential represents a unclaimable pubkey for base accounts controlled by modules.
- * 
- * Since: cosmos-sdk 0.47
  * @name ModuleCredentialAmino
  * @package cosmos.auth.v1beta1
  * @see proto type: cosmos.auth.v1beta1.ModuleCredential
@@ -147,8 +143,6 @@ export interface ModuleCredentialAminoMsg {
 }
 /**
  * ModuleCredential represents a unclaimable pubkey for base accounts controlled by modules.
- * 
- * Since: cosmos-sdk 0.47
  * @name ModuleCredentialSDKType
  * @package cosmos.auth.v1beta1
  * @see proto type: cosmos.auth.v1beta1.ModuleCredential
@@ -463,8 +457,6 @@ function createBaseModuleCredential(): ModuleCredential {
 }
 /**
  * ModuleCredential represents a unclaimable pubkey for base accounts controlled by modules.
- * 
- * Since: cosmos-sdk 0.47
  * @name ModuleCredential
  * @package cosmos.auth.v1beta1
  * @see proto type: cosmos.auth.v1beta1.ModuleCredential

@@ -15,4 +15,13 @@ export const GOVERNANCE_ONLY: ReadonlyMap<string, string> = new Map([
   ['/bze.cointrunk.MsgSavePublisher', 'Save a CoinTrunk publisher'],
   ['/bze.tokenfactory.MsgSetDenomAdmin', 'Change a token admin'],
   ['/bze.tradebin.MsgUpdatePools', 'Update liquidity pools'],
+  ['/bze.dao.MsgUpdateParams', 'Update DAO settings'],
+  ['/bze.guardian.v1.MsgUpdateParams', 'Update guardian settings'],
+  ['/bze.guardian.v1.MsgUnblockDenom', 'Unblock a token'],
+  ['/bze.guardian.v1.MsgResumeAutomation', 'Resume automatic chain jobs'],
+  ['/bze.guardian.v1.MsgReopenChannel', 'Reopen an IBC channel'],
+  ['/ratelimit.v1.MsgAddRateLimit', 'Add an IBC rate limit'],
+  ['/ratelimit.v1.MsgUpdateRateLimit', 'Change an IBC rate limit'],
+  ['/ratelimit.v1.MsgRemoveRateLimit', 'Remove an IBC rate limit'],
+  ['/ratelimit.v1.MsgResetRateLimit', 'Reset an IBC rate limit'],
 ]);

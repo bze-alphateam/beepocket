@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/cosmos/vesting/v1beta1/vesting.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 4.0.0 (src/cosmos/vesting/v1beta1/vesting.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { BaseAccount, BaseAccountAmino, BaseAccountSDKType } from "../../auth/v1beta1/auth";
 import { Coin, CoinAmino, CoinSDKType } from "../../base/v1beta1/coin";
@@ -240,8 +240,6 @@ export interface PeriodicVestingAccountSDKType {
  * PermanentLockedAccount implements the VestingAccount interface. It does
  * not ever release coins, locking them indefinitely. Coins in this account can
  * still be used for delegating and for governance votes even while locked.
- * 
- * Since: cosmos-sdk 0.43
  * @name PermanentLockedAccount
  * @package cosmos.vesting.v1beta1
  * @see proto type: cosmos.vesting.v1beta1.PermanentLockedAccount
@@ -257,8 +255,6 @@ export interface PermanentLockedAccountProtoMsg {
  * PermanentLockedAccount implements the VestingAccount interface. It does
  * not ever release coins, locking them indefinitely. Coins in this account can
  * still be used for delegating and for governance votes even while locked.
- * 
- * Since: cosmos-sdk 0.43
  * @name PermanentLockedAccountAmino
  * @package cosmos.vesting.v1beta1
  * @see proto type: cosmos.vesting.v1beta1.PermanentLockedAccount
@@ -274,8 +270,6 @@ export interface PermanentLockedAccountAminoMsg {
  * PermanentLockedAccount implements the VestingAccount interface. It does
  * not ever release coins, locking them indefinitely. Coins in this account can
  * still be used for delegating and for governance votes even while locked.
- * 
- * Since: cosmos-sdk 0.43
  * @name PermanentLockedAccountSDKType
  * @package cosmos.vesting.v1beta1
  * @see proto type: cosmos.vesting.v1beta1.PermanentLockedAccount
@@ -860,8 +854,6 @@ function createBasePermanentLockedAccount(): PermanentLockedAccount {
  * PermanentLockedAccount implements the VestingAccount interface. It does
  * not ever release coins, locking them indefinitely. Coins in this account can
  * still be used for delegating and for governance votes even while locked.
- * 
- * Since: cosmos-sdk 0.43
  * @name PermanentLockedAccount
  * @package cosmos.vesting.v1beta1
  * @see proto type: cosmos.vesting.v1beta1.PermanentLockedAccount

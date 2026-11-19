@@ -1,0 +1,45 @@
+{
+  "accountNumber": "7",
+  "authInfoBytes": "ClAKRgofL2Nvc21vcy5jcnlwdG8uc2VjcDI1NmsxLlB1YktleRIjCiECumaoTPeDmvFyoT5/yfXnAIy4vKFYX487r7MDnto8H90SBAoCCAEYAxISCgwKBHViemUSBDIwMDAQwJoM",
+  "bodyBytes": "CvkBChovYnplLmRhby5Nc2dTdWJtaXRQcm9wb3NhbBLaAQoqYnplMXI1djVzcmRhN3hmdGgzaG4yczI2dHh2cmNybnRsZGp1eDB0czlnEAIaD0Z1bmQgdGhlIG1lZXR1cCINUGF5IHRoZSB2ZW51ZSqJAQocL2Nvc21vcy5iYW5rLnYxYmV0YTEuTXNnU2VuZBJpCipiemUxdnRhZDg2ODB2aGRmcXZ4eDBmMnlheGE2YWdkeWxlbG05MnNtNnASKmJ6ZTFyNXY1c3JkYTd4ZnRoM2huMnMyNnR4dnJjcm50bGRqdXgwdHM5ZxoPCgR1YnplEgc1MDAwMDAw",
+  "chainId": "beezee-1",
+  "description": "a DAO proposal that sends 5,000,000 ubze from the DAO",
+  "fee": [
+    {
+      "amount": "2000",
+      "denom": "ubze"
+    }
+  ],
+  "gasLimit": "200000",
+  "memo": "",
+  "messages": [
+    {
+      "@type": "/bze.dao.MsgSubmitProposal",
+      "dao_id": "2",
+      "expedited": false,
+      "msgs": [
+        {
+          "@type": "/cosmos.bank.v1beta1.MsgSend",
+          "amount": [
+            {
+              "amount": "5000000",
+              "denom": "ubze"
+            }
+          ],
+          "from_address": "bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p",
+          "to_address": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g"
+        }
+      ],
+      "proposer": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+      "summary": "Pay the venue",
+      "title": "Fund the meetup"
+    }
+  ],
+  "name": "dao-submit-proposal",
+  "pubKey": "ArpmqEz3g5rxcqE+f8n15wCMuLyhWF+PO6+zA57aPB/d",
+  "sequence": "3",
+  "signature": "qoYhwjmf4crCTHoWgabVLUjvmJKGfg1SpAjTqlK9PdtQ99b4eZWnOgimiZmBPIZ1XHyL27/yj/mxJwNafP7Nsw==",
+  "signer": "bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g",
+  "signerIndex": 0,
+  "txRaw": "CvwBCvkBChovYnplLmRhby5Nc2dTdWJtaXRQcm9wb3NhbBLaAQoqYnplMXI1djVzcmRhN3hmdGgzaG4yczI2dHh2cmNybnRsZGp1eDB0czlnEAIaD0Z1bmQgdGhlIG1lZXR1cCINUGF5IHRoZSB2ZW51ZSqJAQocL2Nvc21vcy5iYW5rLnYxYmV0YTEuTXNnU2VuZBJpCipiemUxdnRhZDg2ODB2aGRmcXZ4eDBmMnlheGE2YWdkeWxlbG05MnNtNnASKmJ6ZTFyNXY1c3JkYTd4ZnRoM2huMnMyNnR4dnJjcm50bGRqdXgwdHM5ZxoPCgR1YnplEgc1MDAwMDAwEmYKUApGCh8vY29zbW9zLmNyeXB0by5zZWNwMjU2azEuUHViS2V5EiMKIQK6ZqhM94Oa8XKhPn/J9ecAjLi8oVhfjzuvswOe2jwf3RIECgIIARgDEhIKDAoEdWJ6ZRIEMjAwMBDAmgwaQKqGIcI5n+HKwkx6FoGm1S1I75iShn4NUqQI06pSvT3bUPfW+HmVpzoIpomZgTyGdVx8i9u/8o/5sScDWnz+zbM="
+}

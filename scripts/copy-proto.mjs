@@ -32,11 +32,17 @@ const FILES = [
   'bze/burner/params.ts',
   'bze/burner/tx.ts',
   'bze/tradebin/v2/params.ts',
+  'bze/tradebin/store.ts',
   'bze/tradebin/tx.ts',
   'bze/rewards/params.ts',
   'bze/rewards/tx.ts',
   'bze/tokenfactory/denom_branding.ts',
   'bze/tokenfactory/tx.ts',
+  'bze/dao/params.ts',
+  'bze/dao/store.ts',
+  'bze/dao/tx.ts',
+  'bze/guardian/v1/params.ts',
+  'bze/guardian/v1/tx.ts',
   'bze/cointrunk/params.ts',
   'bze/cointrunk/tx.ts',
   'ibc/core/client/v1/client.ts',
@@ -117,21 +123,11 @@ for (const path of FILES) {
     if (start < 0 || end < 0) throw new Error(`${path}: expected setPaginationParams`);
     text = text.slice(0, start) + text.slice(end);
   }
-  if (path === 'cosmos/base/v1beta1/coin.ts') {
-    text = replaceOnce(
-      text,
-      'import { Decimal } from "@interchainjs/math";',
-      'import { Decimal } from "../../../decimal";',
-      path,
-    );
-  }
-  if (path === 'bze/cointrunk/params.ts') {
-    text = replaceOnce(
-      text,
-      'import { Decimal } from "@interchainjs/math";',
-      'import { Decimal } from "../../decimal";',
-      path,
-    );
+  // `Decimal` (Dec fields) comes from the local `decimal.ts` instead of `@interchainjs/math`.
+  const MATH_IMPORT = 'import { Decimal } from "@interchainjs/math";';
+  if (text.includes(MATH_IMPORT)) {
+    const up = '../'.repeat(path.split('/').length - 1);
+    text = replaceOnce(text, MATH_IMPORT, `import { Decimal } from "${up}decimal";`, path);
   }
   // Local changes, kept on every copy (see the README): read nested bytes in place, and
   // refuse text that is not valid UTF-8 instead of decoding it to something else.

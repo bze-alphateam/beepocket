@@ -1,4 +1,4 @@
-// Copied from @bze/bzejs 3.2.0 (src/bze/rewards/params.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
+// Copied from @bze/bzejs 4.0.0 (src/bze/rewards/params.ts); registry stand-in used, see README. Do not edit; re-copy on chain upgrades.
 //@ts-nocheck
 import { Coin, CoinAmino, CoinSDKType } from "../../cosmos/base/v1beta1/coin";
 import { BinaryReader, BinaryWriter } from "../../binary";

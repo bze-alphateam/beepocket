@@ -40,6 +40,9 @@ import * as burnerMsgs from './proto/bze/burner/tx';
 import * as rewardsMsgs from './proto/bze/rewards/tx';
 import * as tokenfactoryMsgs from './proto/bze/tokenfactory/tx';
 import * as cointrunkMsgs from './proto/bze/cointrunk/tx';
+import * as daoMsgs from './proto/bze/dao/tx';
+import { VoteOption as DaoVoteOption } from './proto/bze/dao/store';
+import * as guardianMsgs from './proto/bze/guardian/v1/tx';
 import * as stakingMsgs from './proto/cosmos/staking/v1beta1/tx';
 import * as distributionMsgs from './proto/cosmos/distribution/v1beta1/tx';
 import * as transferMsgs from './proto/ibc/applications/transfer/v1/tx';
@@ -64,6 +67,8 @@ const allMsgs = [
   rewardsMsgs,
   tokenfactoryMsgs,
   cointrunkMsgs,
+  daoMsgs,
+  guardianMsgs,
   stakingMsgs,
   distributionMsgs,
   transferMsgs,
@@ -251,6 +256,15 @@ describe('verifySignRequest', () => {
     '/bze.cointrunk.MsgSavePublisher',
     '/bze.tokenfactory.MsgSetDenomAdmin',
     '/bze.tradebin.MsgUpdatePools',
+    '/bze.dao.MsgUpdateParams',
+    '/bze.guardian.v1.MsgUpdateParams',
+    '/bze.guardian.v1.MsgUnblockDenom',
+    '/bze.guardian.v1.MsgResumeAutomation',
+    '/bze.guardian.v1.MsgReopenChannel',
+    '/ratelimit.v1.MsgAddRateLimit',
+    '/ratelimit.v1.MsgUpdateRateLimit',
+    '/ratelimit.v1.MsgRemoveRateLimit',
+    '/ratelimit.v1.MsgResetRateLimit',
   ])('multi-signer: %s is signed by governance only, never by the wallet', (typeUrl) => {
     // Some of these have no decoder, so their signer would otherwise go unchecked.
     expect(code(request({}, [{ typeUrl, value: new Uint8Array([10, 1, 65]) }]))).toBe(
@@ -427,6 +441,86 @@ describe('verifySignRequest signers of decoded types', () => {
   });
 });
 
+describe('verifySignRequest signers of DAO, guardian and token config messages', () => {
+  const msg = <P, M>(
+    codec: { typeUrl: string; fromPartial(p: P): M; encode(m: M): { finish(): Uint8Array } },
+    partial: P,
+  ): AnyMsg => ({
+    typeUrl: codec.typeUrl,
+    value: codec.encode(codec.fromPartial(partial)).finish(),
+  });
+  // Each case puts OTHER in the fields that name an address but do not sign.
+  const cases: [string, (signer: string) => AnyMsg][] = [
+    ['MsgAdminExecute', (s) => msg(daoMsgs.MsgAdminExecute, { admin: s, daoId: 1n })],
+    [
+      'MsgAcceptAdminNomination',
+      (s) => msg(daoMsgs.MsgAcceptAdminNomination, { nominee: s, daoId: 1n }),
+    ],
+    ['MsgCreateDao', (s) => msg(daoMsgs.MsgCreateDao, { creator: s, admin: OTHER, name: 'd' })],
+    [
+      'MsgNominateAdmin',
+      (s) => msg(daoMsgs.MsgNominateAdmin, { authority: s, daoId: 1n, nominee: OTHER }),
+    ],
+    [
+      'MsgWithdrawAdminNomination',
+      (s) => msg(daoMsgs.MsgWithdrawAdminNomination, { authority: s, daoId: 1n }),
+    ],
+    ['MsgSubmitProposal', (s) => msg(daoMsgs.MsgSubmitProposal, { proposer: s, daoId: 1n })],
+    [
+      'dao MsgVote',
+      (s) => msg(daoMsgs.MsgVote, { voter: s, proposalId: 1n, option: DaoVoteOption.YES }),
+    ],
+    ['MsgCancelProposal', (s) => msg(daoMsgs.MsgCancelProposal, { proposer: s, proposalId: 1n })],
+    ['MsgSettleProposal', (s) => msg(daoMsgs.MsgSettleProposal, { sender: s, proposalId: 1n })],
+    ['MsgCleanupProposal', (s) => msg(daoMsgs.MsgCleanupProposal, { sender: s, proposalId: 1n })],
+    [
+      'MsgUpdateMembers',
+      (s) => msg(daoMsgs.MsgUpdateMembers, { authority: s, daoId: 1n, add: [OTHER] }),
+    ],
+    [
+      'MsgSetDenomConfig',
+      (s) =>
+        msg(tokenfactoryMsgs.MsgSetDenomConfig, {
+          creator: s,
+          denom: 'factory/x/y',
+          communityPool: OTHER,
+          transferFee: '0',
+          gasSurcharge: '0',
+        }),
+    ],
+    ['MsgDisableMinting', (s) => msg(tokenfactoryMsgs.MsgDisableMinting, { creator: s })],
+    ['MsgHaltChain', (s) => msg(guardianMsgs.MsgHaltChain, { signer: s, reason: 'r' })],
+    [
+      'MsgTightenRateLimit',
+      (s) =>
+        msg(guardianMsgs.MsgTightenRateLimit, {
+          signer: s,
+          denom: 'ubze',
+          maxPercentSend: '1',
+          maxPercentRecv: '1',
+        }),
+    ],
+  ];
+
+  it.each(cases)('%s: the signer is the connected address or the request is refused', (_, make) => {
+    expect(code(request({}, [make(ME)]))).toBe('ok');
+    expect(code(request({}, [make(OTHER)]))).toBe('multi-signer');
+    expect(code(request({}, [make('')]))).toBe('multi-signer');
+  });
+
+  it('bad-body: a rate limit that is not a plain whole number', () => {
+    const limit = (maxPercentSend: string) =>
+      msg(guardianMsgs.MsgTightenRateLimit, {
+        signer: ME,
+        denom: 'ubze',
+        maxPercentSend,
+        maxPercentRecv: '1',
+      });
+    expect(code(request({}, [limit('05')]))).toBe('bad-body');
+    expect(code(request({}, [limit('5')]))).toBe('ok');
+  });
+});
+
 describe('withWalletFee', () => {
   const walletFee = { amount: [{ denom: 'ubze', amount: '777' }], gasLimit: 999n };
 
@@ -577,6 +671,16 @@ describe('verifySignRequest refuses requests that do not re-encode exactly', () 
     expect(code(withBody(plain))).toBe('ok');
     expect(code(withBody(bytes(plain, [0x20, 0x01])))).toBe('bad-body');
     expect(code(withBody(bytes(plain, field(5, [0x08, 0x01]))))).toBe('bad-body');
+  });
+
+  it('bad-body: an unordered transaction or a time-based timeout', () => {
+    const body = (extra: { unordered?: boolean; timeoutTimestamp?: Date }) =>
+      TxBody.encode(TxBody.fromPartial({ messages: [Any.fromPartial(send())], ...extra })).finish();
+    expect(code(withBody(body({})))).toBe('ok');
+    expect(code(withBody(body({ unordered: true })))).toBe('bad-body');
+    expect(code(withBody(body({ timeoutTimestamp: new Date('2030-01-01T00:00:00Z') })))).toBe(
+      'bad-body',
+    );
   });
 
   it('bad-body: a body field sent twice, or a number or length written too long', () => {

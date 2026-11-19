@@ -36,3 +36,16 @@ export const goldenCases: GoldenCase[] = readdirSync(dir)
 export const fromB64 = (s: string): Uint8Array => base64.decode(s);
 export const toB64 = (b: Uint8Array): string => base64.encode(b);
 export const testMnemonic = `${'abandon '.repeat(23)}art`;
+
+/** A golden transaction holding one BZE module message, as bzed prints it. */
+export type GoldenMsgCase = Omit<GoldenCase, 'messages'> & {
+  messages: Record<string, unknown>[];
+};
+
+const msgDir = join(import.meta.dirname, 'fixtures', 'golden-msgs');
+
+/** Module messages built and signed by the real `bzed` (see scripts/gen-golden.sh). */
+export const goldenMsgCases: GoldenMsgCase[] = readdirSync(msgDir)
+  .filter((f) => f.endsWith('.json'))
+  .sort()
+  .map((f) => JSON.parse(readFileSync(join(msgDir, f), 'utf8')) as GoldenMsgCase);

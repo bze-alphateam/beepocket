@@ -32,6 +32,15 @@ const RAW_SIGNER_FIELD: Record<string, number> = {
   '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward': 1,
   '/cosmos.distribution.v1beta1.MsgSetWithdrawAddress': 1,
 };
+/**
+ * Types whose signer is a field the generic list leaves out because other types use the same
+ * name for an address that does not sign (a DAO's `admin` when it is created, the `nominee` of
+ * a nomination). Only the named field is read for these.
+ */
+const TYPE_SIGNER_FIELD: Record<string, string> = {
+  '/bze.dao.MsgAdminExecute': 'admin',
+  '/bze.dao.MsgAcceptAdminNomination': 'nominee',
+};
 const MSG_EXEC = '/cosmos.authz.v1beta1.MsgExec';
 const MSG_MULTI_SEND = '/cosmos.bank.v1beta1.MsgMultiSend';
 
@@ -58,6 +67,11 @@ export function signersOf(msg: AnyMsg): string[] | null {
     return field === undefined ? null : [readStringField(msg.value, field)];
   }
   const { value } = decoded;
+  const own = TYPE_SIGNER_FIELD[msg.typeUrl];
+  if (own !== undefined) {
+    const v = value[own];
+    return [typeof v === 'string' ? v : ''];
+  }
   const found: string[] = [];
   for (const field of SIGNER_FIELDS) {
     const v = value[field];
