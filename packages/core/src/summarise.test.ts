@@ -2277,6 +2277,22 @@ describe('DAO proposals', () => {
     expect(needsTrust(s)).toBe(true);
   });
 
+  it('is as risky as the riskiest message it would run', async () => {
+    const members = await run([proposal(v83(dao.MsgUpdateMembers.typeUrl))]);
+    expect(members.level).toBe('dangerous');
+    expect(members.dangers.map((d) => d.title)).toEqual(['A message inside needs extra care']);
+    expect(needsTrust(members)).toBe(true);
+    const nested = await run([proposal(exec(wasm))]);
+    expect(nested.level).toBe('dangerous');
+    const odd = await run([proposal(daoVote(DaoVoteOption.VOTE_OPTION_UNSPECIFIED))]);
+    expect(odd.level).toBe('unknown');
+  });
+
+  it('stops reading proposals nested too deeply', async () => {
+    const s = await run([proposal(proposal(proposal(daoSend())))]);
+    expect(s.level).toBe('dangerous');
+  });
+
   it('lists how many messages it does not show', async () => {
     const s = await run([proposal(...Array.from({ length: 12 }, () => daoSend()))]);
     expect(s.rows.filter((r) => r[0].startsWith('Message '))).toHaveLength(10);
@@ -2360,6 +2376,33 @@ describe('DAO creation and changes', () => {
       ['Proposal cost', '1.00 BZE, burned'],
       ['Proposal deposit', 'None'],
       ['Creation fee', "The chain's DAO creation fee"],
+    ]);
+  });
+
+  it('shows a stake DAO, its expedited voting and its deposit', async () => {
+    const s = await run([
+      pack(dao.MsgCreateDao, {
+        creator: ME,
+        admin: ALEX,
+        type: DaoType.DAO_TYPE_STAKE,
+        name: 'Stakers',
+        config: {
+          ...daoConfig,
+          allowExpedite: true,
+          openSubmission: true,
+          proposalDeposit: bze('5000000'),
+        },
+        electorate: { srIds: ['7'], drDenom: '' },
+      }),
+    ]);
+    expect(headline(s)).toBe('Create DAO · Stakers · voted by stakers');
+    expect(s.rows).toContainEqual(['Admin', ALEX, 'mono']);
+    expect(s.rows).toContainEqual(['Voters', 'Stakers of staking reward 7']);
+    expect(s.rows).toContainEqual(['Expedited voting', '1 day, quorum 60%, passes above 50% yes']);
+    expect(s.rows).toContainEqual(['Who can propose', 'Anyone']);
+    expect(s.rows).toContainEqual([
+      'Proposal deposit',
+      "5.00 BZE, given back only when the proposal passes; when kept, kept in the DAO's account",
     ]);
   });
 
