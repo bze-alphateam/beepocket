@@ -727,6 +727,25 @@ describe('signDirect in the weak lock', () => {
   });
 });
 
+describe('signDirect in the full lock', () => {
+  it('answers a site that is not connected only after the unlock, for any chain', async () => {
+    const t = await rig();
+    await t.wallet.lock();
+    const right = await t.ask('signDirect', request().params);
+    const other = await t.ask('signDirect', {
+      ...request().params,
+      chainId: NETWORKS.testnet.chainId,
+    });
+    expect(t.answerOf(right.id)).toBeUndefined();
+    expect(t.answerOf(other.id)).toBeUndefined();
+    expect(await t.dapp.current()).toMatchObject({ status: 'locked', origin: ORIGIN });
+    await t.wallet.unlock(PASSWORD);
+    expect(await t.dapp.current()).toEqual({ status: 'none' });
+    expect(t.answerOf(right.id)).toEqual({ id: right.id, error: NOT_CONNECTED });
+    expect(t.answerOf(other.id)).toEqual({ id: other.id, error: NOT_CONNECTED });
+  });
+});
+
 describe('sendTx', () => {
   const signedTx = () =>
     txRawBytes({
