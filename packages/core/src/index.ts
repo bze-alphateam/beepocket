@@ -9,5 +9,7 @@ export * from './amounts';
 export * from './cache';
 export * from './fees';
 export * from './tokens';
+export * from './lookalike';
+export * from './verified';
 export * from './verify';
 export * from './summarise';

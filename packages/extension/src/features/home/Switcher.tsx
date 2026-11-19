@@ -1,9 +1,10 @@
+import { tokenLabel } from '@beepocket/core';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import type { ListedToken, TokenBalances } from '../../protocol';
 import { TokenErrorCodes, WalletErrorCodes } from '../../protocol';
 import { useClient } from '../../popup/client-context';
-import { Avatar, ListGroup, ListRow, SearchField, Sheet, StarButton } from '../../ui';
+import { Avatar, ListGroup, ListRow, SearchField, Sheet, StarButton, Tag } from '../../ui';
 import { PasswordGate } from '../lock/PasswordGate';
 import { loadBalancesFor } from './data';
 import { amountText, tokenColor } from './format';
@@ -148,18 +149,25 @@ export function Switcher(props: SwitcherProps) {
   const row = (tok: ListedToken) => {
     const picked = preferred.has(tok.denom);
     const sum = total(tok);
+    // A look-alike shows the marker and its denom, so it cannot pass for the token it imitates.
+    const look = tokenLabel(tok);
     return (
       <ListRow
         key={tok.denom}
         size="option"
         leading={<Avatar label={tok.symbol} color={tokenColor(tok)} src={tok.logo} size={30} />}
         title={tok.symbol}
-        subtitle={tok.name}
+        titleAction={look.lookalike ? <Tag tone="warn">{t('app.token.lookalike')}</Tag> : undefined}
+        subtitle={look.lookalike ? `${look.tail ?? ''} · ${tok.name}` : tok.name}
         plainSubtitle
         value={sum === null ? '' : amountText(sum.toString(), tok.decimals)}
         valueMuted={sum === 0n}
         selected={tok.denom === props.selected}
-        label={tok.symbol}
+        label={
+          look.lookalike
+            ? t('app.token.lookalikeLabel', { symbol: tok.symbol, denom: look.tail ?? tok.denom })
+            : tok.symbol
+        }
         onClick={
           picked
             ? () => {

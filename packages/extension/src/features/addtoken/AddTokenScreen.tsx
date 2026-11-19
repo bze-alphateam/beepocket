@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
-import { NETWORKS, type DenomBranding, type NetworkId } from '@beepocket/core';
+import {
+  isLookalike,
+  NETWORKS,
+  sameLook,
+  type DenomBranding,
+  type NetworkId,
+} from '@beepocket/core';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
@@ -116,8 +122,6 @@ export function AddTokenScreen({ close }: AddTokenScreenProps) {
   return <AddCard link={load.link} close={close} />;
 }
 
-const NATIVE_SYMBOL = 'BZE';
-
 type Lookup =
   | { status: 'loading' }
   | { status: 'failed' }
@@ -131,11 +135,13 @@ type Lookup =
       brandThemes: boolean;
     };
 
-/** The same symbol as the native token or a token already held, under a different denom. */
+/**
+ * Looks like the native coin, a verified token (the resolver's flag) or a token already in the
+ * list under a different denom, compared in folded form so look-alike letters count.
+ */
 function looksLikeAnother(token: ListedToken, held: ListedToken[]): boolean {
-  const symbol = token.symbol.toUpperCase();
-  if (token.kind !== 'native' && symbol === NATIVE_SYMBOL) return true;
-  return held.some((x) => x.denom !== token.denom && x.symbol.toUpperCase() === symbol);
+  if (token.lookalike === true || isLookalike(token, [])) return true;
+  return held.some((x) => x.denom !== token.denom && sameLook(x.symbol, token.symbol));
 }
 
 function AddCard({ link, close }: { link: Link; close: () => void }) {

@@ -1,6 +1,7 @@
 import { ErrorCodes, fail, ok, type Result } from '../../protocol';
 import type { HandlerDeps } from '../../background/handlers';
 import type { HandlerRegistry } from '../../background/registry';
+import { createVerifiedRegistry } from '../tokens/resolver';
 import { ActivityService } from './service';
 
 interface Req {
@@ -42,6 +43,7 @@ export function registerActivityHandlers(
         scan,
         explorer: network.scan,
         clock: deps.platform.clock,
+        verified: createVerifiedRegistry({ scan, cache: deps.platform.cache }, network.id),
         addresses: {
           list: async () => {
             const res = await deps.wallet.addresses();

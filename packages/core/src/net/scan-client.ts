@@ -27,6 +27,15 @@ export interface ScanAsset {
   decimals: number | null;
 }
 
+/** One entry of Scan's whole registry list, as the look-alike check reads it. */
+export interface ScanRegistryEntry {
+  denom: string;
+  /** Display text, untrusted; null when Scan lists none. */
+  ticker: string | null;
+  /** Scan vouches for the token (a hard-coded list for factory tokens, a confirmed channel for IBC). */
+  verified: boolean;
+}
+
 export interface ScanBalance {
   denom: string;
   /** Signed: deltas are net balance changes. */
@@ -83,6 +92,8 @@ export interface ScanClient {
   token(denom: string): Promise<ScanToken | null>;
   /** The registry asset of a denom; `null` when Scan does not list it (or answers for another). */
   asset(denom: string): Promise<ScanAsset | null>;
+  /** Scan's whole registry list, unpaginated. */
+  assets(): Promise<ScanRegistryEntry[]>;
   activity(address: string, query: ActivityQuery): Promise<ActivityPage>;
 }
 
@@ -121,6 +132,19 @@ export class HttpScanClient implements ScanClient {
     };
     // An answer about another denom is not an answer about this one.
     return asset.denom === denom ? asset : null;
+  }
+
+  async assets(): Promise<ScanRegistryEntry[]> {
+    const body = v.object(await this.getJson('/api/v1/registry/assets'), '$');
+    return v.arrayOf(v.field(body, 'assets', '$'), 'assets', (raw, path) => {
+      const a = v.object(raw, path);
+      return {
+        denom: v.string(v.field(a, 'denom', path), `${path}.denom`),
+        ticker: v.nullable(a.ticker ?? null, `${path}.ticker`, v.string),
+        // Only an explicit true counts: a Scan without the flag vouches for nothing.
+        verified: a.verified === true,
+      };
+    });
   }
 
   async activity(address: string, query: ActivityQuery): Promise<ActivityPage> {
