@@ -9,6 +9,7 @@ import {
   type TxSummary,
 } from './index';
 import { MsgMultiSwap } from './proto/bze/tradebin/tx';
+import { MsgSend } from './proto/cosmos/bank/v1beta1/tx';
 
 const ME = 'bze1r5v5srda7xfth3hn2s26txvrcrntldjux0ts9g';
 const FAKE = 'factory/bze1x/fake';
@@ -148,5 +149,27 @@ describe('labels of tokens that imitate BZE', () => {
     });
     await new TokenResolver(chain, stubScan(), { cache }).resolve(FAKE);
     expect(JSON.stringify(store.get(`token:${FAKE}`))).not.toContain('lookalike');
+  });
+});
+
+describe('labels of LP shares', () => {
+  const LP = 'ulp/072C05CF6D235FA4D564EC9B564C1D67614A5A55E67935E1977483F940B85209';
+
+  it('reads an LP amount in whole shares when Scan does not list it', async () => {
+    // stubScan lists no asset: the LP token falls back to its fixed 12 decimals.
+    const { chain, tokens } = setup(null);
+    const info = await tokens.resolve(LP);
+    expect(info.source).toBe('fallback');
+    const msg = MsgSend.fromPartial({
+      fromAddress: ME,
+      toAddress: 'bze1vtad8680vhdfqvxx0f2yaxa6agdylelm92sm6p',
+      amount: [{ denom: LP, amount: '5000000000000' }],
+    });
+    const s = await summarise(
+      [{ typeUrl: MsgSend.typeUrl, value: MsgSend.encode(msg).finish() }],
+      context(tokens, chain),
+    );
+    expect(s.hero).toBe(`5.00 ${info.symbol}`);
+    expect(texts(s).join('\n')).not.toContain('(base units)');
   });
 });
