@@ -299,7 +299,8 @@ class Lookups {
             symbol: sanitiseText(t.symbol, 64),
           }),
           decimals: t.decimals,
-          exact: t.source !== 'fallback',
+          // LP shares always have LP_DECIMALS, so their fallback still reads in whole shares.
+          exact: t.source !== 'fallback' || (t.kind === 'lp' && t.decimals === LP_DECIMALS),
         }),
         () => ({ symbol: safeText(denom, 40), decimals: 0, exact: false }),
       );

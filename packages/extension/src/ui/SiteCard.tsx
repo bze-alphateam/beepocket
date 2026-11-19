@@ -3,7 +3,7 @@ import { Avatar } from './Avatar';
 import { Icon } from './icons';
 
 export interface SiteCardProps {
-  /** The site's origin as the browser reported it, shown in full after the lock. */
+  /** The site's origin as the browser reported it; host and origin show in full, long ones wrap. */
   origin: string;
   /**
    * `lg`: the 44 px avatar of a connect request. `sm`: the 32 px one of sign and add-a-token.
@@ -27,7 +27,8 @@ function hostOf(origin: string): string {
 
 /**
  * The site a request comes from: a letter avatar, its host and, after a lock, the full origin.
- * Only the browser's origin is shown; nothing the site says about itself.
+ * Only the browser's origin is shown; nothing the site says about itself. Neither line is ever
+ * cut short: a long host wraps, so its last labels (the domain that owns it) stay visible.
  */
 export function SiteCard({ origin, size = 'sm', aside }: SiteCardProps) {
   const host = hostOf(origin);
