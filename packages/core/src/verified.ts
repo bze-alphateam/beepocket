@@ -130,17 +130,22 @@ export class VerifiedRegistry implements VerifiedSource {
     }
 
     const answer = await this.ask();
-    if (answer === TIMED_OUT) {
+    const assets =
+      answer === TIMED_OUT
+        ? []
+        : answer
+            .filter((a) => a.verified)
+            .slice(0, MAX_VERIFIED)
+            .map((a) => ({
+              denom: a.denom,
+              symbol: stripUnsafeText(a.ticker ?? '').slice(0, MAX_SYMBOL),
+            }));
+    // Scan always verifies at least the native coin: an empty list is a broken answer, not a
+    // list to keep.
+    if (assets.length === 0) {
       await this.put(this.failedKey, this.clock.now(), VERIFIED_RETRY_MS);
       return fallback;
     }
-    const assets = answer
-      .filter((a) => a.verified)
-      .slice(0, MAX_VERIFIED)
-      .map((a) => ({
-        denom: a.denom,
-        symbol: stripUnsafeText(a.ticker ?? '').slice(0, MAX_SYMBOL),
-      }));
     const value: StoredList = { fetchedAt: this.clock.now(), assets };
     await this.put(this.key, value, VERIFIED_MAX_AGE_MS);
     return assets;

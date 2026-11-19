@@ -705,7 +705,7 @@ describe('token switcher', () => {
     });
     await open(s);
     const rows = [...(dialog(s)?.querySelectorAll('.bp-list-row') ?? [])];
-    const row = rows.find((r) => r.textContent?.includes('factory/bze1x/fake'));
+    const row = rows.find((r) => r.textContent.includes('factory/bze1x/fake'));
     expect(row?.textContent).toContain('Look-alike');
     // The real BZE row stays as it was.
     expect(groups(s)[0]).toEqual({ title: 'Preferred · 2', rows: ['BZE', 'PAGE'] });

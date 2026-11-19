@@ -90,6 +90,30 @@ describe('VerifiedRegistry', () => {
     expect(await registry().list()).toEqual(BUNDLED);
   });
 
+  it('treats an empty verified list from Scan as no answer and does not keep it', async () => {
+    const t = setup();
+    await t.registry().list();
+    await t.clock.sleep(2 * 60 * 60 * 1000);
+    vi.mocked(t.scan.assets).mockResolvedValue([{ denom: GOLD, ticker: 'GOLD', verified: false }]);
+    expect(await t.registry().list()).toEqual([
+      { denom: 'ubze', symbol: 'BZE' },
+      { denom: ATOM, symbol: 'ATOM' },
+    ]);
+    // The last good list is still the one cached.
+    vi.mocked(t.scan.assets).mockRejectedValue(new Error('down'));
+    await t.clock.sleep(2 * 60 * 1000);
+    expect(await t.registry().list()).toEqual([
+      { denom: 'ubze', symbol: 'BZE' },
+      { denom: ATOM, symbol: 'ATOM' },
+    ]);
+  });
+
+  it('falls back to the bundled list when Scan answers with an empty list', async () => {
+    const { registry, cache } = setup([]);
+    expect(await registry().list()).toEqual(BUNDLED);
+    expect(await cache.get('test:verified')).toBeUndefined();
+  });
+
   it('does not wait on a Scan that never answers', async () => {
     const scan = stubScan({ assets: vi.fn(() => new Promise<never>(() => undefined)) });
     const registry = new VerifiedRegistry(scan, { bundled: BUNDLED, clock: new FakeClock() });
