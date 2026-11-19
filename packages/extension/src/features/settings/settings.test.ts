@@ -1,4 +1,11 @@
-import { Argon2idKdf, Vault, WebCryptoCipher, type ChainClient, type Clock } from '@beepocket/core';
+import {
+  Argon2idKdf,
+  Vault,
+  WebCryptoCipher,
+  type ChainClient,
+  type Clock,
+  type NetworkId,
+} from '@beepocket/core';
 import { describe, expect, it } from 'vitest';
 import { HandlerRegistry } from '../../background/registry';
 import { ChromeSessionStorage, ChromeStorage } from '../../platform';
@@ -24,8 +31,11 @@ class FakeAlarms implements Alarms {
   }
 }
 
+/** What the settings tell about a network switch. */
+type NetworkChanged = (from: NetworkId, to: NetworkId) => Promise<void>;
+
 /** The real wallet service (real validation and sealing) over fake chrome storage areas. */
-async function rig() {
+async function rig(onNetworkChanged?: NetworkChanged) {
   const local = new FakeArea();
   const storage = new ChromeStorage(local);
   const session = await ChromeSessionStorage.open(new FakeArea());
@@ -50,7 +60,10 @@ async function rig() {
     chain: () => Promise.resolve({} as ChainClient),
   });
   const registry = new HandlerRegistry();
-  registerSettingsHandlers(registry, new SettingsService({ wallet, storage }));
+  registerSettingsHandlers(
+    registry,
+    new SettingsService({ wallet, storage, ...(onNetworkChanged ? { onNetworkChanged } : {}) }),
+  );
   const call = async <M extends Method>(
     method: M,
     payload: unknown,
@@ -170,6 +183,22 @@ describe('network handlers', () => {
     await t.storage.set('network', 'devnet');
     expect(await t.call('network.get', {})).toEqual({ ok: true, value: { id: 'mainnet' } });
     expect(code(await t.call('network.set', { id: 'devnet' }))).toBe('bad_request');
+  });
+
+  it('names the network left and the one entered, only when it changes', async () => {
+    const told: [NetworkId, NetworkId][] = [];
+    const t = await rig((from, to) => {
+      told.push([from, to]);
+      return Promise.resolve();
+    });
+    await t.call('network.set', { id: 'mainnet' });
+    await t.call('network.set', { id: 'testnet' });
+    await t.call('network.set', { id: 'testnet' });
+    await t.call('network.set', { id: 'mainnet' });
+    expect(told).toEqual([
+      ['mainnet', 'testnet'],
+      ['testnet', 'mainnet'],
+    ]);
   });
 });
 

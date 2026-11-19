@@ -205,6 +205,7 @@ async function rig() {
     focused,
     open,
     local,
+    sessionArea,
     storage,
     vault,
     active,
@@ -890,39 +891,113 @@ describe('connected sites', () => {
     });
   });
 
-  it('a network switch pushes to every recorded document', async () => {
-    const t = await rig();
-    await t.ask('getKey', chainId(), t.site(ORIGIN, 1, 'doc-1'));
-    await t.ask('getKey', chainId(), t.site(OTHER, 2, 'doc-2'));
-    await t.dapp.networkChanged();
-    expect(pushes(t)).toEqual(['1:doc-1', '2:doc-2']);
-  });
-
-  it('forgets a document whose push failed, and a closed tab', async () => {
-    const t = await rig();
-    await t.ask('getKey', chainId(), t.site(ORIGIN, 1, 'doc-1'));
-    await t.ask('getKey', chainId(), t.site(ORIGIN, 2, 'doc-2'));
-    await t.ask('getKey', chainId(), t.site(ORIGIN, 3, 'doc-3'));
-    t.unreachable.add('doc-1');
-    await t.dapp.networkChanged();
-    t.unreachable.clear();
-    await t.dapp.onTabRemoved(2);
-    t.delivered.length = 0;
-    await t.dapp.networkChanged();
-    expect(pushes(t)).toEqual(['3:doc-3']);
-  });
-
-  it('records a document once and keeps the 200 newest', async () => {
-    const t = await rig();
-    for (let i = 0; i < 201; i++) {
-      await t.ask('getKey', chainId(), t.site(ORIGIN, i, `doc-${String(i)}`));
+  describe('a network switch', () => {
+    const UNCONNECTED = 'https://unconnected.example';
+    /** Mainnet active; ORIGIN connected on mainnet, OTHER on testnet only; pushes cleared. */
+    async function connectedOnEach(t: Awaited<ReturnType<typeof rig>>) {
+      await connectSite(t, t.site(ORIGIN, 1, 'doc-1'));
+      t.setNetwork('testnet');
+      const a = await t.ask('connect', chainId('testnet'), t.site(OTHER, 2, 'doc-2'));
+      expect((await t.answer(a.id, { approve: true, index: 1 })).ok).toBe(true);
+      t.setNetwork('mainnet');
     }
-    await t.ask('getKey', chainId(), t.site(ORIGIN, 5, 'doc-5'));
-    await t.dapp.networkChanged();
-    const sent = pushes(t);
-    expect(sent).toHaveLength(200);
-    expect(sent).not.toContain('0:doc-0');
-    expect(sent.filter((s) => s === '5:doc-5')).toHaveLength(1);
+    const switchTo = async (t: Awaited<ReturnType<typeof rig>>, to: NetworkId) => {
+      const from: NetworkId = to === 'mainnet' ? 'testnet' : 'mainnet';
+      t.setNetwork(to);
+      await t.dapp.networkChanged(from, to);
+    };
+
+    it('tells the sites connected on the network left or entered, and no other page', async () => {
+      const t = await rig();
+      await connectedOnEach(t);
+      // A page of OTHER that last talked while mainnet was active: its site is on testnet.
+      await t.ask('getKey', chainId(), t.site(OTHER, 4, 'doc-4'));
+      await t.ask('getKey', chainId(), t.site(UNCONNECTED, 3, 'doc-3'));
+      t.delivered.length = 0;
+      await switchTo(t, 'testnet');
+      expect(pushes(t)).toEqual(['1:doc-1', '2:doc-2', '4:doc-4']);
+      t.delivered.length = 0;
+      await switchTo(t, 'mainnet');
+      expect(pushes(t)).toEqual(['1:doc-1', '2:doc-2', '4:doc-4']);
+    });
+
+    it('tells a page that is not connected nothing', async () => {
+      const t = await rig();
+      await t.ask('getKey', chainId(), t.site(UNCONNECTED, 3, 'doc-3'));
+      await t.ask('connect', chainId('testnet'), t.site(UNCONNECTED, 5, 'doc-5'));
+      t.delivered.length = 0;
+      await switchTo(t, 'testnet');
+      await switchTo(t, 'mainnet');
+      expect(pushes(t)).toEqual([]);
+    });
+
+    it('tells the connected sites while weakly locked', async () => {
+      const t = await rig();
+      await connectedOnEach(t);
+      await t.ask('getKey', chainId(), t.site(UNCONNECTED, 3, 'doc-3'));
+      await t.wallet.weakLock();
+      t.delivered.length = 0;
+      await switchTo(t, 'testnet');
+      expect(pushes(t)).toEqual(['1:doc-1', '2:doc-2']);
+    });
+
+    it('tells no page while fully locked, and stores nothing about the sites', async () => {
+      const t = await rig();
+      await connectedOnEach(t);
+      await t.ask('getKey', chainId(), t.site(UNCONNECTED, 3, 'doc-3'));
+      await t.wallet.lock();
+      t.delivered.length = 0;
+      const snapshot = () => ({
+        local: structuredClone(Object.fromEntries(t.local.data)),
+        session: structuredClone(Object.fromEntries(t.sessionArea.data)),
+      });
+      const before = snapshot();
+      await switchTo(t, 'testnet');
+      await switchTo(t, 'mainnet');
+      expect(pushes(t)).toEqual([]);
+      expect(snapshot()).toEqual(before);
+    });
+
+    it('leaves Connect, Change and Disconnect telling only their own site', async () => {
+      const t = await rig();
+      await connectedOnEach(t);
+      await t.ask('getKey', chainId(), t.site(ORIGIN, 6, 'doc-6'));
+      t.delivered.length = 0;
+      expect((await t.dapp.sites.change(ORIGIN, 2, 'mainnet')).ok).toBe(true);
+      expect(pushes(t)).toEqual(['1:doc-1', '6:doc-6']);
+      t.delivered.length = 0;
+      expect((await t.dapp.sites.disconnect(ORIGIN, 'mainnet')).ok).toBe(true);
+      expect(pushes(t)).toEqual(['1:doc-1', '6:doc-6']);
+    });
+
+    it('forgets a document whose push failed, and a closed tab', async () => {
+      const t = await rig();
+      await connectSite(t, t.site(ORIGIN, 1, 'doc-1'));
+      await t.ask('getKey', chainId(), t.site(ORIGIN, 2, 'doc-2'));
+      await t.ask('getKey', chainId(), t.site(ORIGIN, 3, 'doc-3'));
+      t.unreachable.add('doc-1');
+      await switchTo(t, 'testnet');
+      t.unreachable.clear();
+      await t.dapp.onTabRemoved(2);
+      t.delivered.length = 0;
+      await switchTo(t, 'mainnet');
+      expect(pushes(t)).toEqual(['3:doc-3']);
+    });
+
+    it('records a document once and keeps the 200 newest', async () => {
+      const t = await rig();
+      await connectSite(t, t.site(ORIGIN, 0, 'doc-0'));
+      for (let i = 0; i < 201; i++) {
+        await t.ask('getKey', chainId(), t.site(ORIGIN, i, `doc-${String(i)}`));
+      }
+      await t.ask('getKey', chainId(), t.site(ORIGIN, 5, 'doc-5'));
+      t.delivered.length = 0;
+      await switchTo(t, 'testnet');
+      const sent = pushes(t);
+      expect(sent).toHaveLength(200);
+      expect(sent).not.toContain('0:doc-0');
+      expect(sent.filter((s) => s === '5:doc-5')).toHaveLength(1);
+    });
   });
 });
 
