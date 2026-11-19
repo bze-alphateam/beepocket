@@ -71,6 +71,16 @@ export class SitesService {
   }
 
   /**
+   * The origins connected on any of `networks`, read from the profile; null when it cannot be
+   * read (the wallet is locked or there is none).
+   */
+  async connectedOrigins(networks: readonly NetworkId[]): Promise<ReadonlySet<string> | null> {
+    const profile = await this.deps.wallet.getProfile();
+    if (!profile.ok) return null;
+    return new Set(networks.flatMap((network) => Object.keys(profile.value.sites[network])));
+  }
+
+  /**
    * The site in the tab the popup was opened over, when it is connected on the active network.
    * The URL comes from the browser (readable thanks to `activeTab`), never from the page; without
    * it, or on a non-web tab, there is no site.
