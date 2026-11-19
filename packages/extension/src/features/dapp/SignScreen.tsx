@@ -10,7 +10,13 @@ import { useState } from 'preact/hooks';
 import { t } from '../../i18n';
 import { Layout } from '../../popup/Layout';
 import { useClient } from '../../popup/client-context';
-import { WalletErrorCodes, type FeeChoice, type SignView } from '../../protocol';
+import {
+  WalletErrorCodes,
+  type FeeChoice,
+  type HighSiteFee,
+  type SignView,
+  type SiteFeeCheck,
+} from '../../protocol';
 import { SendErrorCodes, type FeeOverride } from '../../protocol/send';
 import {
   Avatar,
@@ -228,29 +234,43 @@ function Details(props: { view: SignView; index: number | null }) {
   );
 }
 
+interface FeeNote {
+  tone: 'amber' | 'info';
+  text: string;
+  raise?: true;
+}
+
 /**
- * The warning under the fee row: about the site's fee, when that is the one picked untouched.
- * Advanced settings replace the site's fee, so its warnings no longer apply.
+ * The warnings under the fee row: about the site's fee, when that is the one picked untouched.
+ * A high fee is warned about together with a gas or minimum problem. Advanced settings replace
+ * the site's fee, so its warnings no longer apply.
  */
-function feeNote(
-  view: SignView,
-  fee: FeeChoice,
-  custom: boolean,
-): { tone: 'amber' | 'info'; text: string; raise?: true } | null {
+function feeNotes(view: SignView, fee: FeeChoice, custom: boolean): FeeNote[] {
   const check = view.siteFee;
-  if (!check) return null;
-  if (check.status === 'unusable') return { tone: 'info', text: t('dapp.sign.fee.unusable') };
-  if (fee.setBy === undefined || custom) return null;
-  if (check.status === 'gas') return { tone: 'amber', text: t('dapp.sign.fee.gas'), raise: true };
-  if (check.status === 'low') return { tone: 'amber', text: t('dapp.sign.fee.low') };
-  if (check.status === 'high') {
-    const text =
-      check.times === null
-        ? t('dapp.sign.fee.higher')
-        : t('dapp.sign.fee.high', { times: String(check.times) });
-    return { tone: 'amber', text };
+  if (!check) return [];
+  if (check.status === 'unusable') return [{ tone: 'info', text: t('dapp.sign.fee.unusable') }];
+  if (fee.setBy === undefined || custom) return [];
+  const notes: FeeNote[] = [];
+  if (check.status === 'gas') {
+    notes.push({ tone: 'amber', text: t('dapp.sign.fee.gas'), raise: true });
   }
-  return null;
+  if (check.status === 'low') notes.push({ tone: 'amber', text: t('dapp.sign.fee.low') });
+  const high = highOf(check);
+  if (high) {
+    const text =
+      high.times === null
+        ? t('dapp.sign.fee.higher')
+        : t('dapp.sign.fee.high', { times: String(high.times) });
+    notes.push({ tone: 'amber', text });
+  }
+  return notes;
+}
+
+/** Whether the site's fee is too high, whatever else is wrong with it. */
+function highOf(check: SiteFeeCheck): HighSiteFee | undefined {
+  if (check.status === 'high') return { times: check.times };
+  if (check.status === 'gas' || check.status === 'low') return check.high;
+  return undefined;
 }
 
 /**
@@ -281,7 +301,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
   const spendable = (o: FeeChoice): bigint => BigInt(o.balance ?? '0');
   const applied: AppliedFee = applyOverride(base, override, spendable(base));
   const fee = applied.fee;
-  const note = feeNote(view, base, override !== null);
+  const notes = feeNotes(view, base, override !== null);
   const { summary } = view;
   const dangerous = summary.level === 'dangerous';
   const anyUnreadable = summary.messages.some(unreadable);
@@ -520,8 +540,8 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
             <Icon name="chevron-right" size={14} strokeWidth={2.2} />
           </button>
         </div>
-        {note && (
-          <Banner tone={note.tone}>
+        {notes.map((note) => (
+          <Banner key={note.text} tone={note.tone}>
             {note.raise === true && pricing !== null && estimate !== undefined ? (
               <span class="bp-gas-raise">
                 <span>{note.text}</span>
@@ -539,7 +559,7 @@ export function SignScreen({ view, done, queue }: SignScreenProps) {
               note.text
             )}
           </Banner>
-        )}
+        ))}
         {override !== null && base.setBy !== undefined && (
           <Banner tone="info">
             {t('dapp.sign.fee.replaced', {

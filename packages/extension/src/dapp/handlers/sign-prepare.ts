@@ -18,6 +18,7 @@ import {
   fail,
   ok,
   type FeeChoice,
+  type HighSiteFee,
   type Result,
   type SignDetails,
   type SiteFeeCheck,
@@ -225,16 +226,21 @@ function checkSiteFee(
     gasUsed: gasUsed.toString(),
     setBy: origin,
   };
+  // Checked on its own: a gas or minimum problem must not hide it.
+  const high = highFee(amount, estimate.walletAmount);
+  const also = high === null ? {} : { high };
   // Too little gas runs out mid-way and the fee is still charged.
-  if (fee.gasLimit < gasUsed) return { option, check: { status: 'gas' } };
-  if (amount < minimum) return { option, check: { status: 'low' } };
-  const { walletAmount } = estimate;
-  if (walletAmount !== undefined && amount > walletAmount * HIGH_FEE_TIMES) {
-    // A zero estimate (a zero gas price) makes any fee too high, by no meaningful ratio.
-    const times = walletAmount === 0n ? null : roundedRatio(amount, walletAmount);
-    return { option, check: { status: 'high', times } };
-  }
+  if (fee.gasLimit < gasUsed) return { option, check: { status: 'gas', ...also } };
+  if (amount < minimum) return { option, check: { status: 'low', ...also } };
+  if (high !== null) return { option, check: { status: 'high', ...high } };
   return { option, check: { status: 'ok' } };
+}
+
+/** How much the site's fee exceeds the wallet's estimate, when it is too high; null otherwise. */
+function highFee(amount: bigint, walletAmount: bigint | undefined): HighSiteFee | null {
+  if (walletAmount === undefined || amount <= walletAmount * HIGH_FEE_TIMES) return null;
+  // A zero estimate (a zero gas price) makes any fee too high, by no meaningful ratio.
+  return { times: walletAmount === 0n ? null : roundedRatio(amount, walletAmount) };
 }
 
 /** The display data of a fee token, or undefined when it cannot be shown right. */
