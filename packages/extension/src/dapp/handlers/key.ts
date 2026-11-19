@@ -125,10 +125,7 @@ function knownSite(profile: Profile, origin: string): boolean {
   return Object.hasOwn(mainnet, origin) || Object.hasOwn(testnet, origin);
 }
 
-function connectedAddress(
-  profile: Profile,
-  request: PendingRequest,
-): ProfileAddress | undefined {
+function connectedAddress(profile: Profile, request: PendingRequest): ProfileAddress | undefined {
   const site = Object.hasOwn(profile.sites[request.network], request.origin)
     ? profile.sites[request.network][request.origin]
     : undefined;
