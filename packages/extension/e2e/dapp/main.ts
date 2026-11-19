@@ -194,6 +194,13 @@ element('send-high-fee').addEventListener('click', () => {
     gasLimit: 300000,
   });
 });
+element('send-high-fee-low-gas').addEventListener('click', () => {
+  signAndSend((key, to) => [sendMsg(key, to)], {
+    denom: 'ubze',
+    amount: '10000',
+    gasLimit: 149999,
+  });
+});
 element('grant').addEventListener('click', () => {
   signAndSend((key, to) => [grantMsg(key, to)]);
 });

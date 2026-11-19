@@ -350,6 +350,30 @@ test('a site fee far above the estimate shows a warning', async ({ context, exte
   }
 });
 
+test('a site fee far above the estimate is flagged even with too little gas', async ({
+  context,
+  extensionId,
+}) => {
+  test.setTimeout(120_000);
+  const { dapp, stop } = await connectedDapp(context, extensionId);
+  try {
+    await dapp.getByLabel('Recipient').fill(RECIPIENT);
+    const [sign] = await Promise.all([
+      context.waitForEvent('page'),
+      dapp.getByRole('button', { name: 'Pay with high fee and low gas' }).click(),
+    ]);
+    // 10,000 ubze against the wallet's own 1,800, for 149,999 gas against 150,000 simulated.
+    await expect(
+      sign.getByText('This site set too little gas; the transaction may fail'),
+    ).toBeVisible();
+    await expect(sign.getByText('This site set a fee about 6× higher than needed')).toBeVisible();
+    await sign.getByRole('button', { name: 'Reject' }).click();
+    await expect(dapp.getByRole('status')).toHaveText('error rejected');
+  } finally {
+    stop();
+  }
+});
+
 test('Advanced gas limit and price are signed and broadcast exactly as shown', async ({
   context,
   extensionId,

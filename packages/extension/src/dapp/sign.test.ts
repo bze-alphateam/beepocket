@@ -992,6 +992,24 @@ describe('signDirect with a fee the site set', () => {
     expect(at.view.siteFee).toEqual({ status: 'ok' });
   });
 
+  it('reports a high fee together with too little gas, and keeps it selected', async () => {
+    const t = await rig();
+    await t.connect();
+    // The simulation used 150,000 gas; 200,000 ubze is 100x the wallet's 2,000.
+    const r = await review(t, site([['ubze', 200_000n]], 149_999n));
+    expect(r.view.siteFee).toEqual({ status: 'gas', high: { times: 100 } });
+    expect(r.view.fee).toMatchObject({ amount: '200000', gasLimit: '149999', setBy: ORIGIN });
+  });
+
+  it('reports a high fee together with a fee below the chains minimum', async () => {
+    const t = await rig();
+    await t.connect();
+    // 1,000,000 gas at 0.01 needs 10,000 ubze; 7,000 is 3.5x the wallet's 2,000.
+    const r = await review(t, site([['ubze', 7_000n]], 1_000_000n));
+    expect(r.view.siteFee).toEqual({ status: 'low', high: { times: 4 } });
+    expect(r.view.fee).toMatchObject({ amount: '7000', setBy: ORIGIN });
+  });
+
   it('checks the gas of a fee in another token against the simulation in another token', async () => {
     const t = await rig();
     await t.connect();
@@ -1051,6 +1069,9 @@ describe('signDirect with a fee the site set', () => {
     const r = await review(t, site([['ubze', 1_000_000n]], 225_000n));
     expect(r.view.siteFee).toEqual({ status: 'high', times: null });
     expect(r.view.fee).toMatchObject({ amount: '1000000', setBy: ORIGIN });
+    await t.answer(r.id, { approve: false });
+    const gas = await review(t, site([['ubze', 1_000_000n]], 149_999n));
+    expect(gas.view.siteFee).toEqual({ status: 'gas', high: { times: null } });
   });
 
   it('checks a fee in another token at the spot ratio, without the wallets margin', async () => {

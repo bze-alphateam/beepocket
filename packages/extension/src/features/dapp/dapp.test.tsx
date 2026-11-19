@@ -533,6 +533,65 @@ describe('the sign screen', () => {
     });
   });
 
+  it("shows the high-fee note together with the gas note on the site's fee", async () => {
+    const PRICING = {
+      native: true,
+      nativePrice: { num: '1', den: '100' },
+      rate: { num: '1', den: '100' },
+    };
+    // Under the 166,666 simulated, and 100 times the wallet's estimate.
+    const site = {
+      ...SIGN.fee,
+      amount: '200000',
+      gasLimit: '166665',
+      balance: '100000000',
+      pricing: PRICING,
+      setBy: 'https://dex.getbze.com',
+    };
+    const own = { ...SIGN.fee, balance: '100000000', pricing: PRICING };
+    const t = signRig({
+      ...SIGN,
+      fee: site,
+      options: [site, own],
+      siteFee: { status: 'gas', high: { times: 100 } },
+    });
+    await settle();
+    expect(t.host.textContent).toContain(en['dapp.sign.fee.gas']);
+    expect(t.host.textContent).toContain('This site set a fee about 100× higher than needed');
+    expect(button(t.host, en['dapp.sign.fee.raise'])).toBeDefined();
+    fireEvent(feeRow(t.host), 'click');
+    await settle();
+    fireEvent(
+      [...document.querySelectorAll('button')].find((b) => {
+        const label = b.getAttribute('aria-label') ?? '';
+        return label.startsWith('BZE') && label.includes('0.002 BZE');
+      }),
+      'click',
+    );
+    await settle();
+    // The wallet's own fee carries neither of the site's warnings.
+    expect(t.host.textContent).not.toContain(en['dapp.sign.fee.gas']);
+    expect(t.host.textContent).not.toContain('higher than needed');
+  });
+
+  it('shows the high-fee note together with the low-fee note', async () => {
+    const site = {
+      ...SIGN.fee,
+      amount: '7000',
+      gasLimit: '1000000',
+      setBy: 'https://dex.getbze.com',
+    };
+    const t = signRig({
+      ...SIGN,
+      fee: site,
+      options: [site, SIGN.fee],
+      siteFee: { status: 'low', high: { times: 4 } },
+    });
+    await settle();
+    expect(t.host.textContent).toContain(en['dapp.sign.fee.low']);
+    expect(t.host.textContent).toContain('This site set a fee about 4× higher than needed');
+  });
+
   it("signs the site's own fee again after the price goes back to the minimum", async () => {
     const PRICING = {
       native: true,
