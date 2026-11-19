@@ -1757,12 +1757,21 @@ async function daoWrapperParts(
   msgs: AnyMsg[],
   depth: number,
   runsAs: string,
-): Promise<{ rows: SummaryRow[]; unreadable: number }> {
+): Promise<{ rows: SummaryRow[]; unreadable: number; level: RiskLevel }> {
   // The DAO signs these, never the wallet: a nested exec is read for its own grantee.
   const inner = await wrappedParts(l, msgs, depth, '');
   const rows = wrappedRows(msgs, inner, () => ['Runs as', runsAs]);
-  return { rows, unreadable: inner.filter((p) => p.unreadable).length };
+  return {
+    rows,
+    unreadable: inner.filter((p) => p.unreadable).length,
+    level: riskiest(inner.map((p) => p.level)),
+  };
 }
+
+const CARE_NOTICE: DangerNotice = {
+  title: 'A message inside needs extra care',
+  text: 'If the proposal passes, the DAO runs a message the wallet marks as dangerous, such as a change to who decides in it. Read the messages before you continue.',
+};
 
 function unreadableNotice(count: number): DangerNotice {
   return {
@@ -1781,10 +1790,19 @@ async function submitProposalParts(
 ): Promise<Parts> {
   const dao = daoText(msg.daoId);
   const count = msg.msgs.length;
-  const { rows, unreadable } = await daoWrapperParts(l, msg.msgs, depth, `${dao}, if it passes`);
+  const { rows, unreadable, level } = await daoWrapperParts(
+    l,
+    msg.msgs,
+    depth,
+    `${dao}, if it passes`,
+  );
+  // The proposal is as risky as the riskiest message it would run, with one notice of its own:
+  // the notices of the messages inside speak of the wallet's own address, not the DAO's.
+  const danger =
+    unreadable > 0 ? unreadableNotice(unreadable) : level === 'dangerous' ? CARE_NOTICE : null;
   const title = safeText(msg.title, 80);
   return {
-    level: unreadable > 0 ? 'dangerous' : 'normal',
+    level: unreadable > 0 ? 'dangerous' : level,
     icon: 'vote',
     title: 'DAO proposal',
     hero: title,
@@ -1798,7 +1816,7 @@ async function submitProposalParts(
       ['You pay', "The DAO's proposal cost and deposit, if it has them"],
       ...rows,
     ],
-    ...(unreadable > 0 ? { danger: unreadableNotice(unreadable) } : {}),
+    ...(danger ? { danger } : {}),
   };
 }
 
