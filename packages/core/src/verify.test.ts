@@ -41,6 +41,7 @@ import * as rewardsMsgs from './proto/bze/rewards/tx';
 import * as tokenfactoryMsgs from './proto/bze/tokenfactory/tx';
 import * as cointrunkMsgs from './proto/bze/cointrunk/tx';
 import * as daoMsgs from './proto/bze/dao/tx';
+import { VoteOption as DaoVoteOption } from './proto/bze/dao/store';
 import * as guardianMsgs from './proto/bze/guardian/v1/tx';
 import * as stakingMsgs from './proto/cosmos/staking/v1beta1/tx';
 import * as distributionMsgs from './proto/cosmos/distribution/v1beta1/tx';
@@ -465,7 +466,10 @@ describe('verifySignRequest signers of DAO, guardian and token config messages',
       (s) => msg(daoMsgs.MsgWithdrawAdminNomination, { authority: s, daoId: 1n }),
     ],
     ['MsgSubmitProposal', (s) => msg(daoMsgs.MsgSubmitProposal, { proposer: s, daoId: 1n })],
-    ['dao MsgVote', (s) => msg(daoMsgs.MsgVote, { voter: s, proposalId: 1n, option: 1 })],
+    [
+      'dao MsgVote',
+      (s) => msg(daoMsgs.MsgVote, { voter: s, proposalId: 1n, option: DaoVoteOption.YES }),
+    ],
     ['MsgCancelProposal', (s) => msg(daoMsgs.MsgCancelProposal, { proposer: s, proposalId: 1n })],
     ['MsgSettleProposal', (s) => msg(daoMsgs.MsgSettleProposal, { sender: s, proposalId: 1n })],
     ['MsgCleanupProposal', (s) => msg(daoMsgs.MsgCleanupProposal, { sender: s, proposalId: 1n })],
@@ -667,6 +671,16 @@ describe('verifySignRequest refuses requests that do not re-encode exactly', () 
     expect(code(withBody(plain))).toBe('ok');
     expect(code(withBody(bytes(plain, [0x20, 0x01])))).toBe('bad-body');
     expect(code(withBody(bytes(plain, field(5, [0x08, 0x01]))))).toBe('bad-body');
+  });
+
+  it('bad-body: an unordered transaction or a time-based timeout', () => {
+    const body = (extra: { unordered?: boolean; timeoutTimestamp?: Date }) =>
+      TxBody.encode(TxBody.fromPartial({ messages: [Any.fromPartial(send())], ...extra })).finish();
+    expect(code(withBody(body({})))).toBe('ok');
+    expect(code(withBody(body({ unordered: true })))).toBe('bad-body');
+    expect(code(withBody(body({ timeoutTimestamp: new Date('2030-01-01T00:00:00Z') })))).toBe(
+      'bad-body',
+    );
   });
 
   it('bad-body: a body field sent twice, or a number or length written too long', () => {
