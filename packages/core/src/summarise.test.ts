@@ -40,6 +40,14 @@ import {
 import * as rewards from './proto/bze/rewards/tx';
 import * as factory from './proto/bze/tokenfactory/tx';
 import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
+import * as dao from './proto/bze/dao/tx';
+import {
+  DaoType,
+  DepositRefundPolicy,
+  FundsDestination,
+  VoteOption as DaoVoteOption,
+} from './proto/bze/dao/store';
+import * as guardian from './proto/bze/guardian/v1/tx';
 import { MsgMultiSend, MsgSend } from './proto/cosmos/bank/v1beta1/tx';
 import {
   MsgBeginRedelegate,
@@ -1884,7 +1892,7 @@ describe('BZE and cosmos message summaries', () => {
     expect(s.dangers).toEqual([
       {
         title: 'This gives Alex control of VDL',
-        text: "They can mint and change VDL. You can't undo this.",
+        text: "They can change VDL and pass it on. You can't undo this.",
       },
     ]);
   });
@@ -2090,6 +2098,365 @@ describe('vesting accounts, pool funding and deposits', () => {
   });
 });
 
+const daoConfig = {
+  minQuorum: '0.5',
+  threshold: '0.333',
+  votingPeriod: { seconds: 604_800n, nanos: 0 },
+  allowExpedite: false,
+  expeditedPeriod: { seconds: 86_400n, nanos: 0 },
+  expediteQuorum: '0.6',
+  expediteThreshold: '0.5',
+  openSubmission: false,
+  proposalCost: bze('1000000'),
+  costDestination: FundsDestination.BURN,
+  depositRefundPolicy: DepositRefundPolicy.ONLY_PASSED,
+  keptDepositDestination: FundsDestination.TREASURY,
+};
+/** A send from a DAO's account (here the stranger's address) to Alex. */
+const daoSend = () =>
+  pack(MsgSend, { fromAddress: STRANGER, toAddress: ALEX, amount: [bze('1000000000')] });
+const daoVote = (option: DaoVoteOption) => pack(dao.MsgVote, { voter: ME, proposalId: 9n, option });
+const proposal = (...msgs: AnyMsg[]) =>
+  pack(dao.MsgSubmitProposal, {
+    proposer: ME,
+    daoId: 3n,
+    title: 'Fund the team',
+    summary: 'Pays Alex',
+    msgs: msgs.map((m) => Any.fromPartial(m)),
+  });
+const adminExecute = (...msgs: AnyMsg[]) =>
+  pack(dao.MsgAdminExecute, { admin: ME, daoId: 3n, msgs: msgs.map((m) => Any.fromPartial(m)) });
+
+/** A well-formed message of every v8.3 type a wallet user can sign. */
+const V83_SAMPLES: Record<string, AnyMsg> = {
+  [dao.MsgCreateDao.typeUrl]: pack(dao.MsgCreateDao, {
+    creator: ME,
+    type: DaoType.DAO_TYPE_STATIC_LIST,
+    name: 'Builders',
+    description: 'We build',
+    config: daoConfig,
+    members: [ME, ALEX],
+  }),
+  [dao.MsgAdminExecute.typeUrl]: adminExecute(daoSend()),
+  [dao.MsgNominateAdmin.typeUrl]: pack(dao.MsgNominateAdmin, {
+    authority: ME,
+    daoId: 3n,
+    nominee: ALEX,
+  }),
+  [dao.MsgAcceptAdminNomination.typeUrl]: pack(dao.MsgAcceptAdminNomination, {
+    nominee: ME,
+    daoId: 3n,
+  }),
+  [dao.MsgWithdrawAdminNomination.typeUrl]: pack(dao.MsgWithdrawAdminNomination, {
+    authority: ME,
+    daoId: 3n,
+  }),
+  [dao.MsgSubmitProposal.typeUrl]: proposal(daoSend()),
+  [dao.MsgVote.typeUrl]: daoVote(DaoVoteOption.YES),
+  [dao.MsgCancelProposal.typeUrl]: pack(dao.MsgCancelProposal, { proposer: ME, proposalId: 9n }),
+  [dao.MsgSettleProposal.typeUrl]: pack(dao.MsgSettleProposal, { sender: ME, proposalId: 9n }),
+  [dao.MsgCleanupProposal.typeUrl]: pack(dao.MsgCleanupProposal, {
+    sender: ME,
+    proposalId: 9n,
+    limit: 50n,
+  }),
+  [dao.MsgUpdateDaoConfig.typeUrl]: pack(dao.MsgUpdateDaoConfig, {
+    authority: STRANGER,
+    daoId: 3n,
+    config: daoConfig,
+  }),
+  [dao.MsgUpdateMetadata.typeUrl]: pack(dao.MsgUpdateMetadata, {
+    authority: STRANGER,
+    daoId: 3n,
+    name: 'Builders 2',
+    description: 'We build more',
+  }),
+  [dao.MsgUpdateElectorate.typeUrl]: pack(dao.MsgUpdateElectorate, {
+    authority: STRANGER,
+    daoId: 3n,
+    electorate: { srIds: ['7'], drDenom: VDL },
+  }),
+  [dao.MsgUpdateMembers.typeUrl]: pack(dao.MsgUpdateMembers, {
+    authority: STRANGER,
+    daoId: 3n,
+    add: [ALEX],
+    remove: [],
+  }),
+  [factory.MsgSetDenomConfig.typeUrl]: pack(factory.MsgSetDenomConfig, {
+    creator: ME,
+    denom: VDL,
+    communityPool: ALEX,
+    transferFee: '0.01',
+    gasSurcharge: '0.5',
+  }),
+  [factory.MsgDisableMinting.typeUrl]: pack(factory.MsgDisableMinting, { creator: ME, denom: VDL }),
+  [guardian.MsgTightenRateLimit.typeUrl]: pack(guardian.MsgTightenRateLimit, {
+    signer: ME,
+    denom: 'ubze',
+    channelId: 'channel-0',
+    maxPercentSend: '5',
+    maxPercentRecv: '10',
+  }),
+  [guardian.MsgBlockDenom.typeUrl]: pack(guardian.MsgBlockDenom, { signer: ME, denom: USDC }),
+  [guardian.MsgDisableMessages.typeUrl]: pack(guardian.MsgDisableMessages, {
+    signer: ME,
+    msgTypeUrls: [MsgSend.typeUrl],
+  }),
+  [guardian.MsgHaltTradingDenoms.typeUrl]: pack(guardian.MsgHaltTradingDenoms, {
+    signer: ME,
+    denoms: [VDL],
+  }),
+  [guardian.MsgHaltChain.typeUrl]: pack(guardian.MsgHaltChain, { signer: ME, reason: 'exploit' }),
+  [guardian.MsgPauseAutomation.typeUrl]: pack(guardian.MsgPauseAutomation, { signer: ME }),
+  [guardian.MsgCloseChannel.typeUrl]: pack(guardian.MsgCloseChannel, {
+    signer: ME,
+    channelId: 'channel-0',
+  }),
+};
+const v83 = (typeUrl: string): AnyMsg => {
+  const msg = V83_SAMPLES[typeUrl];
+  if (!msg) throw new Error(`no sample for ${typeUrl}`);
+  return msg;
+};
+
+describe('DAO votes', () => {
+  it('names every option of the DAO module, which orders them unlike x/gov', async () => {
+    const heroes = await Promise.all(
+      [DaoVoteOption.YES, DaoVoteOption.NO, DaoVoteOption.ABSTAIN].map(
+        async (option) => (await run([daoVote(option)])).hero,
+      ),
+    );
+    expect(heroes).toEqual(['Yes', 'No', 'Abstain']);
+    const s = await run([daoVote(DaoVoteOption.NO)]);
+    expect(headline(s)).toBe('DAO vote · No · on DAO proposal #9');
+    expect(s.level).toBe('normal');
+    expect(s.messages[0]?.icon).toBe('vote');
+    expect(s.rows).toEqual([
+      ['Proposal', '#9'],
+      ['Vote', 'No'],
+    ]);
+  });
+
+  it('is unknown for an unspecified vote', async () => {
+    const s = await run([daoVote(DaoVoteOption.VOTE_OPTION_UNSPECIFIED)]);
+    expect(s.hero).toBe('Unknown vote');
+    expect(s.level).toBe('unknown');
+  });
+});
+
+describe('DAO proposals', () => {
+  it('shows the title, the DAO and every message it would run as the DAO', async () => {
+    const s = await run([proposal(daoSend())]);
+    expect(headline(s)).toBe('DAO proposal · Fund the team · to DAO #3 · 1 message');
+    expect(s.level).toBe('normal');
+    expect(s.messages[0]?.unreadable).toBe(false);
+    expect(s.rows).toEqual([
+      ['DAO', 'DAO #3'],
+      ['Title', 'Fund the team'],
+      ['Summary', 'Pays Alex'],
+      ['Voting', 'Normal'],
+      ['You pay', "The DAO's proposal cost and deposit, if it has them"],
+      ['Message 1', 'Send · 1,000.00 BZE · to Alex'],
+      ['Runs as', 'DAO #3, if it passes'],
+      ['To', ALEX, 'mono'],
+      ['Amount', '1,000.00 BZE'],
+    ]);
+  });
+
+  it('never says a message inside runs from your own account', async () => {
+    const mine = pack(MsgSend, { fromAddress: ME, toAddress: ALEX, amount: [bze('1')] });
+    const s = await run([proposal(mine)]);
+    expect(s.rows).toContainEqual(['Runs as', 'DAO #3, if it passes']);
+    expect(s.rows.map((r) => r[1])).not.toContain('Your own account');
+  });
+
+  it('is dangerous when the wallet cannot read a message inside', async () => {
+    const s = await run([proposal(daoSend(), wasm)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.dangers.map((d) => d.title)).toEqual(['The wallet cannot read 1 message inside']);
+    expect(needsTrust(s)).toBe(true);
+  });
+
+  it('lists how many messages it does not show', async () => {
+    const s = await run([proposal(...Array.from({ length: 12 }, () => daoSend()))]);
+    expect(s.rows.filter((r) => r[0].startsWith('Message '))).toHaveLength(10);
+    expect(s.rows[s.rows.length - 1]).toEqual(['…', '2 more messages']);
+  });
+
+  it('shows cancel, settle and clean-up by proposal', async () => {
+    expect(headline(await run([v83(dao.MsgCancelProposal.typeUrl)]))).toBe(
+      'Cancel DAO proposal · Proposal #9 · withdraws your proposal from the vote',
+    );
+    expect(headline(await run([v83(dao.MsgSettleProposal.typeUrl)]))).toBe(
+      'Settle DAO proposal · Proposal #9 · counts the votes and runs it if it passed',
+    );
+    expect(headline(await run([v83(dao.MsgCleanupProposal.typeUrl)]))).toBe(
+      'Clean up DAO proposal · Proposal #9 · deletes a finished proposal',
+    );
+  });
+});
+
+describe('DAO admin', () => {
+  it('runs messages as the DAO at once: dangerous, with every message shown', async () => {
+    const s = await run([adminExecute(daoSend())]);
+    expect(s.level).toBe('dangerous');
+    expect(headline(s)).toBe('Run as DAO admin · 1 message · as DAO #3');
+    expect(s.rows).toEqual([
+      ['DAO', 'DAO #3'],
+      ['Message 1', 'Send · 1,000.00 BZE · to Alex'],
+      ['Runs as', 'DAO #3'],
+      ['To', ALEX, 'mono'],
+      ['Amount', '1,000.00 BZE'],
+    ]);
+    expect(s.dangers[0]?.title).toBe('This acts as DAO #3 at once');
+  });
+
+  it('warns about a message inside it cannot read', async () => {
+    const s = await run([adminExecute(wasm)]);
+    expect(s.level).toBe('dangerous');
+    expect(s.dangers.map((d) => d.title)).toContain('The wallet cannot read 1 message inside');
+  });
+
+  it('makes nominating an admin or handing the DAO to its voters dangerous', async () => {
+    const nominate = await run([v83(dao.MsgNominateAdmin.typeUrl)]);
+    expect(headline(nominate)).toBe('Nominate DAO admin · DAO #3 · to Alex');
+    expect(nominate.level).toBe('dangerous');
+    expect(nominate.dangers[0]?.title).toBe('This offers Alex control of DAO #3');
+    const giveUp = await run([
+      pack(dao.MsgNominateAdmin, { authority: ME, daoId: 3n, nominee: '' }),
+    ]);
+    expect(headline(giveUp)).toBe('Give up DAO admin · DAO #3 · its voters run it from now on');
+    expect(giveUp.level).toBe('dangerous');
+  });
+
+  it('shows accepting and withdrawing a nomination', async () => {
+    const accept = await run([v83(dao.MsgAcceptAdminNomination.typeUrl)]);
+    expect(headline(accept)).toBe('Accept DAO admin · DAO #3 · you become its admin');
+    expect(accept.level).toBe('normal');
+    const withdraw = await run([v83(dao.MsgWithdrawAdminNomination.typeUrl)]);
+    expect(headline(withdraw)).toBe(
+      'Withdraw DAO admin offer · DAO #3 · cancels the pending handover',
+    );
+  });
+});
+
+describe('DAO creation and changes', () => {
+  it('shows the members and voting rules of a new DAO', async () => {
+    const s = await run([v83(dao.MsgCreateDao.typeUrl)]);
+    expect(headline(s)).toBe('Create DAO · Builders · voted by 2 members');
+    expect(s.level).toBe('normal');
+    expect(s.rows).toEqual([
+      ['Name', 'Builders'],
+      ['Description', 'We build'],
+      ['Admin', 'None: its voters run it'],
+      ['Members', '2 members'],
+      ['Member', ME, 'mono'],
+      ['Member', ALEX, 'mono'],
+      ['Quorum', '50%'],
+      ['Passes above', '33.3% yes'],
+      ['Voting period', '7 days'],
+      ['Expedited voting', 'Off'],
+      ['Who can propose', 'Voters only'],
+      ['Proposal cost', '1.00 BZE, burned'],
+      ['Proposal deposit', 'None'],
+      ['Creation fee', "The chain's DAO creation fee"],
+    ]);
+  });
+
+  it('makes changes to the rules, voters and members dangerous', async () => {
+    for (const typeUrl of [
+      dao.MsgUpdateDaoConfig.typeUrl,
+      dao.MsgUpdateElectorate.typeUrl,
+      dao.MsgUpdateMembers.typeUrl,
+    ]) {
+      const s = await run([v83(typeUrl)]);
+      expect(s.level, typeUrl).toBe('dangerous');
+      expect(s.dangers[0]?.title, typeUrl).toBe('This changes who decides in DAO #3');
+    }
+    const members = await run([v83(dao.MsgUpdateMembers.typeUrl)]);
+    expect(headline(members)).toBe(
+      'Change DAO members · DAO #3 · adds 1 member, removes 0 members',
+    );
+    expect(members.rows).toContainEqual(['Add', ALEX, 'mono']);
+    const voters = await run([v83(dao.MsgUpdateElectorate.typeUrl)]);
+    expect(voters.rows).toContainEqual([
+      'Voters',
+      `Stakers of staking reward 7, holder reward of ${VDL}`,
+    ]);
+    const config = await run([v83(dao.MsgUpdateDaoConfig.typeUrl)]);
+    expect(config.rows).toContainEqual(['Passes above', '33.3% yes']);
+  });
+
+  it('shows a new name as an ordinary change', async () => {
+    const s = await run([v83(dao.MsgUpdateMetadata.typeUrl)]);
+    expect(headline(s)).toBe('Rename DAO · DAO #3 · to Builders 2');
+    expect(s.level).toBe('normal');
+  });
+});
+
+describe('token config', () => {
+  it('names the token and its new fees', async () => {
+    const s = await run([v83(factory.MsgSetDenomConfig.typeUrl)]);
+    expect(headline(s)).toBe('Set token fees · VDL · 1% transfer fee, 50% gas surcharge');
+    expect(s.level).toBe('normal');
+    expect(s.rows).toEqual([
+      ['Token', 'VDL'],
+      ['Transfer fee', '1%'],
+      ['Gas surcharge', '50%'],
+      ['Fees go to', ALEX, 'mono'],
+    ]);
+    const none = await run([
+      pack(factory.MsgSetDenomConfig, {
+        creator: ME,
+        denom: VDL,
+        communityPool: '',
+        transferFee: '0',
+        gasSurcharge: '0',
+      }),
+    ]);
+    expect(none.rows).toEqual([
+      ['Token', 'VDL'],
+      ['Transfer fee', '0%'],
+      ['Gas surcharge', '0%'],
+      ['Fees go to', 'No one'],
+    ]);
+  });
+
+  it('makes turning minting off for good dangerous', async () => {
+    const s = await run([v83(factory.MsgDisableMinting.typeUrl)]);
+    expect(headline(s)).toBe('Stop minting · VDL · for good');
+    expect(s.level).toBe('dangerous');
+    expect(s.dangers[0]?.title).toBe('No one can mint VDL again');
+  });
+});
+
+describe('guardian actions', () => {
+  it.each([
+    [guardian.MsgTightenRateLimit.typeUrl, 'Tighten an IBC rate limit'],
+    [guardian.MsgBlockDenom.typeUrl, 'Block a token over IBC'],
+    [guardian.MsgDisableMessages.typeUrl, 'Turn off message types'],
+    [guardian.MsgHaltTradingDenoms.typeUrl, 'Halt trading of tokens'],
+    [guardian.MsgHaltChain.typeUrl, 'Halt the chain'],
+    [guardian.MsgPauseAutomation.typeUrl, 'Pause automatic chain jobs'],
+    [guardian.MsgCloseChannel.typeUrl, 'Close an IBC channel'],
+  ])('%s names the action and is dangerous', async (typeUrl, action) => {
+    const s = await run([v83(typeUrl)]);
+    expect(s.title).toBe('Guardian action');
+    expect(s.hero).toBe(action);
+    expect(s.level).toBe('dangerous');
+    expect(s.messages[0]?.unreadable).toBe(false);
+    expect(s.dangers[0]?.title).toBe('Only a chain guardian can send this');
+  });
+
+  it('shows the reason of a chain halt', async () => {
+    const s = await run([v83(guardian.MsgHaltChain.typeUrl)]);
+    expect(s.rows).toEqual([
+      ['Action', 'Halt the chain'],
+      ['Reason', 'exploit'],
+    ]);
+  });
+});
+
 /**
  * Message types every supported chain version registers, one fixture per version. Regenerate
  * them from the chain source at every chain upgrade (see `test/fixtures/registry/README.md`).
@@ -2102,6 +2469,7 @@ const REGISTRY: [string, string[]][] = [
 /** A well-formed message of every type the wallet summarises. */
 const WELL_FORMED: Record<string, AnyMsg> = {
   ...SAMPLES,
+  ...V83_SAMPLES,
   [MsgSend.typeUrl]: send(),
   [MsgMultiSwap.typeUrl]: swap(),
   [MsgCreateOrder.typeUrl]: order('buy'),
@@ -2148,23 +2516,6 @@ const WELL_FORMED: Record<string, AnyMsg> = {
  * of here means giving it a summary or making it governance-only.
  */
 const TICK_ONLY = new Set([
-  '/bze.dao.MsgAcceptAdminNomination',
-  '/bze.dao.MsgAdminExecute',
-  '/bze.dao.MsgCancelProposal',
-  '/bze.dao.MsgCleanupProposal',
-  '/bze.dao.MsgCreateDao',
-  '/bze.dao.MsgNominateAdmin',
-  '/bze.dao.MsgSettleProposal',
-  '/bze.dao.MsgSubmitProposal',
-  '/bze.dao.MsgUpdateDaoConfig',
-  '/bze.dao.MsgUpdateElectorate',
-  '/bze.dao.MsgUpdateMembers',
-  '/bze.dao.MsgUpdateMetadata',
-  '/bze.dao.MsgUpdateParams',
-  '/bze.dao.MsgVote',
-  '/bze.dao.MsgWithdrawAdminNomination',
-  '/bze.tokenfactory.MsgDisableMinting',
-  '/bze.tokenfactory.MsgSetDenomConfig',
   '/cosmos.auth.v1beta1.MsgUpdateParams',
   '/cosmos.authz.v1beta1.MsgRevoke',
   '/cosmos.bank.v1beta1.MsgSetSendEnabled',

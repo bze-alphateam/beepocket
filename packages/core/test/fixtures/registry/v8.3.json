@@ -24,6 +24,17 @@
   "/bze.dao.MsgUpdateParams",
   "/bze.dao.MsgVote",
   "/bze.dao.MsgWithdrawAdminNomination",
+  "/bze.guardian.v1.MsgBlockDenom",
+  "/bze.guardian.v1.MsgCloseChannel",
+  "/bze.guardian.v1.MsgDisableMessages",
+  "/bze.guardian.v1.MsgHaltChain",
+  "/bze.guardian.v1.MsgHaltTradingDenoms",
+  "/bze.guardian.v1.MsgPauseAutomation",
+  "/bze.guardian.v1.MsgReopenChannel",
+  "/bze.guardian.v1.MsgResumeAutomation",
+  "/bze.guardian.v1.MsgTightenRateLimit",
+  "/bze.guardian.v1.MsgUnblockDenom",
+  "/bze.guardian.v1.MsgUpdateParams",
   "/bze.rewards.MsgActivateTradingReward",
   "/bze.rewards.MsgClaimDenomRewards",
   "/bze.rewards.MsgClaimStakingRewards",
@@ -148,5 +159,9 @@
   "/ibc.core.connection.v1.MsgConnectionOpenConfirm",
   "/ibc.core.connection.v1.MsgConnectionOpenInit",
   "/ibc.core.connection.v1.MsgConnectionOpenTry",
-  "/ibc.core.connection.v1.MsgUpdateParams"
+  "/ibc.core.connection.v1.MsgUpdateParams",
+  "/ratelimit.v1.MsgAddRateLimit",
+  "/ratelimit.v1.MsgRemoveRateLimit",
+  "/ratelimit.v1.MsgResetRateLimit",
+  "/ratelimit.v1.MsgUpdateRateLimit"
 ]
