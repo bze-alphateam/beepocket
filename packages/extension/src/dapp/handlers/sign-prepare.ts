@@ -29,7 +29,7 @@ import type { Profile, ProfileAddress } from '../../features/wallet/profile';
 import { refuse, type Outcome, type PendingRequest } from '../types';
 import { bigintFromWire, bytesFromWire, DappErrorCodes } from '../wire';
 import { guarded, simulationMessage, type ChainEnv, type TxDeps } from './env';
-import { connectedAddress, networkRefusal, pubKeyOf } from './key';
+import { checkSite, notConnected, pubKeyOf } from './key';
 
 /** `signDirect` params as they are kept with the pending request (JSON: bytes are base64). */
 export interface SignParams {
@@ -279,25 +279,19 @@ export async function checkSigner(
   request: PendingRequest,
   params: SignParams,
 ): Promise<Preparation | Signer> {
-  const active = await deps.services.activeNetwork();
-  const wrong = networkRefusal(request, params, active.id);
-  if (wrong) return { kind: 'refuse', outcome: wrong };
-  const { state } = await deps.wallet.state();
-  if (state === 'uninitialised') {
-    return refused(DappErrorCodes.notConnected, 'BeePocket has no wallet yet.');
-  }
-  const profile = state === 'locked' ? null : await deps.wallet.getProfile();
-  if (!profile?.ok) return { kind: 'locked' };
-  const entry = connectedAddress(profile.value, request);
-  if (!entry) return refused(DappErrorCodes.notConnected, 'This site is not connected.');
-  const pubKeyText = await pubKeyOf(deps, entry, state === 'unlocked');
+  const site = await checkSite(deps, request, params);
+  if (site.kind === 'answer') return { kind: 'refuse', outcome: site.outcome };
+  if (site.kind === 'locked') return { kind: 'locked' };
+  const { profile, entry, unlocked } = site;
+  if (!entry) return { kind: 'refuse', outcome: notConnected() };
+  const pubKeyText = await pubKeyOf(deps, entry, unlocked);
   if (pubKeyText === null) return { kind: 'unlock' };
   return {
     kind: 'signer',
-    profile: profile.value,
+    profile,
     entry,
     pubKey: bytesFromWire(pubKeyText),
-    locked: state !== 'unlocked',
+    locked: !unlocked,
   };
 }
 

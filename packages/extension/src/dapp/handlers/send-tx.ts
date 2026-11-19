@@ -4,7 +4,7 @@ import type { DappRegistry, DappHandler } from '../registry';
 import { answer, refuse, type Outcome, type PendingRequest } from '../types';
 import { bytesFromWire, bytesToWire, DappErrorCodes } from '../wire';
 import { guarded, type TxDeps } from './env';
-import { connectedAddress, networkRefusal } from './key';
+import { checkSite, notConnected } from './key';
 
 export interface SendTxParams {
   chainId: string;
@@ -89,28 +89,18 @@ export function sendTxHandler(deps: TxDeps): DappHandler<SendTxParams> {
 }
 
 /**
- * The checks that need no node: network, wallet state, the connected site and a signed
- * transaction. A request that fails them is answered without reaching the node.
+ * The checks that need no node: the connected site, its network and a signed transaction. A
+ * request that fails them is answered without reaching the node.
  */
 async function checkLocally(
   deps: TxDeps,
   request: PendingRequest & { params: SendTxParams },
 ): Promise<{ outcome: Outcome } | { txBytes: Uint8Array }> {
-  const active = await deps.services.activeNetwork();
-  const wrong = networkRefusal(request, request.params, active.id);
-  if (wrong) return { outcome: wrong };
-  const { state } = await deps.wallet.state();
-  if (state === 'uninitialised') {
-    return { outcome: refuse(DappErrorCodes.notConnected, 'BeePocket has no wallet yet.') };
-  }
-  if (state === 'locked') {
-    return { outcome: refuse(DappErrorCodes.lockedTimeout, 'Unlock BeePocket') };
-  }
-  const profile = await deps.wallet.getProfile();
-  if (!profile.ok) return { outcome: refuse(DappErrorCodes.lockedTimeout, 'Unlock BeePocket') };
-  if (!connectedAddress(profile.value, request)) {
-    return { outcome: refuse(DappErrorCodes.notConnected, 'This site is not connected.') };
-  }
+  const site = await checkSite(deps, request, request.params);
+  if (site.kind === 'answer') return { outcome: site.outcome };
+  // Fully locked, the wallet cannot tell which sites are connected, and sendTx never opens a
+  // window to unlock it: every site gets the answer one that is not connected gets.
+  if (site.kind === 'locked' || !site.entry) return { outcome: notConnected() };
   const txBytes = bytesFromWire(request.params.txBytes);
   try {
     const raw = decodeTxRaw(txBytes);

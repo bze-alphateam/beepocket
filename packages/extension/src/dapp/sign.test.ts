@@ -870,15 +870,14 @@ describe('sendTx', () => {
     expect(t.node.broadcast).not.toHaveBeenCalled();
   });
 
-  it('answers locked-timeout at once for a fully locked wallet, without a window', async () => {
+  it('answers not-connected at once for a fully locked wallet, without a window', async () => {
     const t = await rig();
     await t.connect();
     await t.wallet.lock();
     const windows = t.created.length;
     const a = await t.ask('sendTx', params());
-    expect(t.answerOf(a.id)).toMatchObject({
-      error: { code: 'locked-timeout', message: 'Unlock BeePocket' },
-    });
+    // The sealed wallet cannot tell its sites apart: a connected one gets the same answer.
+    expect(t.answerOf(a.id)).toEqual({ id: a.id, error: NOT_CONNECTED });
     expect(t.created).toHaveLength(windows);
     expect(t.node.broadcast).not.toHaveBeenCalled();
   });
