@@ -1,6 +1,8 @@
 import { Avatar } from './Avatar';
 import { Icon } from './icons';
 import { Swatches } from './Swatches';
+import { Tag } from './Tag';
+import { t } from '../i18n';
 
 export interface TokenRowProps {
   symbol: string;
@@ -13,6 +15,10 @@ export interface TokenRowProps {
   swatches?: readonly string[] | undefined;
   /** The small line: "Brand kit", "No brand kit · default look". */
   caption: string;
+  /** The token imitates BZE or a verified token: a marker, and `tail` on the small line. */
+  lookalike?: boolean | undefined;
+  /** A short form of the denom, shown with `lookalike`. */
+  tail?: string | null | undefined;
   /**
    * - `option`: a picker row that toggles (`role="checkbox"`) with a check box at the end.
    * - `card`: a found token on a card, with a check icon at the end.
@@ -32,10 +38,13 @@ export function TokenRow({ variant = 'option', ...props }: TokenRowProps) {
       <span class="bp-token-row-text">
         <span class="bp-token-row-title">
           {props.symbol} <span class="bp-token-row-name">· {props.name}</span>
+          {props.lookalike === true && <Tag tone="warn">{t('app.token.lookalike')}</Tag>}
         </span>
         <span class="bp-token-row-sub">
           {props.swatches !== undefined && <Swatches colors={props.swatches} />}
-          {props.caption}
+          {props.lookalike === true && props.tail
+            ? `${props.tail} · ${props.caption}`
+            : props.caption}
         </span>
       </span>
     </>

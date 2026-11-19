@@ -36,6 +36,8 @@ export function stubScan(overrides: Partial<ScanClient> = {}): ScanClient {
     token: vi.fn(notStubbed('token')),
     // Most tests are not about logos: Scan lists no asset unless the test says otherwise.
     asset: vi.fn().mockResolvedValue(null),
+    // Nothing is verified unless the test says otherwise.
+    assets: vi.fn().mockResolvedValue([]),
     activity: vi.fn(notStubbed('activity')),
     ...overrides,
   };

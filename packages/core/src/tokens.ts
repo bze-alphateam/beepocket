@@ -1,5 +1,7 @@
 import type { Cache } from './cache';
+import { isLookalike, type VerifiedAsset } from './lookalike';
 import { stripUnsafeText } from './text';
+import type { VerifiedSource } from './verified';
 import { TOKEN_TTL_MS } from './cache';
 import {
   SystemClock,
@@ -31,6 +33,11 @@ export interface TokenInfo {
    * URL from Scan's asset list. Null shows the letter avatar.
    */
   logo: string | null;
+  /**
+   * Set only when the token imitates BZE or a verified token (see `lookalike.ts`): screens then
+   * show a marker and a short form of the denom next to the symbol. Never cached.
+   */
+  lookalike?: true;
 }
 
 /** The denom is not something a chain could hold (too long, odd characters). */
@@ -155,7 +162,14 @@ export interface TokenResolverOptions {
   nativeLogo?: string;
   /** Times the logo lookup and its retry; the system clock by default. */
   clock?: Clock;
+  /**
+   * The verified tokens a symbol is checked against (`VerifiedRegistry` fits). Without one only
+   * imitations of BZE are flagged.
+   */
+  verified?: VerifiedSource;
 }
+
+const NO_VERIFIED: VerifiedSource = { list: () => Promise.resolve([]) };
 
 /** Name, symbol, decimals and brand kit of any denom. */
 export class TokenResolver {
@@ -163,6 +177,7 @@ export class TokenResolver {
   private readonly prefix: string;
   private readonly nativeLogo: string | null;
   private readonly clock: Clock;
+  private readonly verified: VerifiedSource;
 
   constructor(
     private readonly chain: ChainClient,
@@ -173,6 +188,7 @@ export class TokenResolver {
     this.prefix = options.cacheKeyPrefix ?? '';
     this.nativeLogo = options.nativeLogo ?? null;
     this.clock = options.clock ?? new SystemClock();
+    this.verified = options.verified ?? NO_VERIFIED;
   }
 
   /**
@@ -187,12 +203,25 @@ export class TokenResolver {
     // Async, so even a client that throws on the spot is a rejected promise.
     const asset = () => (asked ??= (async () => this.scan.asset(denom))());
     const logo = this.logo(denom, kind, asset);
-    const [info, found] = await Promise.all([this.info(denom, kind, asset), logo]);
+    // The native coin is never a look-alike: it does not wait for the verified list.
+    const verified = kind === 'native' ? Promise.resolve([]) : this.verifiedList();
+    const [info, found, list] = await Promise.all([this.info(denom, kind, asset), logo, verified]);
     // Nothing is kept for a denom that neither the chain nor Scan knows.
     if (found.keep && info.source !== 'fallback') {
       await this.put(found.keep.key, found.keep.value, found.keep.ttlMs);
     }
-    return { ...info, logo: found.url };
+    // Decided on every lookup, never cached: the verified list changes on its own schedule.
+    const flag = isLookalike(info, list) ? { lookalike: true as const } : {};
+    return { ...info, logo: found.url, ...flag };
+  }
+
+  /** A source that fails counts as an empty list: only imitations of BZE are flagged then. */
+  private async verifiedList(): Promise<readonly VerifiedAsset[]> {
+    try {
+      return await this.verified.list();
+    } catch {
+      return [];
+    }
   }
 
   /** A cache read that fails is a miss. */

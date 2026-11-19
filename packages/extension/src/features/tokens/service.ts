@@ -1,6 +1,7 @@
 import {
   balancesMayBeCut,
   InvalidDenomError,
+  isLookalike,
   isLpDenom,
   LP_DECIMALS,
   NATIVE_DENOM,
@@ -317,6 +318,8 @@ function kindOf(denom: string): TokenInfo['kind'] {
 function unresolved(denom: string): ListedToken {
   const symbol = (denom.split('/').pop() ?? denom).slice(0, 32).toUpperCase();
   const kind = kindOf(denom);
+  // A guess from the denom can imitate BZE too (`factory/…/bze`): it gets the same check.
+  const flag = isLookalike({ denom, symbol, name: symbol }, []) ? { lookalike: true as const } : {};
   return {
     denom,
     symbol,
@@ -327,6 +330,7 @@ function unresolved(denom: string): ListedToken {
     branding: null,
     logo: denom === NATIVE_DENOM ? BZE_LOGO : null,
     unresolved: true,
+    ...flag,
   };
 }
 

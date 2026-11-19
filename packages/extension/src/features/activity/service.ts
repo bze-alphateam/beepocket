@@ -1,9 +1,14 @@
 import {
+  cleanLabel,
+  isLookalike,
+  NATIVE_DENOM,
   shortAddress,
   type ActivityRow,
   type Clock,
   type ScanBalance,
   type ScanClient,
+  type VerifiedAsset,
+  type VerifiedSource,
 } from '@beepocket/core';
 import {
   ActivityErrorCodes,
@@ -20,6 +25,9 @@ const PAGE_SIZE = 10;
 const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 /** Longer than the transport's own timeout, so that one normally wins; this one guards any other transport. */
 const SCAN_TIMEOUT_MS = 20_000;
+/** Bounds of the text Scan relays (token symbols, labels, validator monikers). */
+const MAX_SYMBOL = 32;
+const MAX_NAME = 64;
 
 /** The wallet's addresses, in derivation order; an error result while the wallet is locked. */
 export interface ActivityAddresses {
@@ -32,6 +40,8 @@ export interface ActivityServiceDeps {
   explorer: string;
   addresses: ActivityAddresses;
   clock: Pick<Clock, 'now' | 'sleep'>;
+  /** Verified tokens, to flag Scan symbols that imitate one; only BZE imitations without it. */
+  verified?: VerifiedSource;
 }
 
 /** Where one address stands: rows fetched but not yet shown, and the way to its older rows. */
@@ -64,14 +74,28 @@ function newer(a: ActivityItem, b: ActivityItem): boolean {
 
 const abs = (n: bigint) => (n < 0n ? -n : n);
 
-/** Non-zero changes only, one entry per denom, largest absolute value first. */
-function amountsOf(balances: ScanBalance[], sign: 1n | -1n): ActivityAmount[] {
+/** Scan's symbol for a denom, cleaned; null when nothing is left. The native coin is always BZE. */
+function symbolOf(denom: string, raw: string | null): string | null {
+  if (denom === NATIVE_DENOM) return raw === null ? null : 'BZE';
+  const symbol = raw === null ? '' : cleanLabel(raw, MAX_SYMBOL);
+  return symbol === '' ? null : symbol;
+}
+
+/**
+ * Non-zero changes only, one entry per denom, largest absolute value first. A symbol that imitates
+ * BZE or a verified token is flagged.
+ */
+function amountsOf(
+  balances: ScanBalance[],
+  sign: 1n | -1n,
+  verified: readonly VerifiedAsset[],
+): ActivityAmount[] {
   const sums = new Map<string, { n: bigint; symbol: string | null; exponent: number | null }>();
   for (const b of balances) {
     const seen = sums.get(b.denom);
     sums.set(b.denom, {
       n: (seen?.n ?? 0n) + sign * b.amount,
-      symbol: seen?.symbol ?? b.symbol,
+      symbol: seen?.symbol ?? symbolOf(b.denom, b.symbol),
       exponent: seen?.exponent ?? b.exponent,
     });
   }
@@ -81,17 +105,32 @@ function amountsOf(balances: ScanBalance[], sign: 1n | -1n): ActivityAmount[] {
       if (abs(x.n) !== abs(y.n)) return abs(x.n) > abs(y.n) ? -1 : 1;
       return dx < dy ? -1 : dx > dy ? 1 : 0;
     })
-    .map(([denom, v]) => ({
-      denom,
-      amount: v.n.toString(),
-      symbol: v.symbol,
-      exponent: v.exponent,
-    }));
+    .map(([denom, v]) => {
+      const lookalike =
+        v.symbol !== null && isLookalike({ denom, symbol: v.symbol, name: v.symbol }, verified);
+      return {
+        denom,
+        amount: v.n.toString(),
+        symbol: v.symbol,
+        exponent: v.exponent,
+        ...(lookalike ? { lookalike: true as const } : {}),
+      };
+    });
 }
 
-function toItem(row: ActivityRow, address: WalletAddress): ActivityItem {
-  const deltas = amountsOf(row.deltas, 1n);
-  const fees = amountsOf(row.fee ?? [], -1n);
+/** A name Scan relays, cleaned and bounded; null when nothing is left. */
+function nameOf(raw: string | null | undefined): string | null {
+  const name = cleanLabel(raw ?? '', MAX_NAME);
+  return name === '' ? null : name;
+}
+
+function toItem(
+  row: ActivityRow,
+  address: WalletAddress,
+  verified: readonly VerifiedAsset[],
+): ActivityItem {
+  const deltas = amountsOf(row.deltas, 1n, verified);
+  const fees = amountsOf(row.fee ?? [], -1n, verified);
   const feeOnly = deltas.length === 0 && fees.length > 0;
   const cp = row.counterparty;
   return {
@@ -103,7 +142,12 @@ function toItem(row: ActivityRow, address: WalletAddress): ActivityItem {
     category: row.category,
     isSigner: row.isSigner,
     success: row.success,
-    counterparty: cp === null ? null : (cp.label?.name ?? cp.moniker ?? shortAddress(cp.address)),
+    counterparty:
+      cp === null
+        ? null
+        : (nameOf(cp.label?.name) ??
+          nameOf(cp.moniker) ??
+          shortAddress(cleanLabel(cp.address, 90))),
     counterpartyAddress: cp?.address ?? null,
     amounts: feeOnly ? fees : deltas,
     feeOnly,
@@ -169,6 +213,7 @@ export class ActivityService {
       };
     }
     const byIndex = new Map(addresses.map((a) => [a.index, a]));
+    const verified = await this.verifiedList();
 
     const items: ActivityItem[] = [];
     try {
@@ -177,7 +222,7 @@ export class ActivityService {
         await Promise.all(
           empty.map(async (l) => {
             const address = byIndex.get(l.index);
-            if (address) await this.fill(l, state, address);
+            if (address) await this.fill(l, state, address, verified);
           }),
         );
         let best: Lane | null = null;
@@ -204,7 +249,21 @@ export class ActivityService {
     });
   }
 
-  private async fill(lane: Lane, state: CursorState, address: WalletAddress): Promise<void> {
+  /** A source that fails counts as an empty list: only imitations of BZE are flagged then. */
+  private async verifiedList(): Promise<readonly VerifiedAsset[]> {
+    try {
+      return (await this.deps.verified?.list()) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async fill(
+    lane: Lane,
+    state: CursorState,
+    address: WalletAddress,
+    verified: readonly VerifiedAsset[],
+  ): Promise<void> {
     const page = await Promise.race([
       this.deps.scan.activity(address.address, {
         limit: PAGE_SIZE,
@@ -216,7 +275,7 @@ export class ActivityService {
     ]);
     const kept = page.items.filter((row) => !(Date.parse(row.time) < state.cutoff));
     lane.fetched = true;
-    lane.buffer.push(...kept.map((row) => toItem(row, address)));
+    lane.buffer.push(...kept.map((row) => toItem(row, address, verified)));
     // Rows come newest first: a dropped row means everything after it is older still.
     const pastCutoff = kept.length < page.items.length;
     lane.next = pastCutoff || page.items.length === 0 ? null : page.nextCursor;

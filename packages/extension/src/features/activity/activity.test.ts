@@ -44,6 +44,7 @@ function fakeScan(feeds: Record<string, ActivityRow[]>) {
     activity,
     token: () => Promise.resolve(null),
     asset: () => Promise.resolve(null),
+    assets: () => Promise.resolve([]),
   };
   return { scan, activity };
 }

@@ -1,8 +1,8 @@
 import type { ComponentChildren } from 'preact';
 
 export interface TagProps {
-  /** `accent`: soft kit colours (OPEN). `bad`: status red (FAILED). */
-  tone?: 'accent' | 'bad' | undefined;
+  /** `accent`: soft kit colours (OPEN). `bad`: status red (FAILED). `warn`: amber (LOOK-ALIKE). */
+  tone?: 'accent' | 'bad' | 'warn' | undefined;
   children: ComponentChildren;
 }
 

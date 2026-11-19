@@ -36,6 +36,8 @@ export interface ActivityAmount {
   /** Scan's display data for the denom; null when it knows none. */
   symbol: string | null;
   exponent: number | null;
+  /** Set only when the symbol imitates BZE or a verified token on another denom. */
+  lookalike?: true;
 }
 
 export interface ActivityPageResult {

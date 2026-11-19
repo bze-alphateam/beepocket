@@ -4,7 +4,7 @@ export const addtoken = {
   'addtoken.siteUnknown': 'A link sent you here',
   'addtoken.unknown': 'Anyone can make a token. Add it only if you trust them.',
   'addtoken.lookalike':
-    'You already have a token called {symbol}, or it is the BeeZee coin. This one has a different denom: check it.',
+    '{symbol} looks like the BeeZee coin, a verified token or a token you already have, but this one has a different denom: check it.',
   'addtoken.copy': 'Copy denom',
   'addtoken.sentYou': 'sent you here',
   'addtoken.list.add': 'Added to your preferred tokens',

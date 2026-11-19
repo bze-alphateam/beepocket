@@ -1,4 +1,4 @@
-import { formatAmount, type TokenInfo } from '@beepocket/core';
+import { denomTail, formatAmount, type TokenInfo } from '@beepocket/core';
 import type { ActivityAmount } from '../../protocol';
 
 /** "+1.5", "−0.02"; a zero change shows no sign. */
@@ -48,32 +48,41 @@ export interface AmountParts {
   denom: string;
   /** Neither Scan nor the wallet knows the token: raw base units, shortened denom. */
   unknown: boolean;
+  /** Set only for a symbol that imitates BZE or a verified token: shown with a marker. */
+  lookalike?: true;
+  /** With `lookalike`: a short form of the denom, to tell it from the real token. */
+  tail?: string;
 }
 
+type KnownToken = Pick<TokenInfo, 'denom' | 'symbol' | 'decimals'> &
+  Partial<Pick<TokenInfo, 'source' | 'lookalike'>>;
+
 /**
- * Scan's symbol and exponent first, then the wallet's own knowledge of the token; a token with
- * no chain data has no decimals, so its amount is the raw integer with thousands separators.
+ * The wallet's own data for a token it knows first (its label is checked for look-alikes), then
+ * Scan's symbol and exponent; a token with no chain data has no decimals, so its amount is the
+ * raw integer with thousands separators.
  */
 export function amountParts(
   amount: ActivityAmount,
-  known: readonly Pick<TokenInfo, 'denom' | 'symbol' | 'decimals'>[] = [],
+  known: readonly KnownToken[] = [],
 ): AmountParts {
-  const info = known.find((k) => k.denom === amount.denom);
-  const symbol = amount.symbol ?? info?.symbol ?? null;
-  const decimals = amount.exponent ?? info?.decimals ?? 0;
+  const found = known.find((k) => k.denom === amount.denom);
+  // A placeholder the wallet guessed from the denom knows less than Scan.
+  const info = found?.source === 'fallback' ? undefined : found;
+  const symbol = info?.symbol ?? amount.symbol ?? null;
+  const decimals = info ? info.decimals : (amount.exponent ?? 0);
+  const lookalike = info ? info.lookalike === true : amount.lookalike === true;
   return {
     value: signedAmount(amount.amount, decimals),
     symbol: symbol ?? shortDenom(amount.denom),
     denom: amount.denom,
     unknown: symbol === null,
+    ...(lookalike ? { lookalike: true as const, tail: denomTail(amount.denom) } : {}),
   };
 }
 
 /** "+1.5 BZE", "−0.02 PAGE" for one change; an unknown token reads "+1,250 ibc/6490…9E0F". */
-export function amountText(
-  amount: ActivityAmount,
-  known: readonly Pick<TokenInfo, 'denom' | 'symbol' | 'decimals'>[] = [],
-): string {
+export function amountText(amount: ActivityAmount, known: readonly KnownToken[] = []): string {
   const p = amountParts(amount, known);
   return `${p.value} ${p.symbol}`;
 }

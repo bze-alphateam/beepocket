@@ -5,6 +5,8 @@ export const app = {
   'app.version': 'Version {version}',
   'app.loading': 'Loading',
   'app.error.generic': 'Something went wrong. Please try again.',
+  'app.token.lookalike': 'Look-alike',
+  'app.token.lookalikeLabel': '{symbol}, look-alike of another token, {denom}',
   'app.sheet.close': 'Close',
   'app.sheet.back': 'Back',
   'app.back': 'Back',

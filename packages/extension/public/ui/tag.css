@@ -19,3 +19,8 @@
   background: var(--bp-bad-soft);
   color: var(--bp-bad-text);
 }
+
+.bp-tag-warn {
+  background: var(--bp-warn-soft);
+  color: var(--bp-warn-text);
+}

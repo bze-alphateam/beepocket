@@ -203,6 +203,8 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Names come from Scan: whatever direction they run in stays inside them. */
+  unicode-bidi: isolate;
 }
 
 .bp-act-cp[data-mono] {
@@ -236,6 +238,24 @@
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.bp-act-symbol > bdi {
+  unicode-bidi: isolate;
+}
+
+/* A look-alike shows its marker in full; the symbol itself stays short. */
+.bp-act-symbol[data-lookalike] {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: none;
+}
+
+.bp-act-symbol[data-lookalike] > bdi {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bp-act-symbol[data-unknown] {

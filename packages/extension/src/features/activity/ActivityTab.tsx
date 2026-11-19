@@ -93,7 +93,14 @@ function ActivityCard({ item, explorer, known, names }: CardProps) {
   const label = [
     title,
     parts
-      .map((p) => `${p.value} ${p.unknown ? `${t('activity.unknown')} ` : ''}${p.symbol}`)
+      .map(
+        (p) =>
+          `${p.value} ${p.unknown ? `${t('activity.unknown')} ` : ''}${
+            p.lookalike
+              ? t('app.token.lookalikeLabel', { symbol: p.symbol, denom: p.tail ?? p.denom })
+              : p.symbol
+          }`,
+      )
       .join(', '),
     `${item.addressLabel}${counterparty === null ? '' : ` ${counterparty}`}`,
     when,
@@ -142,9 +149,11 @@ function ActivityCard({ item, explorer, known, names }: CardProps) {
                 <span
                   class="bp-act-symbol"
                   data-unknown={p.unknown ? '' : null}
-                  title={p.unknown ? p.denom : undefined}
+                  data-lookalike={p.lookalike ? '' : null}
+                  title={p.unknown || p.lookalike ? p.denom : undefined}
                 >
-                  {p.symbol}
+                  <bdi>{p.symbol}</bdi>
+                  {p.lookalike && <Tag tone="warn">{t('app.token.lookalike')}</Tag>}
                 </span>
               </span>
             ))}

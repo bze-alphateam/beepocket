@@ -82,6 +82,7 @@ import type {
 import { MsgAddArticle, MsgPayPublisherRespect } from './proto/bze/cointrunk/tx';
 import { bzeAddressHash, signersOf } from './signers';
 import { sanitiseText } from './text';
+import { labelText, tokenLabel } from './lookalike';
 import { LP_DECIMALS, NATIVE_DENOM, type TokenInfo } from './tokens';
 import type { AnyMsg } from './tx';
 import { shortAddress } from './vault';
@@ -291,7 +292,12 @@ class Lookups {
       if (denom !== NATIVE_DENOM) this.lookups++;
       cached = this.ctx.tokens.resolve(denom).then(
         (t) => ({
-          symbol: sanitiseText(t.symbol, 64),
+          // A look-alike carries its marker and denom wherever the summary names it.
+          symbol: labelText({
+            ...tokenLabel(t),
+            // Unsafe characters show as a placeholder here, as everywhere else in a summary.
+            symbol: sanitiseText(t.symbol, 64),
+          }),
           decimals: t.decimals,
           exact: t.source !== 'fallback',
         }),

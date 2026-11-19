@@ -1,3 +1,4 @@
+import { tokenLabel } from '@beepocket/core';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { t } from '../../i18n';
@@ -89,6 +90,7 @@ export function TokenPicker({ selected, onToggle, notice, field, extra = [] }: T
       <div class="ob-tokens">
         {rows?.map((tok) => {
           const look = tokenLook(tok, scheme);
+          const label = tokenLabel(tok);
           return (
             <TokenRow
               key={tok.denom}
@@ -97,6 +99,8 @@ export function TokenPicker({ selected, onToggle, notice, field, extra = [] }: T
               color={look.color}
               logo={tok.logo}
               swatches={tok.unresolved ? undefined : look.swatches}
+              lookalike={label.lookalike}
+              tail={label.tail}
               caption={
                 tok.unresolved
                   ? t('onboarding.tokens.unresolved')
