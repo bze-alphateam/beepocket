@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'preact/hooks';
 import { cleanup, fireEvent, render } from './test-render';
@@ -79,6 +81,33 @@ describe('SiteCard', () => {
   it('shows an origin that does not parse as it is', () => {
     const { host } = render(<SiteCard origin="not a url" />);
     expect(host.querySelector('.bp-site-card-name')?.textContent).toBe('not a url');
+  });
+
+  it.each(['lg', 'md', 'sm'] as const)('shows a long host in full at size %s', (size) => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync(
+      join(import.meta.dirname, '../../public/ui/site-card.css'),
+      'utf8',
+    );
+    document.head.append(style);
+    try {
+      const long = `${'a-long-label-of-a-site-name.'.repeat(4)}example.org`;
+      expect(long.length).toBeGreaterThanOrEqual(120);
+      const { host } = render(<SiteCard origin={`https://${long}`} size={size} />);
+      const name = host.querySelector<HTMLElement>('.bp-site-card-name');
+      const origin = host.querySelector<HTMLElement>('.bp-site-card-origin > span');
+      expect(name?.textContent).toBe(long);
+      expect(origin?.textContent).toBe(`https://${long}`);
+      for (const el of [name, origin]) {
+        if (!el) throw new Error('missing site text');
+        const css = getComputedStyle(el);
+        expect(css.textOverflow).not.toBe('ellipsis');
+        expect(css.whiteSpace).not.toBe('nowrap');
+        expect(css.overflowWrap).toBe('anywhere');
+      }
+    } finally {
+      style.remove();
+    }
   });
 });
 

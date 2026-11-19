@@ -45,12 +45,11 @@
   gap: 2px;
 }
 
+/* The whole host and origin, always: they wrap, they are never cut. */
 .bp-site-card-name {
-  overflow: hidden;
   font-size: 13px;
   font-weight: 700;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .bp-site-card-lg .bp-site-card-name {
@@ -59,7 +58,7 @@
 
 .bp-site-card-origin {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   min-width: 0;
   color: var(--bp-muted);
@@ -72,12 +71,12 @@
 
 .bp-site-card-origin > .bp-icon {
   flex: none;
+  margin-top: 0.15em;
 }
 
 .bp-site-card-origin > span {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .bp-site-card-aside {
