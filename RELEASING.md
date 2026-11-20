@@ -2,6 +2,8 @@
 
 The extension version lives in `packages/extension/package.json` and nowhere else; the build writes it into `manifest.json`. It must be a Chrome version: 1 to 4 dot-separated integers (0-65535, no leading zeros, no `-rc` style suffix).
 
+Releases are built, signed and published locally by a maintainer. CI uploads no build output: the `reproducible` workflow only checks that two clean builds of the same commit give the same zip, and on a `v*` tag that the tag matches the package version.
+
 1. In the release pull request into `main`, bump `version` in `packages/extension/package.json`.
 2. After it merges, tag the merge commit `v` + that version (for example `v1.2.3`) and push the tag:
 
@@ -10,10 +12,22 @@ The extension version lives in `packages/extension/package.json` and nowhere els
    git push origin v1.2.3
    ```
 
-3. The `reproducible` workflow builds the zip twice, checks that both builds match and that the tag matches the package version, then creates a **draft** GitHub release with `beepocket-v1.2.3.zip`, `SHA256SUMS` and a build provenance attestation. A mismatched tag or a non-reproducible build creates nothing.
-4. Review the draft (notes, assets, sums) and publish it by hand. Nothing is published automatically.
+3. Wait for the `reproducible` workflow on the tag to pass. Note the sha256 it prints in the job summary.
+4. From a clean checkout of the tag, build the zip the same way CI does:
 
-The release notes come from [`.github/release-notes.md`](.github/release-notes.md), with `{{VERSION}}` replaced by the tag.
+   ```sh
+   git checkout v1.2.3
+   git clean -xdff
+   corepack enable
+   pnpm install --frozen-lockfile
+   SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" pnpm build
+   cp packages/extension/beepocket.zip beepocket-v1.2.3.zip
+   sha256sum beepocket-v1.2.3.zip > SHA256SUMS
+   ```
+
+   The sum must match the one in the workflow summary.
+
+5. Create the GitHub release for the tag and attach `beepocket-v1.2.3.zip` and `SHA256SUMS`. The release notes should cover install, update (unzip over the same folder, never remove the extension) and verification, as in the README.
 
 ## Extension ID
 

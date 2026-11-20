@@ -44,8 +44,3 @@ jobs:
           for f in package/README.md package/LICENSE package/package.json package/dist/index.js package/dist/index.d.ts; do
             grep -qx "$f" "$RUNNER_TEMP/pack.txt" || { echo "missing $f in the connector tarball" >&2; exit 1; }
           done
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: beepocket-extension
-          path: packages/extension/beepocket.zip
-          if-no-files-found: error

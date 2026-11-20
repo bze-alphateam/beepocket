@@ -34,15 +34,14 @@ The extension is built into `packages/extension/dist` and zipped to `packages/ex
 
 ## Install a release
 
-Download `beepocket-vX.Y.Z.zip` from the [GitHub releases](https://github.com/bze-alphateam/beepocket/releases) (only from there), unzip it into a folder you keep, open `chrome://extensions`, enable developer mode and load that folder with **Load unpacked**. The extension ID is always `ijohiojehlnmpoelmpnnbcfhkpgaclfc`. To update, unzip the new release over the same folder and click reload on the extension card; never remove the extension, or its wallet data is lost. Each release's notes have the full steps.
+Download `beepocket-vX.Y.Z.zip` from the [GitHub releases](https://github.com/bze-alphateam/beepocket/releases) (only from there), unzip it into a folder you keep, open `chrome://extensions`, enable developer mode and load that folder with **Load unpacked**. The extension ID is always `ijohiojehlnmpoelmpnnbcfhkpgaclfc`. To update, unzip the new release over the same folder and click reload on the extension card; never remove the extension, or its wallet data is lost.
 
 ## Verify a release
 
-Releases are built by CI from a `v*` tag. The zip, a `SHA256SUMS` file and a build provenance attestation are attached to the GitHub release. Check a download with:
+Releases are built and published locally by the maintainers, not by CI. Each release has the zip and a `SHA256SUMS` file. Check a download with:
 
 ```sh
 sha256sum -c SHA256SUMS
-gh attestation verify beepocket-vX.Y.Z.zip --repo bze-alphateam/beepocket
 ```
 
 Or rebuild it yourself:
