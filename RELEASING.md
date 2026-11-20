@@ -26,6 +26,7 @@ Releases are built, signed and published locally by a maintainer. CI uploads no 
    ```
 
    The sum must match the one in the workflow summary.
+
 5. Create the GitHub release for the tag and attach `beepocket-v1.2.3.zip` and `SHA256SUMS`. The release notes should cover install, update (unzip over the same folder, never remove the extension) and verification, as in the README.
 
 ## Extension ID
